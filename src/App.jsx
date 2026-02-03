@@ -343,15 +343,40 @@ export default function BudgetApp() {
   const [kategorie, setKategorie] = useState({ Wydatek: {}, Przychód: {} });
   const [osoby, setOsoby] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState(null);
   
-  // Pobieranie danych - jedno zapytanie zamiast trzech
-  const fetchData = useCallback(async () => {
-    setIsLoading(true);
+  // Klucz cache dla transakcji danego miesiąca
+  const getCacheKey = (month, year) => `budzet_trans_${month}_${year}`;
+  
+  // Pobierz wszystkie dane
+  const fetchData = useCallback(async (showLoadingSpinner = true) => {
+    const cacheKey = getCacheKey(currentPeriod.month, currentPeriod.year);
+    
+    // 1. Najpierw pokaż dane z cache (natychmiast)
+    const cachedKategorie = sessionStorage.getItem('budzet_kategorie');
+    const cachedOsoby = sessionStorage.getItem('budzet_osoby');
+    const cachedTransakcje = sessionStorage.getItem(cacheKey);
+    
+    const hasCache = cachedKategorie && cachedOsoby;
+    
+    if (hasCache) {
+      setKategorie(JSON.parse(cachedKategorie));
+      setOsoby(JSON.parse(cachedOsoby));
+      if (cachedTransakcje) {
+        setTransakcje(JSON.parse(cachedTransakcje));
+      }
+      setIsLoading(false);
+      setIsRefreshing(true); // Pokaż subtelny wskaźnik odświeżania
+    } else if (showLoadingSpinner) {
+      setIsLoading(true);
+    }
+    
     setError(null);
     
+    // 2. Pobierz świeże dane w tle
     try {
       const url = `${API_URL}?action=getAllData&miesiac=${currentPeriod.month}&rok=${currentPeriod.year}`;
       const response = await fetch(url);
@@ -361,20 +386,38 @@ export default function BudgetApp() {
         throw new Error(data.error);
       }
       
-      setTransakcje(Array.isArray(data.transakcje) ? data.transakcje : []);
-      setKategorie(data.kategorie || { Wydatek: {}, Przychód: {} });
-      setOsoby(Array.isArray(data.osoby) ? data.osoby : []);
+      // Aktualizuj stan
+      const noweTransakcje = Array.isArray(data.transakcje) ? data.transakcje : [];
+      const noweKategorie = data.kategorie || { Wydatek: {}, Przychód: {} };
+      const noweOsoby = Array.isArray(data.osoby) ? data.osoby : [];
+      
+      setTransakcje(noweTransakcje);
+      setKategorie(noweKategorie);
+      setOsoby(noweOsoby);
+      
+      // Zapisz do cache
+      sessionStorage.setItem(cacheKey, JSON.stringify(noweTransakcje));
+      sessionStorage.setItem('budzet_kategorie', JSON.stringify(noweKategorie));
+      sessionStorage.setItem('budzet_osoby', JSON.stringify(noweOsoby));
+      
     } catch (err) {
-      setError('Nie udało się połączyć z arkuszem. Sprawdź połączenie i odśwież stronę.');
+      // Pokaż błąd tylko jeśli nie mamy cache
+      if (!hasCache) {
+        setError('Nie udało się połączyć z arkuszem. Sprawdź połączenie i odśwież stronę.');
+      }
       console.error(err);
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   }, [currentPeriod]);
   
+  // Ładuj dane przy starcie i zmianie miesiąca
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+  
+
   
   // Dodawanie transakcji
   const handleAddTransaction = async (transakcja) => {
@@ -468,7 +511,14 @@ export default function BudgetApp() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-gray-800">Budżet Domowy</h1>
-                <p className="text-sm text-gray-500">Kontroluj swoje finanse</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-gray-500">Kontroluj swoje finanse</p>
+                  {isRefreshing && (
+                    <span className="flex items-center gap-1 text-xs text-indigo-500">
+                      <Icons.Loader /> Odświeżam...
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
             
