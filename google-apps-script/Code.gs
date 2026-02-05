@@ -194,6 +194,67 @@ function getAllData(miesiac, rok) {
 }
 
 // ============================================
+// WALIDACJA DANYCH TRANSAKCJI
+// ============================================
+/**
+ * Waliduje dane transakcji
+ * Zwraca {valid: true} lub {valid: false, error: "komunikat błędu"}
+ */
+function validateTransaction(transakcja) {
+  // Waliduj typ
+  if (!transakcja.typ) {
+    return { valid: false, error: 'Typ transakcji jest wymagany' };
+  }
+  
+  if (!['Wydatek', 'Przychód'].includes(transakcja.typ)) {
+    return { valid: false, error: 'Typ musi być "Wydatek" lub "Przychód"' };
+  }
+  
+  // Waliduj datę
+  if (!transakcja.data) {
+    return { valid: false, error: 'Data jest wymagana' };
+  }
+  
+  if (typeof transakcja.data !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(transakcja.data)) {
+    return { valid: false, error: 'Data musi być w formacie YYYY-MM-DD' };
+  }
+  
+  // Sprawdź czy data jest prawidłowa
+  const dateParts = transakcja.data.split('-').map(Number);
+  const [year, month, day] = dateParts;
+  const date = new Date(year, month - 1, day);
+  
+  // Sprawdź czy data jest rzeczywista (np. 31 luty nie istnieje)
+  if (date.getFullYear() !== year || 
+      date.getMonth() !== month - 1 || 
+      date.getDate() !== day) {
+    return { valid: false, error: 'Data nie jest prawidłowa' };
+  }
+  
+  // Waliduj kwotę
+  if (transakcja.kwota === undefined || transakcja.kwota === null || transakcja.kwota === '') {
+    return { valid: false, error: 'Kwota jest wymagana' };
+  }
+  
+  const kwota = Number(transakcja.kwota);
+  
+  if (isNaN(kwota)) {
+    return { valid: false, error: 'Kwota musi być liczbą' };
+  }
+  
+  if (kwota <= 0) {
+    return { valid: false, error: 'Kwota musi być większa od 0' };
+  }
+  
+  // Waliduj kategorię
+  if (!transakcja.kategoria || transakcja.kategoria.trim() === '') {
+    return { valid: false, error: 'Kategoria jest wymagana' };
+  }
+  
+  return { valid: true };
+}
+
+// ============================================
 // POMOCNICZE FUNKCJE DO PARSOWANIA DAT
 // ============================================
 /**
@@ -285,6 +346,12 @@ function getTransakcje(miesiac, rok) {
 }
 
 function addTransakcja(transakcja) {
+  // Waliduj dane wejściowe
+  const validation = validateTransaction(transakcja);
+  if (!validation.valid) {
+    return { success: false, error: validation.error };
+  }
+  
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName('Transakcje');
   
@@ -293,17 +360,23 @@ function addTransakcja(transakcja) {
     id,
     transakcja.data,
     transakcja.typ,
-    transakcja.kwota,
+    Number(transakcja.kwota),
     transakcja.kategoria,
-    transakcja.podkategoria,
-    transakcja.osoba,
+    transakcja.podkategoria || '',
+    transakcja.osoba || '',
     transakcja.komentarz || ''
   ]);
   
-  return {success: true, id: id};
+  return { success: true, id: id, message: 'Transakcja została dodana pomyślnie' };
 }
 
 function updateTransakcja(id, transakcja) {
+  // Waliduj dane wejściowe
+  const validation = validateTransaction(transakcja);
+  if (!validation.valid) {
+    return { success: false, error: validation.error };
+  }
+  
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName('Transakcje');
   const data = sheet.getDataRange().getValues();
@@ -313,17 +386,17 @@ function updateTransakcja(id, transakcja) {
       sheet.getRange(i + 1, 2, 1, 7).setValues([[
         transakcja.data,
         transakcja.typ,
-        transakcja.kwota,
+        Number(transakcja.kwota),
         transakcja.kategoria,
-        transakcja.podkategoria,
-        transakcja.osoba,
+        transakcja.podkategoria || '',
+        transakcja.osoba || '',
         transakcja.komentarz || ''
       ]]);
-      return {success: true};
+      return { success: true, message: 'Transakcja została zaktualizowana pomyślnie' };
     }
   }
   
-  return {error: 'Nie znaleziono transakcji'};
+  return { success: false, error: 'Nie znaleziono transakcji o podanym ID' };
 }
 
 function deleteTransakcja(id) {
