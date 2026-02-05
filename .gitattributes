@@ -1,0 +1,14 @@
+# Wymuszaj LF w repo, niezależnie od systemu
+* text=auto eol=lf
+
+# Pliki binarne — nie zmieniaj końców linii
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
