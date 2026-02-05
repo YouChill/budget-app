@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 
-const API_URL = 'https://script.google.com/macros/s/AKfycbzykYau5Y3cizmTs2qTwszuW5yT1C_H0s0O1rPmTIFPXBaEH32FK_LuqbKK7miBQjlsKw/exec';
+const API_URL = import.meta.env.VITE_API_URL;
 
 // Pomocnicze funkcje
 const formatCurrency = (amount) => {
