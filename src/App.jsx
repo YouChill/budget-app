@@ -10,9 +10,45 @@ const formatCurrency = (amount) => {
   }).format(amount);
 };
 
+/**
+ * Formatuje datę z formatu YYYY-MM-DD na string w formacie DD-MM-RRRR
+ * Jawnie parsuje datę bez new Date() aby uniknąć problemów ze strefą czasową
+ */
 const formatDate = (dateString) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  if (!dateString) return '';
+  
+  // Sprawdź czy to format YYYY-MM-DD
+  if (typeof dateString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    const [year, month, day] = dateString.split('-');
+    // Stwórz datę z jawnie podanymi komponentami aby uniknąć interpretacji strefy czasowej
+    // Używamy new Date(year, month-1, day) zamiast new Date(string)
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    return date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+  
+  // Fallback jeśli format jest inny
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch {
+    return dateString;
+  }
+};
+
+/**
+ * Parsuje datę z formatu YYYY-MM-DD bezpośrednio bez niejawnej konwersji
+ */
+const parseDate = (dateString) => {
+  if (!dateString) return new Date();
+  
+  // Jeśli format to YYYY-MM-DD, parsuj jawnie
+  if (typeof dateString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    const [year, month, day] = dateString.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+  
+  // Fallback
+  return new Date(dateString);
 };
 
 const getCurrentMonth = () => {
@@ -495,8 +531,9 @@ export default function BudgetApp() {
   const bilans = przychody - wydatki;
   
   // Sortowanie transakcji (najnowsze pierwsze)
+  // Użyj parseDate aby prawidłowo sortować daty w formacie YYYY-MM-DD
   const sortedTransakcje = [...transakcje].sort((a, b) => 
-    new Date(b.data) - new Date(a.data)
+    parseDate(b.data) - parseDate(a.data)
   );
   
   return (

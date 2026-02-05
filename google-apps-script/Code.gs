@@ -194,6 +194,51 @@ function getAllData(miesiac, rok) {
 }
 
 // ============================================
+// POMOCNICZE FUNKCJE DO PARSOWANIA DAT
+// ============================================
+/**
+ * Parsuje datę z formatu YYYY-MM-DD na Date obiektu
+ * Unika problemu z new Date() który może interpretować daty różnie
+ */
+function parseDateString(dateString) {
+  if (!dateString) return null;
+  
+  // Sprawdzaj czy to string w formacie YYYY-MM-DD
+  if (typeof dateString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    const [year, month, day] = dateString.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+  
+  // Jeśli to Data obiektu, zwróć ją
+  if (dateString instanceof Date) {
+    return dateString;
+  }
+  
+  // W ostateczności spróbuj new Date
+  return new Date(dateString);
+}
+
+/**
+ * Formatuje datę jako YYYY-MM-DD w strefie czasowej Europe/Warsaw
+ */
+function formatDateToString(date, timezone = 'Europe/Warsaw') {
+  if (!date) return '';
+  
+  // Jeśli to string w formacie YYYY-MM-DD, zwróć jako jest
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return date;
+  }
+  
+  // Skonwertuj na Date jeśli to string
+  if (typeof date === 'string') {
+    date = parseDateString(date);
+  }
+  
+  // Formatuj używając Utilities.formatDate w Europe/Warsaw
+  return Utilities.formatDate(date, timezone, 'yyyy-MM-dd');
+}
+
+// ============================================
 // TRANSAKCJE
 // ============================================
 function getTransakcje(miesiac, rok) {
@@ -206,18 +251,27 @@ function getTransakcje(miesiac, rok) {
     const row = data[i];
     if (!row[0]) continue;
     
-    const dataTransakcji = new Date(row[1]);
+    // Parsuj datę prawidłowo - unikaj błędów ze strefą czasową
+    const dateString = row[1];
+    const dataParsed = parseDateString(dateString);
     
-    // Filtrowanie po miesiącu i roku jeśli podane
+    // Filtuj po miesiącu i roku jeśli podane
+    // Użyj Utilities.formatDate aby uniknąć problemów ze strefą czasową
     if (miesiac && rok) {
-      if (dataTransakcji.getMonth() + 1 != miesiac || dataTransakcji.getFullYear() != rok) {
+      const formattedDate = Utilities.formatDate(dataParsed, 'Europe/Warsaw', 'yyyy-MM-dd');
+      const [year, month, day] = formattedDate.split('-').map(Number);
+      
+      if (Number(month) !== Number(miesiac) || Number(year) !== Number(rok)) {
         continue;
       }
     }
     
+    // Zwróć datę sformatowaną jako YYYY-MM-DD w Europe/Warsaw
+    const formattedDate = formatDateToString(dataParsed, 'Europe/Warsaw');
+    
     transakcje.push({
       id: row[0],
-      data: row[1],
+      data: formattedDate,
       typ: row[2],
       kwota: row[3],
       kategoria: row[4],
