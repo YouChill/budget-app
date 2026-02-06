@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSwipeable } from 'react-swipeable';
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.VITE_API_URL || 'https://script.google.com/macros/s/AKfycbzykYau5Y3cizmTs2qTwszuW5yT1C_H0s0O1rPmTIFPXBaEH32FK_LuqbKK7miBQjlsKw/exec';
 
 // Pomocnicze funkcje
 const formatCurrency = (amount) => {
@@ -11,45 +10,9 @@ const formatCurrency = (amount) => {
   }).format(amount);
 };
 
-/**
- * Formatuje datę z formatu YYYY-MM-DD na string w formacie DD-MM-RRRR
- * Jawnie parsuje datę bez new Date() aby uniknąć problemów ze strefą czasową
- */
 const formatDate = (dateString) => {
-  if (!dateString) return '';
-  
-  // Sprawdź czy to format YYYY-MM-DD
-  if (typeof dateString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-    const [year, month, day] = dateString.split('-');
-    // Stwórz datę z jawnie podanymi komponentami aby uniknąć interpretacji strefy czasowej
-    // Używamy new Date(year, month-1, day) zamiast new Date(string)
-    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-    return date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  }
-  
-  // Fallback jeśli format jest inny
-  try {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  } catch {
-    return dateString;
-  }
-};
-
-/**
- * Parsuje datę z formatu YYYY-MM-DD bezpośrednio bez niejawnej konwersji
- */
-const parseDate = (dateString) => {
-  if (!dateString) return new Date();
-  
-  // Jeśli format to YYYY-MM-DD, parsuj jawnie
-  if (typeof dateString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-    const [year, month, day] = dateString.split('-').map(Number);
-    return new Date(year, month - 1, day);
-  }
-  
-  // Fallback
-  return new Date(dateString);
+  const date = new Date(dateString);
+  return date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
 const getCurrentMonth = () => {
@@ -111,6 +74,12 @@ const Icons = {
       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
     </svg>
   ),
+  Edit: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
+      <path d="m15 5 4 4"></path>
+    </svg>
+  ),
   Loader: () => (
     <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
@@ -147,15 +116,38 @@ const SummaryCard = ({ title, amount, icon, type }) => {
 };
 
 // Komponent formularza transakcji
-const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading }) => {
-  const [formData, setFormData] = useState({
-    data: new Date().toISOString().split('T')[0],
-    typ: 'Wydatek',
-    kwota: '',
-    kategoria: '',
-    podkategoria: '',
-    osoba: osoby[0] || '',
-    komentarz: ''
+const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading, editData }) => {
+  const isEditMode = !!editData;
+  
+  const [formData, setFormData] = useState(() => {
+    if (editData) {
+      // Normalizuj datę do formatu YYYY-MM-DD
+      let normalizedDate = editData.data;
+      if (editData.data) {
+        const d = new Date(editData.data);
+        if (!isNaN(d.getTime())) {
+          normalizedDate = d.toISOString().split('T')[0];
+        }
+      }
+      return {
+        data: normalizedDate,
+        typ: editData.typ || 'Wydatek',
+        kwota: String(editData.kwota || ''),
+        kategoria: editData.kategoria || '',
+        podkategoria: editData.podkategoria || '',
+        osoba: editData.osoba || osoby[0] || '',
+        komentarz: editData.komentarz || ''
+      };
+    }
+    return {
+      data: new Date().toISOString().split('T')[0],
+      typ: 'Wydatek',
+      kwota: '',
+      kategoria: '',
+      podkategoria: '',
+      osoba: osoby[0] || '',
+      komentarz: ''
+    };
   });
   
   const dostepneKategorie = kategorie[formData.typ] || {};
@@ -193,7 +185,9 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading }) => 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-xl font-semibold text-gray-800">Nowa transakcja</h2>
+          <h2 className="text-xl font-semibold text-gray-800">
+            {isEditMode ? 'Edytuj transakcję' : 'Nowa transakcja'}
+          </h2>
           <button 
             onClick={onClose}
             className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
@@ -213,7 +207,7 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading }) => 
                 className={`flex-1 rounded-xl py-3 px-4 font-medium transition-all ${
                   formData.typ === typ
                     ? typ === 'Wydatek' 
-                      ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' 
+                      ? 'bg-rose-500 text-white shadow-lg shadow-rose-200'
                       : 'bg-emerald-500 text-white shadow-lg shadow-emerald-200'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
@@ -240,7 +234,7 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading }) => 
                 type="number"
                 step="0.01"
                 min="0"
-                placeholder="0,00"
+                placeholder="0.00"
                 value={formData.kwota}
                 onChange={e => setFormData(prev => ({ ...prev, kwota: e.target.value }))}
                 className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
@@ -320,8 +314,8 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading }) => 
             disabled={isLoading || !formData.kwota || !formData.kategoria}
             className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 py-4 font-semibold text-white shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {isLoading ? <Icons.Loader /> : <Icons.Plus />}
-            {isLoading ? 'Zapisywanie...' : 'Dodaj transakcję'}
+            {isLoading ? <Icons.Loader /> : isEditMode ? <Icons.Edit /> : <Icons.Plus />}
+            {isLoading ? 'Zapisywanie...' : isEditMode ? 'Zapisz zmiany' : 'Dodaj transakcję'}
           </button>
         </form>
       </div>
@@ -330,49 +324,11 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading }) => 
 };
 
 // Komponent pojedynczej transakcji
-const TransactionItem = ({ transaction, onDelete }) => {
-  const [swipeOffset, setSwipeOffset] = useState(0);
+const TransactionItem = ({ transaction, onDelete, onEdit }) => {
   const isExpense = transaction.typ === 'Wydatek';
   
-  const handlers = useSwipeable({
-    onSwipedRight: () => {
-      if (window.confirm('Usunąć tę transakcję?')) {
-        onDelete(transaction.id);
-      }
-      setSwipeOffset(0);
-    },
-    onSwiping: (eventData) => {
-      // Tylko w prawo i max 100px
-      if (eventData.deltaX > 0) {
-        setSwipeOffset(Math.min(eventData.deltaX, 100));
-      }
-    },
-    onSwiped: () => {
-      setSwipeOffset(0);
-    },
-    trackMouse: false, // Tylko touch, nie mysz
-    delta: 10 // Minimalna odległość do wykrycia swipe
-  });
-  
   return (
-    <div 
-      {...handlers}
-      className="group relative flex items-center gap-4 rounded-2xl bg-white p-4 shadow-sm hover:shadow-md transition-shadow border border-gray-100"
-      style={{
-        transform: `translateX(${swipeOffset}px)`,
-        transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none'
-      }}
-    >
-      {/* Tło z ikoną usuwania - pokazuje się przy swipe */}
-      {swipeOffset > 0 && (
-        <div 
-          className="absolute left-0 top-0 bottom-0 flex items-center px-4 text-rose-500"
-          style={{ width: `${swipeOffset}px` }}
-        >
-          <Icons.Trash />
-        </div>
-      )}
-      
+    <div className="group flex items-center gap-4 rounded-2xl bg-white p-4 shadow-sm hover:bg-gray-50 transition-colors border border-gray-100">
       <div className={`rounded-xl p-3 ${isExpense ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
         {isExpense ? <Icons.TrendingDown /> : <Icons.TrendingUp />}
       </div>
@@ -400,8 +356,15 @@ const TransactionItem = ({ transaction, onDelete }) => {
           {isExpense ? '-' : '+'}{formatCurrency(transaction.kwota)}
         </p>
         <button
+          onClick={() => onEdit(transaction)}
+          className="opacity-0 group-hover:opacity-100 w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:bg-indigo-100 hover:text-indigo-600 transition-[opacity,colors]"
+          title="Edytuj"
+        >
+          <Icons.Edit />
+        </button>
+        <button
           onClick={() => onDelete(transaction.id)}
-          className="md:opacity-0 md:group-hover:opacity-100 rounded-lg p-2 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all"
+          className="opacity-0 group-hover:opacity-100 w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-[opacity,colors]"
           title="Usuń"
         >
           <Icons.Trash />
@@ -421,6 +384,7 @@ export default function BudgetApp() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState(null);
   const [error, setError] = useState(null);
   
   // Klucz cache dla transakcji danego miesiąca
@@ -521,6 +485,47 @@ export default function BudgetApp() {
     }
   };
   
+  // Edycja transakcji
+  const handleEditTransaction = async (transakcja) => {
+    setIsSaving(true);
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'updateTransakcja',
+          id: editingTransaction.id,
+          transakcja
+        })
+      });
+      const result = await res.json();
+      
+      if (result.success) {
+        await fetchData();
+        setEditingTransaction(null);
+        setShowForm(false);
+      } else {
+        setError('Nie udało się zaktualizować transakcji');
+      }
+    } catch (err) {
+      setError('Błąd podczas aktualizacji');
+      console.error(err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+  
+  // Otwórz formularz edycji
+  const handleOpenEdit = (transaction) => {
+    setEditingTransaction(transaction);
+    setShowForm(true);
+  };
+  
+  // Zamknij formularz (reset trybu edycji)
+  const handleCloseForm = () => {
+    setShowForm(false);
+    setEditingTransaction(null);
+  };
+  
   // Usuwanie transakcji
   const handleDeleteTransaction = async (id) => {
     if (!window.confirm('Czy na pewno chcesz usunąć tę transakcję?')) return;
@@ -570,9 +575,8 @@ export default function BudgetApp() {
   const bilans = przychody - wydatki;
   
   // Sortowanie transakcji (najnowsze pierwsze)
-  // Użyj parseDate aby prawidłowo sortować daty w formacie YYYY-MM-DD
   const sortedTransakcje = [...transakcje].sort((a, b) => 
-    parseDate(b.data) - parseDate(a.data)
+    new Date(b.data) - new Date(a.data)
   );
   
   return (
@@ -600,16 +604,16 @@ export default function BudgetApp() {
             
             {/* Nawigacja miesięcy */}
             <div className="flex items-center gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
-              <button 
+              <button
                 onClick={() => changeMonth(-1)}
                 className="rounded-xl p-2 text-gray-600 hover:bg-gray-100 transition-colors"
               >
                 <Icons.ChevronLeft />
               </button>
-              <span className="px-3 py-1 font-medium text-gray-700 min-w-[140px] text-center capitalize">
+              <span className="px-3 py-1 text-sm font-medium text-gray-700 min-w-[140px] text-center capitalize">
                 {getMonthName(currentPeriod.month, currentPeriod.year)}
               </span>
-              <button 
+              <button
                 onClick={() => changeMonth(1)}
                 className="rounded-xl p-2 text-gray-600 hover:bg-gray-100 transition-colors"
               >
@@ -620,21 +624,21 @@ export default function BudgetApp() {
         </div>
       </header>
       
+      {/* Główna zawartość */}
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-        {/* Błąd */}
+        {/* Komunikat błędu */}
         {error && (
-          <div className="rounded-2xl bg-rose-50 border border-rose-200 p-4 text-rose-700">
+          <div className="rounded-2xl bg-rose-50 border border-rose-200 p-4 text-rose-700 text-sm">
             {error}
             <button 
               onClick={() => setError(null)} 
-              className="ml-2 underline hover:no-underline"
+              className="ml-2 font-medium hover:underline"
             >
               Zamknij
             </button>
           </div>
         )}
         
-        {/* Ładowanie */}
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
             <div className="flex items-center gap-3 text-gray-500">
@@ -698,6 +702,7 @@ export default function BudgetApp() {
                       key={transaction.id}
                       transaction={transaction}
                       onDelete={handleDeleteTransaction}
+                      onEdit={handleOpenEdit}
                     />
                   ))
                 )}
@@ -710,11 +715,12 @@ export default function BudgetApp() {
       {/* Formularz */}
       {showForm && (
         <TransactionForm
-          onSubmit={handleAddTransaction}
-          onClose={() => setShowForm(false)}
+          onSubmit={editingTransaction ? handleEditTransaction : handleAddTransaction}
+          onClose={handleCloseForm}
           kategorie={kategorie}
           osoby={osoby}
           isLoading={isSaving}
+          editData={editingTransaction}
         />
       )}
       
