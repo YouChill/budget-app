@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSwipeable } from 'react-swipeable';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -330,10 +331,48 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading }) => 
 
 // Komponent pojedynczej transakcji
 const TransactionItem = ({ transaction, onDelete }) => {
+  const [swipeOffset, setSwipeOffset] = useState(0);
   const isExpense = transaction.typ === 'Wydatek';
   
+  const handlers = useSwipeable({
+    onSwipedRight: () => {
+      if (window.confirm('Usunąć tę transakcję?')) {
+        onDelete(transaction.id);
+      }
+      setSwipeOffset(0);
+    },
+    onSwiping: (eventData) => {
+      // Tylko w prawo i max 100px
+      if (eventData.deltaX > 0) {
+        setSwipeOffset(Math.min(eventData.deltaX, 100));
+      }
+    },
+    onSwiped: () => {
+      setSwipeOffset(0);
+    },
+    trackMouse: false, // Tylko touch, nie mysz
+    delta: 10 // Minimalna odległość do wykrycia swipe
+  });
+  
   return (
-    <div className="group flex items-center gap-4 rounded-2xl bg-white p-4 shadow-sm hover:shadow-md transition-shadow border border-gray-100">
+    <div 
+      {...handlers}
+      className="group relative flex items-center gap-4 rounded-2xl bg-white p-4 shadow-sm hover:shadow-md transition-shadow border border-gray-100"
+      style={{
+        transform: `translateX(${swipeOffset}px)`,
+        transition: swipeOffset === 0 ? 'transform 0.2s ease-out' : 'none'
+      }}
+    >
+      {/* Tło z ikoną usuwania - pokazuje się przy swipe */}
+      {swipeOffset > 0 && (
+        <div 
+          className="absolute left-0 top-0 bottom-0 flex items-center px-4 text-rose-500"
+          style={{ width: `${swipeOffset}px` }}
+        >
+          <Icons.Trash />
+        </div>
+      )}
+      
       <div className={`rounded-xl p-3 ${isExpense ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
         {isExpense ? <Icons.TrendingDown /> : <Icons.TrendingUp />}
       </div>
@@ -362,7 +401,7 @@ const TransactionItem = ({ transaction, onDelete }) => {
         </p>
         <button
           onClick={() => onDelete(transaction.id)}
-          className="opacity-0 group-hover:opacity-100 rounded-lg p-2 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all"
+          className="md:opacity-0 md:group-hover:opacity-100 rounded-lg p-2 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all"
           title="Usuń"
         >
           <Icons.Trash />
