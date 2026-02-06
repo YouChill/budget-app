@@ -149,7 +149,7 @@ const ChartIcon = () => (
 // Komponent sam filtruje Wydatki i grupuje po kategoriach.
 // Nie wykonuje żadnych zapytań API.
 // ============================================
-export default function CategoryCharts({ transakcje = [] }) {
+export default function CategoryCharts({ transakcje = [], budgets = [], currentPeriod = null }) {
   const [activeView, setActiveView] = useState('pie');
 
   // ---- Dane do wykresu kołowego ----
@@ -318,29 +318,52 @@ export default function CategoryCharts({ transakcje = [] }) {
 
         {/* ---- Szczegółowa lista kategorii ---- */}
         <div className="mt-6 space-y-2">
-          {pieData.map((item, index) => (
-            <div
-              key={item.name}
-              className="flex items-center gap-3 rounded-xl bg-white/80 px-4 py-2.5 hover:bg-white transition-colors"
-            >
+          {pieData.map((item, index) => {
+            const budgetForCat = (budgets || []).find(b => b.kategoria === item.name && (!currentPeriod || (Number(b.miesiac) === Number(currentPeriod.month) && Number(b.rok) === Number(currentPeriod.year))));
+            const limit = budgetForCat ? Number(budgetForCat.limit) : null;
+            const percent = limit ? Math.min(item.value / limit, 1) : null;
+            let barColor = 'bg-emerald-400';
+            if (percent !== null) {
+              if (percent >= 1) barColor = 'bg-rose-500';
+              else if (percent >= 0.8) barColor = 'bg-amber-400';
+            }
+
+            return (
               <div
-                className="w-3 h-3 rounded-full flex-shrink-0"
-                style={{
-                  backgroundColor:
-                    CATEGORY_COLORS[index % CATEGORY_COLORS.length],
-                }}
-              />
-              <span className="flex-1 text-sm text-gray-700 font-medium">
-                {item.name}
-              </span>
-              <span className="text-sm font-semibold text-gray-800">
-                {formatCurrency(item.value)}
-              </span>
-              <span className="text-xs text-gray-400 w-12 text-right">
-                {(item.percent * 100).toFixed(1)}%
-              </span>
-            </div>
-          ))}
+                key={item.name}
+                className="flex items-center gap-3 rounded-xl bg-white/80 px-4 py-2.5 hover:bg-white transition-colors"
+              >
+                <div
+                  className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{
+                    backgroundColor:
+                      CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+                  }}
+                />
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-700 font-medium">{item.name}</span>
+                    <span className="text-sm font-semibold text-gray-800">{formatCurrency(item.value)}</span>
+                  </div>
+                  {limit !== null && (
+                    <div className="mt-2">
+                      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                        <div className={`${barColor} h-2`} style={{ width: `${(item.value / limit) * 100}%` }} />
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-gray-500 mt-1">
+                        <span>{Math.round((item.value / limit) * 100)}% z {formatCurrency(limit)}</span>
+                        {item.value / limit >= 1 ? (
+                          <span className="text-rose-600 font-semibold">Przekroczono</span>
+                        ) : item.value / limit >= 0.8 ? (
+                          <span className="text-amber-600 font-semibold">Blisko limitu</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

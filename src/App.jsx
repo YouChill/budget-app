@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import CategoryCharts from '/components/CategoryCharts';
+import Budgets from '/components/Budgets';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -986,6 +987,8 @@ export default function BudgetApp() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [budgets, setBudgets] = useState([]);
+  const [showBudgets, setShowBudgets] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -1037,6 +1040,16 @@ export default function BudgetApp() {
       setTransakcje(noweTransakcje);
       setKategorie(noweKategorie);
       setOsoby(noweOsoby);
+      // Pobierz budżety dla okresu
+      try {
+        const bRes = await fetch(`${API_URL}?action=getBudgets&miesiac=${currentPeriod.month}&rok=${currentPeriod.year}`);
+        const bData = await bRes.json();
+        if (!bData.error) {
+          setBudgets(Array.isArray(bData) ? bData : []);
+        }
+      } catch (err) {
+        console.warn('Nie udało się pobrać budżetów', err);
+      }
       
       // Zapisz do cache
       sessionStorage.setItem(cacheKey, JSON.stringify(noweTransakcje));
@@ -1216,6 +1229,15 @@ export default function BudgetApp() {
             </div>
             
             <div className="flex items-center gap-2">
+              {/* Przycisk budżetów */}
+              <button
+                onClick={() => setShowBudgets(true)}
+                className="rounded-xl p-2.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-all"
+                title="Budżety"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10v6a2 2 0 0 1-2 2H7"/><path d="M3 6h18"/><path d="M8 6v12"/></svg>
+              </button>
+
               {/* Przycisk ustawień */}
               <button
                 onClick={() => setShowSettings(true)}
@@ -1295,7 +1317,7 @@ export default function BudgetApp() {
             </div>
             
             {/* Wykresy kategorii */}
-            <CategoryCharts transakcje={transakcje} />
+            <CategoryCharts transakcje={transakcje} budgets={budgets} currentPeriod={currentPeriod} />
 
             {/* Lista transakcji */}
             <div className="rounded-3xl bg-white/50 backdrop-blur border border-gray-100 shadow-sm overflow-hidden">
@@ -1361,6 +1383,26 @@ export default function BudgetApp() {
           onKategorieChange={handleKategorieChange}
           onOsobyChange={handleOsobyChange}
           apiUrl={API_URL}
+        />
+      )}
+
+      {showBudgets && (
+        <Budgets
+          onClose={() => setShowBudgets(false)}
+          kategorie={kategorie}
+          apiUrl={API_URL}
+          month={currentPeriod.month}
+          year={currentPeriod.year}
+          budgets={budgets}
+          onSaved={async () => {
+            try {
+              const bRes = await fetch(`${API_URL}?action=getBudgets&miesiac=${currentPeriod.month}&rok=${currentPeriod.year}`);
+              const bData = await bRes.json();
+              if (!bData.error) setBudgets(Array.isArray(bData) ? bData : []);
+            } catch (err) {
+              console.warn('Nie udało się odświeżyć budżetów', err);
+            }
+          }}
         />
       )}
       

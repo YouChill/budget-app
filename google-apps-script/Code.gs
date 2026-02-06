@@ -102,6 +102,15 @@ function initializeSpreadsheet() {
     osoby.setFrozenRows(1);
     osoby.getRange('A2:A3').setValues([['Mąż'], ['Żona']]);
   }
+
+  // Zakładka: Budżety
+  let budzety = ss.getSheetByName('Budżety');
+  if (!budzety) {
+    budzety = ss.insertSheet('Budżety');
+    budzety.getRange('A1:D1').setValues([['Kategoria', 'Limit', 'Miesiąc', 'Rok']]);
+    budzety.getRange('A1:D1').setFontWeight('bold');
+    budzety.setFrozenRows(1);
+  }
   
   return 'Arkusz zainicjalizowany pomyślnie!';
 }
@@ -117,6 +126,9 @@ function doGet(e) {
     switch(action) {
       case 'getTransakcje':
         result = getTransakcje(e.parameter.miesiac, e.parameter.rok);
+        break;
+      case 'getBudgets':
+        result = getBudgets(e.parameter.miesiac, e.parameter.rok);
         break;
       case 'getKategorie':
         result = getKategorie();
@@ -169,6 +181,9 @@ function doPost(e) {
         break;
       case 'deleteOsoba':
         result = deleteOsoba(data.osoba);
+        break;
+      case 'setBudget':
+        result = setBudget(data.budget);
         break;
       default:
         result = {error: 'Nieznana akcja'};
@@ -502,4 +517,67 @@ function deleteOsoba(osoba) {
   }
   
   return {error: 'Nie znaleziono osoby'};
+}
+
+// ============================================
+// BUDŻETY
+// Kolumny w arkuszu 'Budżety': Kategoria | Limit | Miesiąc | Rok
+// ============================================
+function getBudgets(miesiac, rok) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('Budżety');
+  if (!sheet) return [];
+
+  const data = sheet.getDataRange().getValues();
+  const budgets = [];
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row[0]) continue;
+    const bMonth = row[2] ? Number(row[2]) : null;
+    const bYear = row[3] ? Number(row[3]) : null;
+
+    if (miesiac && rok) {
+      if (Number(miesiac) !== bMonth || Number(rok) !== bYear) continue;
+    }
+
+    budgets.push({
+      kategoria: row[0],
+      limit: Number(row[1]) || 0,
+      miesiac: bMonth,
+      rok: bYear
+    });
+  }
+
+  return budgets;
+}
+
+function setBudget(budget) {
+  if (!budget || !budget.kategoria) return { success: false, error: 'Brak danych budżetu' };
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('Budżety');
+  if (!sheet) return { success: false, error: 'Arkusz Budżety nie istnieje' };
+
+  const data = sheet.getDataRange().getValues();
+  const targetMonth = budget.miesiac ? Number(budget.miesiac) : null;
+  const targetYear = budget.rok ? Number(budget.rok) : null;
+  const limit = Number(budget.limit) || 0;
+
+  // Szukaj istniejącego wpisu (kategoria + miesiąc + rok)
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const rowCat = row[0];
+    const rowMonth = row[2] ? Number(row[2]) : null;
+    const rowYear = row[3] ? Number(row[3]) : null;
+
+    if (rowCat === budget.kategoria && rowMonth === targetMonth && rowYear === targetYear) {
+      sheet.getRange(i + 1, 2).setValue(limit);
+      return { success: true, message: 'Zaktualizowano budżet' };
+    }
+  }
+
+  // Jeśli nie znaleziono — dopisz nowy wiersz
+  sheet.appendRow([budget.kategoria, limit, targetMonth || '', targetYear || '']);
+  return { success: true, message: 'Dodano budżet' };
 }
