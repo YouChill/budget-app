@@ -164,6 +164,9 @@ function doPost(e) {
       case 'addTransakcja':
         result = addTransakcja(data.transakcja);
         break;
+      case 'addTransakcjeBatch':
+        result = addTransakcjeBatch(data.transakcje);
+        break;
       case 'updateTransakcja':
         result = updateTransakcja(data.id, data.transakcja);
         break;
@@ -383,6 +386,70 @@ function addTransakcja(transakcja) {
   ]);
   
   return { success: true, id: id, message: 'Transakcja została dodana pomyślnie' };
+}
+
+function addTransakcjeBatch(transakcje) {
+  // Waliduj czy to tablica
+  if (!Array.isArray(transakcje)) {
+    return { success: false, error: 'Transakcje muszą być w formacie tablicy' };
+  }
+  
+  if (transakcje.length === 0) {
+    return { success: false, error: 'Brak transakcji do importu' };
+  }
+  
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('Transakcje');
+  
+  const rows = [];
+  const successIds = [];
+  const errors = [];
+  
+  // Waliduj i przygotuj wszystkie wiersze
+  for (let i = 0; i < transakcje.length; i++) {
+    const transakcja = transakcje[i];
+    
+    // Waliduj dane
+    const validation = validateTransaction(transakcja);
+    if (!validation.valid) {
+      errors.push({ index: i, error: validation.error });
+      continue;
+    }
+    
+    const id = Utilities.getUuid();
+    rows.push([
+      id,
+      transakcja.data,
+      transakcja.typ,
+      Number(transakcja.kwota),
+      transakcja.kategoria,
+      transakcja.podkategoria || '',
+      transakcja.osoba || '',
+      transakcja.komentarz || ''
+    ]);
+    
+    successIds.push(id);
+  }
+  
+  // Jeśli są błędy i żadne transakcje nie przeszły walidacji
+  if (rows.length === 0) {
+    return { 
+      success: false, 
+      error: `Brak ważnych transakcji do importu. Błędy: ${errors.map(e => `Wiersz ${e.index + 1}: ${e.error}`).join('; ')}`
+    };
+  }
+  
+  // Dodaj wszystkie prawidłowe wiersze naraz (batch insert)
+  if (rows.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  }
+  
+  return {
+    success: true,
+    count: rows.length,
+    ids: successIds,
+    message: `Zaimportowano ${rows.length} transakcji${errors.length > 0 ? `. Pominięto ${errors.length} transakcji z błędami.` : '.'}`
+  };
 }
 
 function updateTransakcja(id, transakcja) {
