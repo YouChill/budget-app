@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import CategoryCharts from '/components/CategoryCharts';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -670,6 +671,10 @@ export default function BudgetApp() {
               />
             </div>
             
+
+            // Komponent wykresów (placeholder)
+            <CategoryCharts transakcje={transakcje} />
+
             {/* Lista transakcji */}
             <div className="rounded-3xl bg-white/50 backdrop-blur border border-gray-100 shadow-sm overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
