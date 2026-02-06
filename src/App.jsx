@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import CategoryCharts from '/components/CategoryCharts';
 import Budgets from '/components/Budgets';
+import CSVImport from '/components/CSVImport';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -991,6 +992,7 @@ export default function BudgetApp() {
   const [showBudgets, setShowBudgets] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showCSVImport, setShowCSVImport] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [error, setError] = useState(null);
   
@@ -1229,6 +1231,15 @@ export default function BudgetApp() {
             </div>
             
             <div className="flex items-center gap-2">
+              {/* Przycisk importu CSV */}
+              <button
+                onClick={() => setShowCSVImport(true)}
+                className="rounded-xl p-2.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-all"
+                title="Import z CSV"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              </button>
+
               {/* Przycisk budżetów */}
               <button
                 onClick={() => setShowBudgets(true)}
@@ -1402,6 +1413,18 @@ export default function BudgetApp() {
             } catch (err) {
               console.warn('Nie udało się odświeżyć budżetów', err);
             }
+          }}
+        />
+      )}
+
+      {showCSVImport && (
+        <CSVImport
+          onClose={() => setShowCSVImport(false)}
+          kategorie={kategorie}
+          apiUrl={API_URL}
+          onSaved={() => {
+            setShowCSVImport(false);
+            fetchData();
           }}
         />
       )}
