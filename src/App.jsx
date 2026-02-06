@@ -63,6 +63,16 @@ const Icons = {
       <polyline points="9 18 15 12 9 6"></polyline>
     </svg>
   ),
+  ChevronDown: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="6 9 12 15 18 9"></polyline>
+    </svg>
+  ),
+  ChevronUp: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="18 15 12 9 6 15"></polyline>
+    </svg>
+  ),
   X: () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -79,6 +89,31 @@ const Icons = {
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
       <path d="m15 5 4 4"></path>
+    </svg>
+  ),
+  Settings: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
+    </svg>
+  ),
+  User: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+      <circle cx="12" cy="7" r="4"></circle>
+    </svg>
+  ),
+  Tag: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+      <line x1="7" y1="7" x2="7.01" y2="7"></line>
+    </svg>
+  ),
+  AlertTriangle: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+      <line x1="12" y1="9" x2="12" y2="13"></line>
+      <line x1="12" y1="17" x2="12.01" y2="17"></line>
     </svg>
   ),
   Loader: () => (
@@ -375,7 +410,574 @@ const TransactionItem = ({ transaction, onDelete, onEdit }) => {
   );
 };
 
-// Główna aplikacja
+// ============================================
+// PANEL USTAWIEŃ - Zarządzanie słownikami
+// ============================================
+const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChange, onOsobyChange, apiUrl }) => {
+  const [activeTab, setActiveTab] = useState('kategorie');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [settingsError, setSettingsError] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
+  
+  // Stan formularza nowej kategorii
+  const [newKatTyp, setNewKatTyp] = useState('Wydatek');
+  const [newKatNazwa, setNewKatNazwa] = useState('');
+  const [newPodkatNazwa, setNewPodkatNazwa] = useState('');
+  
+  // Stan formularza nowej osoby
+  const [newOsoba, setNewOsoba] = useState('');
+  
+  // Stan rozwijanych kategorii
+  const [expandedKat, setExpandedKat] = useState({});
+  
+  // Dialog potwierdzenia
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  
+  const showSuccess = (msg) => {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(null), 3000);
+  };
+  
+  const showError = (msg) => {
+    setSettingsError(msg);
+    setTimeout(() => setSettingsError(null), 5000);
+  };
+  
+  // Sprawdź ile transakcji ma dana kategoria/podkategoria
+  const countTransactionsForCategory = (typ, kategoria, podkategoria = null) => {
+    return transakcje.filter(t => {
+      if (t.typ !== typ || t.kategoria !== kategoria) return false;
+      if (podkategoria) return t.podkategoria === podkategoria;
+      return true;
+    }).length;
+  };
+  
+  // Sprawdź ile transakcji ma dana osoba
+  const countTransactionsForOsoba = (osoba) => {
+    return transakcje.filter(t => t.osoba === osoba).length;
+  };
+  
+  // Toggle rozwinięcia kategorii
+  const toggleExpand = (key) => {
+    setExpandedKat(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+  
+  // === KATEGORIE ===
+  
+  const handleAddKategoria = async () => {
+    const nazwa = newKatNazwa.trim();
+    const podkat = newPodkatNazwa.trim();
+    
+    if (!nazwa) {
+      showError('Wpisz nazwę kategorii');
+      return;
+    }
+    
+    const istniejaceKategorie = kategorie[newKatTyp] || {};
+    if (!podkat && istniejaceKategorie[nazwa]) {
+      showError(`Kategoria "${nazwa}" już istnieje dla typu ${newKatTyp}`);
+      return;
+    }
+    if (podkat && istniejaceKategorie[nazwa] && istniejaceKategorie[nazwa].includes(podkat)) {
+      showError(`Podkategoria "${podkat}" już istnieje w "${nazwa}"`);
+      return;
+    }
+    
+    setIsProcessing(true);
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'addKategoria',
+          typ: newKatTyp,
+          kategoria: nazwa,
+          podkategoria: podkat
+        })
+      });
+      const result = await res.json();
+      
+      if (result.success) {
+        const updated = { ...kategorie };
+        if (!updated[newKatTyp]) updated[newKatTyp] = {};
+        if (!updated[newKatTyp][nazwa]) updated[newKatTyp][nazwa] = [];
+        if (podkat && !updated[newKatTyp][nazwa].includes(podkat)) {
+          updated[newKatTyp][nazwa].push(podkat);
+        }
+        onKategorieChange(updated);
+        
+        setNewKatNazwa('');
+        setNewPodkatNazwa('');
+        showSuccess(podkat ? `Dodano podkategorię "${podkat}" do "${nazwa}"` : `Dodano kategorię "${nazwa}"`);
+      } else {
+        showError(result.error || 'Nie udało się dodać kategorii');
+      }
+    } catch (err) {
+      showError('Błąd połączenia z serwerem');
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
+  const handleDeleteKategoria = (typ, kategoria, podkategoria = null) => {
+    const transCount = countTransactionsForCategory(typ, kategoria, podkategoria);
+    const label = podkategoria ? `podkategorię "${podkategoria}"` : `kategorię "${kategoria}" i wszystkie jej podkategorie`;
+    
+    if (transCount > 0) {
+      setConfirmDialog({
+        title: 'Uwaga — kategoria w użyciu!',
+        message: `${podkategoria ? 'Ta podkategoria' : 'Ta kategoria'} ma przypisanych ${transCount} transakcji. Usunięcie nie usunie transakcji, ale nie będą miały przypisanej kategorii w słowniku. Czy na pewno chcesz usunąć ${label}?`,
+        isWarning: true,
+        onConfirm: () => executeDeleteKategoria(typ, kategoria, podkategoria)
+      });
+    } else {
+      setConfirmDialog({
+        title: 'Potwierdzenie usunięcia',
+        message: `Czy na pewno chcesz usunąć ${label}?`,
+        isWarning: false,
+        onConfirm: () => executeDeleteKategoria(typ, kategoria, podkategoria)
+      });
+    }
+  };
+  
+  const executeDeleteKategoria = async (typ, kategoria, podkategoria) => {
+    setConfirmDialog(null);
+    setIsProcessing(true);
+    
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'deleteKategoria',
+          typ,
+          kategoria,
+          podkategoria: podkategoria || ''
+        })
+      });
+      const result = await res.json();
+      
+      if (result.success) {
+        const updated = { ...kategorie };
+        if (podkategoria) {
+          updated[typ][kategoria] = updated[typ][kategoria].filter(p => p !== podkategoria);
+        } else {
+          delete updated[typ][kategoria];
+        }
+        onKategorieChange(updated);
+        showSuccess(podkategoria ? `Usunięto podkategorię "${podkategoria}"` : `Usunięto kategorię "${kategoria}"`);
+      } else {
+        showError(result.error || 'Nie udało się usunąć kategorii');
+      }
+    } catch (err) {
+      showError('Błąd połączenia z serwerem');
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
+  // === OSOBY ===
+  
+  const handleAddOsoba = async () => {
+    const nazwa = newOsoba.trim();
+    if (!nazwa) {
+      showError('Wpisz nazwę osoby');
+      return;
+    }
+    if (osoby.includes(nazwa)) {
+      showError(`Osoba "${nazwa}" już istnieje`);
+      return;
+    }
+    
+    setIsProcessing(true);
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'addOsoba',
+          osoba: nazwa
+        })
+      });
+      const result = await res.json();
+      
+      if (result.success) {
+        onOsobyChange([...osoby, nazwa]);
+        setNewOsoba('');
+        showSuccess(`Dodano osobę "${nazwa}"`);
+      } else {
+        showError(result.error || 'Nie udało się dodać osoby');
+      }
+    } catch (err) {
+      showError('Błąd połączenia z serwerem');
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
+  const handleDeleteOsoba = (osoba) => {
+    const transCount = countTransactionsForOsoba(osoba);
+    
+    if (transCount > 0) {
+      setConfirmDialog({
+        title: 'Uwaga — osoba w użyciu!',
+        message: `Osoba "${osoba}" ma przypisanych ${transCount} transakcji. Usunięcie nie usunie transakcji, ale osoba nie będzie dostępna w formularzu. Czy na pewno chcesz usunąć?`,
+        isWarning: true,
+        onConfirm: () => executeDeleteOsoba(osoba)
+      });
+    } else {
+      setConfirmDialog({
+        title: 'Potwierdzenie usunięcia',
+        message: `Czy na pewno chcesz usunąć osobę "${osoba}"?`,
+        isWarning: false,
+        onConfirm: () => executeDeleteOsoba(osoba)
+      });
+    }
+  };
+  
+  const executeDeleteOsoba = async (osoba) => {
+    setConfirmDialog(null);
+    setIsProcessing(true);
+    
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'deleteOsoba',
+          osoba
+        })
+      });
+      const result = await res.json();
+      
+      if (result.success) {
+        onOsobyChange(osoby.filter(o => o !== osoba));
+        showSuccess(`Usunięto osobę "${osoba}"`);
+      } else {
+        showError(result.error || 'Nie udało się usunąć osoby');
+      }
+    } catch (err) {
+      showError('Błąd połączenia z serwerem');
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
+  // Render listy kategorii dla danego typu
+  const renderKategorieList = (typ) => {
+    const katTypu = kategorie[typ] || {};
+    const entries = Object.entries(katTypu);
+    
+    if (entries.length === 0) {
+      return <p className="text-sm text-gray-400 py-4 text-center">Brak kategorii</p>;
+    }
+    
+    return entries.map(([nazwaKat, podkategorie]) => {
+      const key = `${typ}:${nazwaKat}`;
+      const isExpanded = expandedKat[key];
+      const transCount = countTransactionsForCategory(typ, nazwaKat);
+      
+      return (
+        <div key={key} className="border border-gray-100 rounded-xl overflow-hidden mb-2">
+          <div className="flex items-center gap-2 px-4 py-3 bg-gray-50/50">
+            <button
+              onClick={() => toggleExpand(key)}
+              className="flex items-center gap-2 flex-1 text-left"
+            >
+              {podkategorie.length > 0 ? (
+                isExpanded ? <Icons.ChevronUp /> : <Icons.ChevronDown />
+              ) : (
+                <span className="w-4" />
+              )}
+              <span className="font-medium text-gray-800">{nazwaKat}</span>
+              {podkategorie.length > 0 && (
+                <span className="text-xs text-gray-400">({podkategorie.length})</span>
+              )}
+              {transCount > 0 && (
+                <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">
+                  {transCount} trans.
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => handleDeleteKategoria(typ, nazwaKat)}
+              disabled={isProcessing}
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all disabled:opacity-50"
+              title={`Usuń kategorię ${nazwaKat}`}
+            >
+              <Icons.Trash />
+            </button>
+          </div>
+          
+          {isExpanded && podkategorie.length > 0 && (
+            <div className="border-t border-gray-100">
+              {podkategorie.map(podkat => {
+                const podTransCount = countTransactionsForCategory(typ, nazwaKat, podkat);
+                return (
+                  <div key={podkat} className="flex items-center gap-2 px-4 py-2.5 pl-10 hover:bg-gray-50 transition-colors">
+                    <span className="flex-1 text-sm text-gray-600">{podkat}</span>
+                    {podTransCount > 0 && (
+                      <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                        {podTransCount}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleDeleteKategoria(typ, nazwaKat, podkat)}
+                      disabled={isProcessing}
+                      className="rounded-lg p-1 text-gray-300 hover:bg-rose-100 hover:text-rose-600 transition-all disabled:opacity-50"
+                      title={`Usuń podkategorię ${podkat}`}
+                    >
+                      <Icons.Trash />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    });
+  };
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="w-full max-w-lg max-h-[90vh] rounded-3xl bg-white shadow-2xl flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-2 text-white">
+              <Icons.Settings />
+            </div>
+            <h2 className="text-xl font-semibold text-gray-800">Ustawienia</h2>
+          </div>
+          <button 
+            onClick={onClose}
+            className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+          >
+            <Icons.X />
+          </button>
+        </div>
+        
+        {/* Tabs */}
+        <div className="flex gap-1 px-6 pt-4 shrink-0">
+          <button
+            onClick={() => setActiveTab('kategorie')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              activeTab === 'kategorie'
+                ? 'bg-indigo-100 text-indigo-700'
+                : 'text-gray-500 hover:bg-gray-100'
+            }`}
+          >
+            <Icons.Tag />
+            Kategorie
+          </button>
+          <button
+            onClick={() => setActiveTab('osoby')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              activeTab === 'osoby'
+                ? 'bg-indigo-100 text-indigo-700'
+                : 'text-gray-500 hover:bg-gray-100'
+            }`}
+          >
+            <Icons.User />
+            Osoby
+          </button>
+        </div>
+        
+        {/* Komunikaty */}
+        <div className="px-6 pt-3 shrink-0">
+          {settingsError && (
+            <div className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700 mb-2">
+              {settingsError}
+            </div>
+          )}
+          {successMsg && (
+            <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700 mb-2">
+              {successMsg}
+            </div>
+          )}
+        </div>
+        
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {activeTab === 'kategorie' ? (
+            <div className="space-y-6">
+              {/* Formularz dodawania */}
+              <div className="rounded-2xl border border-gray-200 p-4 space-y-3">
+                <p className="text-sm font-medium text-gray-700">Dodaj kategorię / podkategorię</p>
+                
+                <div className="flex gap-2">
+                  {['Wydatek', 'Przychód'].map(typ => (
+                    <button
+                      key={typ}
+                      type="button"
+                      onClick={() => setNewKatTyp(typ)}
+                      className={`flex-1 rounded-xl py-2 px-3 text-sm font-medium transition-all ${
+                        newKatTyp === typ
+                          ? typ === 'Wydatek'
+                            ? 'bg-rose-500 text-white shadow-sm'
+                            : 'bg-emerald-500 text-white shadow-sm'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {typ}
+                    </button>
+                  ))}
+                </div>
+                
+                <input
+                  type="text"
+                  placeholder="Nazwa kategorii (np. Jedzenie)"
+                  value={newKatNazwa}
+                  onChange={e => setNewKatNazwa(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                  onKeyDown={e => e.key === 'Enter' && !newPodkatNazwa && handleAddKategoria()}
+                />
+                
+                <input
+                  type="text"
+                  placeholder="Podkategoria — opcjonalnie (np. Restauracje)"
+                  value={newPodkatNazwa}
+                  onChange={e => setNewPodkatNazwa(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                  onKeyDown={e => e.key === 'Enter' && handleAddKategoria()}
+                />
+                
+                <button
+                  onClick={handleAddKategoria}
+                  disabled={isProcessing || !newKatNazwa.trim()}
+                  className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 py-2.5 text-sm font-medium text-white shadow-sm hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {isProcessing ? <Icons.Loader /> : <Icons.Plus />}
+                  Dodaj
+                </button>
+              </div>
+              
+              {/* Lista kategorii - Wydatki */}
+              <div>
+                <h3 className="text-sm font-semibold text-rose-600 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                  Wydatki
+                </h3>
+                {renderKategorieList('Wydatek')}
+              </div>
+              
+              {/* Lista kategorii - Przychody */}
+              <div>
+                <h3 className="text-sm font-semibold text-emerald-600 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  Przychody
+                </h3>
+                {renderKategorieList('Przychód')}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Formularz dodawania osoby */}
+              <div className="rounded-2xl border border-gray-200 p-4 space-y-3">
+                <p className="text-sm font-medium text-gray-700">Dodaj osobę</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Imię lub nazwa osoby"
+                    value={newOsoba}
+                    onChange={e => setNewOsoba(e.target.value)}
+                    className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                    onKeyDown={e => e.key === 'Enter' && handleAddOsoba()}
+                  />
+                  <button
+                    onClick={handleAddOsoba}
+                    disabled={isProcessing || !newOsoba.trim()}
+                    className="rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    {isProcessing ? <Icons.Loader /> : <Icons.Plus />}
+                    Dodaj
+                  </button>
+                </div>
+              </div>
+              
+              {/* Lista osób */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wider mb-3">
+                  Osoby ({osoby.length})
+                </h3>
+                {osoby.length === 0 ? (
+                  <p className="text-sm text-gray-400 py-4 text-center">Brak osób</p>
+                ) : (
+                  <div className="space-y-2">
+                    {osoby.map(osoba => {
+                      const transCount = countTransactionsForOsoba(osoba);
+                      return (
+                        <div key={osoba} className="flex items-center gap-3 rounded-xl border border-gray-100 px-4 py-3 hover:bg-gray-50 transition-colors">
+                          <div className="rounded-lg bg-indigo-100 p-2 text-indigo-600">
+                            <Icons.User />
+                          </div>
+                          <span className="flex-1 font-medium text-gray-800">{osoba}</span>
+                          {transCount > 0 && (
+                            <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">
+                              {transCount} trans.
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleDeleteOsoba(osoba)}
+                            disabled={isProcessing}
+                            className="rounded-lg p-1.5 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all disabled:opacity-50"
+                            title={`Usuń osobę ${osoba}`}
+                          >
+                            <Icons.Trash />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* Dialog potwierdzenia */}
+      {confirmDialog && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              {confirmDialog.isWarning && (
+                <div className="rounded-lg bg-amber-100 p-2 text-amber-600">
+                  <Icons.AlertTriangle />
+                </div>
+              )}
+              <h3 className="text-lg font-semibold text-gray-800">{confirmDialog.title}</h3>
+            </div>
+            <p className="text-sm text-gray-600 leading-relaxed">{confirmDialog.message}</p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setConfirmDialog(null)}
+                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Anuluj
+              </button>
+              <button
+                onClick={confirmDialog.onConfirm}
+                className={`flex-1 rounded-xl py-2.5 text-sm font-medium text-white transition-all ${
+                  confirmDialog.isWarning
+                    ? 'bg-amber-500 hover:bg-amber-600'
+                    : 'bg-rose-500 hover:bg-rose-600'
+                }`}
+              >
+                Usuń
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// GŁÓWNA APLIKACJA
+// ============================================
 export default function BudgetApp() {
   const [currentPeriod, setCurrentPeriod] = useState(getCurrentMonth());
   const [transakcje, setTransakcje] = useState([]);
@@ -385,6 +987,7 @@ export default function BudgetApp() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [error, setError] = useState(null);
   
@@ -456,8 +1059,6 @@ export default function BudgetApp() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-  
-
   
   // Dodawanie transakcji
   const handleAddTransaction = async (transakcja) => {
@@ -564,6 +1165,17 @@ export default function BudgetApp() {
     });
   };
   
+  // Callbacki dla ustawień — aktualizują stan + cache
+  const handleKategorieChange = (noweKategorie) => {
+    setKategorie(noweKategorie);
+    sessionStorage.setItem('budzet_kategorie', JSON.stringify(noweKategorie));
+  };
+  
+  const handleOsobyChange = (noweOsoby) => {
+    setOsoby(noweOsoby);
+    sessionStorage.setItem('budzet_osoby', JSON.stringify(noweOsoby));
+  };
+  
   // Obliczenia
   const przychody = transakcje
     .filter(t => t.typ === 'Przychód')
@@ -603,23 +1215,34 @@ export default function BudgetApp() {
               </div>
             </div>
             
-            {/* Nawigacja miesięcy */}
-            <div className="flex items-center gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
+            <div className="flex items-center gap-2">
+              {/* Przycisk ustawień */}
               <button
-                onClick={() => changeMonth(-1)}
-                className="rounded-xl p-2 text-gray-600 hover:bg-gray-100 transition-colors"
+                onClick={() => setShowSettings(true)}
+                className="rounded-xl p-2.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-all"
+                title="Ustawienia"
               >
-                <Icons.ChevronLeft />
+                <Icons.Settings />
               </button>
-              <span className="px-3 py-1 text-sm font-medium text-gray-700 min-w-[140px] text-center capitalize">
-                {getMonthName(currentPeriod.month, currentPeriod.year)}
-              </span>
-              <button
-                onClick={() => changeMonth(1)}
-                className="rounded-xl p-2 text-gray-600 hover:bg-gray-100 transition-colors"
-              >
-                <Icons.ChevronRight />
-              </button>
+              
+              {/* Nawigacja miesięcy */}
+              <div className="flex items-center gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
+                <button
+                  onClick={() => changeMonth(-1)}
+                  className="rounded-xl p-2 text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  <Icons.ChevronLeft />
+                </button>
+                <span className="px-3 py-1 text-sm font-medium text-gray-700 min-w-[140px] text-center capitalize">
+                  {getMonthName(currentPeriod.month, currentPeriod.year)}
+                </span>
+                <button
+                  onClick={() => changeMonth(1)}
+                  className="rounded-xl p-2 text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  <Icons.ChevronRight />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -671,8 +1294,7 @@ export default function BudgetApp() {
               />
             </div>
             
-
-            // Komponent wykresów (placeholder)
+            {/* Wykresy kategorii */}
             <CategoryCharts transakcje={transakcje} />
 
             {/* Lista transakcji */}
@@ -726,6 +1348,19 @@ export default function BudgetApp() {
           osoby={osoby}
           isLoading={isSaving}
           editData={editingTransaction}
+        />
+      )}
+      
+      {/* Panel ustawień */}
+      {showSettings && (
+        <SettingsPanel
+          onClose={() => setShowSettings(false)}
+          kategorie={kategorie}
+          osoby={osoby}
+          transakcje={transakcje}
+          onKategorieChange={handleKategorieChange}
+          onOsobyChange={handleOsobyChange}
+          apiUrl={API_URL}
         />
       )}
       
