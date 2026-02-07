@@ -83,6 +83,47 @@ function authorizeRequest(token) {
 }
 
 // ============================================
+// ZARZĄDZANIE WHITELIST
+// ============================================
+
+/**
+ * Ustawia listę dozwolonych email-i.
+ * Uruchom tę funkcję ręcznie w edytorze Apps Script (Run > setupAllowedEmails).
+ *
+ * Zmień poniższą listę na swoje email-e, a potem kliknij "Run".
+ */
+function setupAllowedEmails() {
+  const emails = [
+    'twoj-email@gmail.com',
+    'drugi-email@gmail.com'
+  ];
+
+  PropertiesService.getScriptProperties().setProperty(
+    'ALLOWED_EMAILS',
+    emails.join(',')
+  );
+
+  Logger.log('Whitelist ustawiony: ' + emails.join(', '));
+}
+
+/**
+ * Wyświetla aktualną listę dozwolonych email-i.
+ * Uruchom: Run > showAllowedEmails, potem sprawdź Logs.
+ */
+function showAllowedEmails() {
+  const emails = PropertiesService.getScriptProperties().getProperty('ALLOWED_EMAILS');
+  Logger.log('Aktualny whitelist: ' + (emails || '(brak — wszyscy mają dostęp)'));
+}
+
+/**
+ * Usuwa whitelist — wszyscy zalogowani użytkownicy będą mieli dostęp.
+ */
+function clearAllowedEmails() {
+  PropertiesService.getScriptProperties().deleteProperty('ALLOWED_EMAILS');
+  Logger.log('Whitelist usunięty — wszyscy zalogowani użytkownicy mają dostęp');
+}
+
+// ============================================
 // INICJALIZACJA ARKUSZA
 // ============================================
 function initializeSpreadsheet() {
