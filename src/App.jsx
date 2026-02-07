@@ -2,8 +2,24 @@ import React, { useState, useEffect, useCallback } from 'react';
 import CategoryCharts from '/components/CategoryCharts';
 import Budgets from '/components/Budgets';
 import CSVImport from '/components/CSVImport';
+import LoginPage from './components/LoginPage';
+import { useAuth } from './contexts/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL;
+
+// Authenticated fetch helpers
+const authFetchGet = (url, token) => {
+  const separator = url.includes('?') ? '&' : '?';
+  return fetch(`${url}${separator}token=${encodeURIComponent(token)}`);
+};
+
+const authFetchPost = (url, body, token) => {
+  const data = typeof body === 'string' ? JSON.parse(body) : body;
+  return fetch(url, {
+    method: 'POST',
+    body: JSON.stringify({ ...data, token }),
+  });
+};
 
 // Pomocnicze funkcje
 const formatCurrency = (amount) => {
@@ -415,7 +431,7 @@ const TransactionItem = ({ transaction, onDelete, onEdit }) => {
 // ============================================
 // PANEL USTAWIEŃ - Zarządzanie słownikami
 // ============================================
-const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChange, onOsobyChange, apiUrl }) => {
+const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChange, onOsobyChange, apiUrl, authToken }) => {
   const [activeTab, setActiveTab] = useState('kategorie');
   const [isProcessing, setIsProcessing] = useState(false);
   const [settingsError, setSettingsError] = useState(null);
@@ -487,15 +503,12 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
     
     setIsProcessing(true);
     try {
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
+      const res = await authFetchPost(apiUrl, {
           action: 'addKategoria',
           typ: newKatTyp,
           kategoria: nazwa,
           podkategoria: podkat
-        })
-      });
+        }, authToken);
       const result = await res.json();
       
       if (result.success) {
@@ -547,15 +560,12 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
     setIsProcessing(true);
     
     try {
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
+      const res = await authFetchPost(apiUrl, {
           action: 'deleteKategoria',
           typ,
           kategoria,
           podkategoria: podkategoria || ''
-        })
-      });
+        }, authToken);
       const result = await res.json();
       
       if (result.success) {
@@ -593,13 +603,10 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
     
     setIsProcessing(true);
     try {
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
+      const res = await authFetchPost(apiUrl, {
           action: 'addOsoba',
           osoba: nazwa
-        })
-      });
+        }, authToken);
       const result = await res.json();
       
       if (result.success) {
@@ -642,13 +649,10 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
     setIsProcessing(true);
     
     try {
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
+      const res = await authFetchPost(apiUrl, {
           action: 'deleteOsoba',
           osoba
-        })
-      });
+        }, authToken);
       const result = await res.json();
       
       if (result.success) {
@@ -981,6 +985,8 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
 // GŁÓWNA APLIKACJA
 // ============================================
 export default function BudgetApp() {
+  const { user, token, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+
   const [currentPeriod, setCurrentPeriod] = useState(getCurrentMonth());
   const [transakcje, setTransakcje] = useState([]);
   const [kategorie, setKategorie] = useState({ Wydatek: {}, Przychód: {} });
@@ -1027,7 +1033,7 @@ export default function BudgetApp() {
     // 2. Pobierz świeże dane w tle
     try {
       const url = `${API_URL}?action=getAllData&miesiac=${currentPeriod.month}&rok=${currentPeriod.year}`;
-      const response = await fetch(url);
+      const response = await authFetchGet(url, token);
       const data = await response.json();
       
       if (data.error) {
@@ -1044,7 +1050,7 @@ export default function BudgetApp() {
       setOsoby(noweOsoby);
       // Pobierz budżety dla okresu
       try {
-        const bRes = await fetch(`${API_URL}?action=getBudgets&miesiac=${currentPeriod.month}&rok=${currentPeriod.year}`);
+        const bRes = await authFetchGet(`${API_URL}?action=getBudgets&miesiac=${currentPeriod.month}&rok=${currentPeriod.year}`, token);
         const bData = await bRes.json();
         if (!bData.error) {
           setBudgets(Array.isArray(bData) ? bData : []);
@@ -1052,7 +1058,7 @@ export default function BudgetApp() {
       } catch (err) {
         console.warn('Nie udało się pobrać budżetów', err);
       }
-      
+
       // Zapisz do cache
       sessionStorage.setItem(cacheKey, JSON.stringify(noweTransakcje));
       sessionStorage.setItem('budzet_kategorie', JSON.stringify(noweKategorie));
@@ -1068,8 +1074,8 @@ export default function BudgetApp() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [currentPeriod]);
-  
+  }, [currentPeriod, token]);
+
   // Ładuj dane przy starcie i zmianie miesiąca
   useEffect(() => {
     fetchData();
@@ -1079,13 +1085,10 @@ export default function BudgetApp() {
   const handleAddTransaction = async (transakcja) => {
     setIsSaving(true);
     try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        body: JSON.stringify({
+      const res = await authFetchPost(API_URL, {
           action: 'addTransakcja',
           transakcja
-        })
-      });
+        }, token);
       const result = await res.json();
       
       if (result.success) {
@@ -1106,14 +1109,11 @@ export default function BudgetApp() {
   const handleEditTransaction = async (transakcja) => {
     setIsSaving(true);
     try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        body: JSON.stringify({
+      const res = await authFetchPost(API_URL, {
           action: 'updateTransakcja',
           id: editingTransaction.id,
           transakcja
-        })
-      });
+        }, token);
       const result = await res.json();
       
       if (result.success) {
@@ -1148,13 +1148,10 @@ export default function BudgetApp() {
     if (!window.confirm('Czy na pewno chcesz usunąć tę transakcję?')) return;
     
     try {
-      await fetch(API_URL, {
-        method: 'POST',
-        body: JSON.stringify({
+      await authFetchPost(API_URL, {
           action: 'deleteTransakcja',
           id
-        })
-      });
+        }, token);
       await fetchData();
     } catch (err) {
       setError('Błąd podczas usuwania');
@@ -1207,6 +1204,22 @@ export default function BudgetApp() {
     new Date(b.data) - new Date(a.data)
   );
   
+  // Auth gate: show login page if not authenticated
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-100 to-indigo-50 flex items-center justify-center">
+        <div className="flex items-center gap-3 text-gray-500">
+          <Icons.Loader />
+          <span>Ładowanie...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-100 to-indigo-50">
       {/* Header */}
@@ -1257,7 +1270,37 @@ export default function BudgetApp() {
               >
                 <Icons.Settings />
               </button>
-              
+
+              {/* User info & logout */}
+              <div className="flex items-center gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 px-3 py-1.5">
+                {user?.picture ? (
+                  <img
+                    src={user.picture}
+                    alt={user.name}
+                    className="w-7 h-7 rounded-full"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+                    <Icons.User />
+                  </div>
+                )}
+                <span className="text-sm text-gray-600 hidden sm:inline max-w-[120px] truncate" title={user?.email}>
+                  {user?.name || user?.email}
+                </span>
+                <button
+                  onClick={logout}
+                  className="rounded-lg p-1.5 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all"
+                  title="Wyloguj się"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                  </svg>
+                </button>
+              </div>
+
               {/* Nawigacja miesięcy */}
               <div className="flex items-center gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
                 <button
@@ -1394,6 +1437,7 @@ export default function BudgetApp() {
           onKategorieChange={handleKategorieChange}
           onOsobyChange={handleOsobyChange}
           apiUrl={API_URL}
+          authToken={token}
         />
       )}
 
@@ -1405,9 +1449,10 @@ export default function BudgetApp() {
           month={currentPeriod.month}
           year={currentPeriod.year}
           budgets={budgets}
+          authToken={token}
           onSaved={async () => {
             try {
-              const bRes = await fetch(`${API_URL}?action=getBudgets&miesiac=${currentPeriod.month}&rok=${currentPeriod.year}`);
+              const bRes = await authFetchGet(`${API_URL}?action=getBudgets&miesiac=${currentPeriod.month}&rok=${currentPeriod.year}`, token);
               const bData = await bRes.json();
               if (!bData.error) setBudgets(Array.isArray(bData) ? bData : []);
             } catch (err) {
@@ -1422,6 +1467,7 @@ export default function BudgetApp() {
           onClose={() => setShowCSVImport(false)}
           kategorie={kategorie}
           apiUrl={API_URL}
+          authToken={token}
           onSaved={() => {
             setShowCSVImport(false);
             fetchData();

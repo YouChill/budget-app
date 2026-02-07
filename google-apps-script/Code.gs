@@ -4,6 +4,85 @@
 const SPREADSHEET_ID = 'TUTAJ_WKLEJ_ID_ARKUSZA';
 
 // ============================================
+// AUTENTYKACJA - Google OAuth Token Verification
+// ============================================
+
+/**
+ * Weryfikuje Google ID token i zwraca dane użytkownika.
+ * Zwraca obiekt {valid: true, email, name} lub {valid: false, error}.
+ */
+function verifyGoogleToken(idToken) {
+  if (!idToken) {
+    return { valid: false, error: 'Brak tokena autoryzacji' };
+  }
+
+  try {
+    const response = UrlFetchApp.fetch(
+      'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
+      { muteHttpExceptions: true }
+    );
+
+    const code = response.getResponseCode();
+    if (code !== 200) {
+      return { valid: false, error: 'Nieprawidłowy token autoryzacji' };
+    }
+
+    const payload = JSON.parse(response.getContentText());
+
+    // Sprawdź czy token nie wygasł
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && Number(payload.exp) < now) {
+      return { valid: false, error: 'Token wygasł — zaloguj się ponownie' };
+    }
+
+    return {
+      valid: true,
+      email: payload.email,
+      name: payload.name || payload.email,
+    };
+  } catch (err) {
+    return { valid: false, error: 'Błąd weryfikacji tokena: ' + err.toString() };
+  }
+}
+
+/**
+ * Sprawdza czy email jest na whitelist (jeśli whitelist jest skonfigurowany).
+ * Whitelist jest przechowywany w Script Properties pod kluczem ALLOWED_EMAILS
+ * jako lista email oddzielona przecinkami, np.: "jan@gmail.com,anna@gmail.com"
+ *
+ * Jeśli ALLOWED_EMAILS nie jest ustawiony — wszyscy zalogowani użytkownicy mają dostęp.
+ */
+function isEmailAllowed(email) {
+  const props = PropertiesService.getScriptProperties();
+  const allowedEmails = props.getProperty('ALLOWED_EMAILS');
+
+  // Jeśli whitelist nie jest skonfigurowany, każdy zalogowany użytkownik ma dostęp
+  if (!allowedEmails || allowedEmails.trim() === '') {
+    return true;
+  }
+
+  const emailList = allowedEmails.split(',').map(e => e.trim().toLowerCase());
+  return emailList.includes(email.toLowerCase());
+}
+
+/**
+ * Autoryzuje request — weryfikuje token i sprawdza whitelist.
+ * Zwraca {authorized: true, user} lub {authorized: false, error}.
+ */
+function authorizeRequest(token) {
+  const verification = verifyGoogleToken(token);
+  if (!verification.valid) {
+    return { authorized: false, error: verification.error };
+  }
+
+  if (!isEmailAllowed(verification.email)) {
+    return { authorized: false, error: 'Brak dostępu — Twoje konto nie jest na liście autoryzowanych użytkowników' };
+  }
+
+  return { authorized: true, user: verification };
+}
+
+// ============================================
 // INICJALIZACJA ARKUSZA
 // ============================================
 function initializeSpreadsheet() {
@@ -121,7 +200,17 @@ function initializeSpreadsheet() {
 function doGet(e) {
   const action = e.parameter.action;
   let result;
-  
+
+  // Autoryzacja — sprawdź token (init nie wymaga autoryzacji)
+  if (action !== 'init') {
+    const auth = authorizeRequest(e.parameter.token);
+    if (!auth.authorized) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ error: auth.error, unauthorized: true }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
   try {
     switch(action) {
       case 'getTransakcje':
@@ -148,7 +237,7 @@ function doGet(e) {
   } catch(error) {
     result = {error: error.toString()};
   }
-  
+
   return ContentService
     .createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);
@@ -158,7 +247,15 @@ function doPost(e) {
   const data = JSON.parse(e.postData.contents);
   const action = data.action;
   let result;
-  
+
+  // Autoryzacja — sprawdź token
+  const auth = authorizeRequest(data.token);
+  if (!auth.authorized) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ error: auth.error, unauthorized: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   try {
     switch(action) {
       case 'addTransakcja':

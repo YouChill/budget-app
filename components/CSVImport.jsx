@@ -81,7 +81,7 @@ const categorizeDescription = (description) => {
   return null;
 };
 
-export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved }) {
+export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, authToken }) {
   const [step, setStep] = useState(1); // 1: Upload, 2: Mapping, 3: Preview, 4: Success
   const [csvData, setCsvData] = useState(null);
   const [headers, setHeaders] = useState([]);
@@ -159,7 +159,8 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved }) 
         method: 'POST',
         body: JSON.stringify({
           action: 'addTransakcjeBatch',
-          transakcje: transactions
+          transakcje: transactions,
+          token: authToken
         })
       });
       const data = await res.json();

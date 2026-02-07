@@ -9,7 +9,7 @@ const formatCurrency = (value) => {
   }).format(value);
 };
 
-export default function Budgets({ onClose, kategorie = {}, apiUrl, month, year, budgets = [], onSaved }) {
+export default function Budgets({ onClose, kategorie = {}, apiUrl, month, year, budgets = [], onSaved, authToken }) {
   const expenseCats = Object.keys(kategorie['Wydatek'] || {});
 
   const [form, setForm] = useState({
@@ -34,7 +34,7 @@ export default function Budgets({ onClose, kategorie = {}, apiUrl, month, year, 
     try {
       const res = await fetch(apiUrl, {
         method: 'POST',
-        body: JSON.stringify({ action: 'setBudget', budget: form })
+        body: JSON.stringify({ action: 'setBudget', budget: form, token: authToken })
       });
       const data = await res.json();
       if (data.success) {
