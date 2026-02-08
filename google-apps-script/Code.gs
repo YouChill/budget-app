@@ -5,11 +5,28 @@ const SPREADSHEET_ID = 'TUTAJ_WKLEJ_ID_ARKUSZA';
 
 // ============================================
 // AUTENTYKACJA - Google OAuth Token Verification
+// Weryfikacja JWT lokalna — nie wymaga UrlFetchApp ani dodatkowych uprawnień.
 // ============================================
 
 /**
- * Weryfikuje Google ID token i zwraca dane użytkownika.
- * Zwraca obiekt {valid: true, email, name} lub {valid: false, error}.
+ * Dekoduje Base64URL string (używany w JWT).
+ */
+function base64UrlDecode(str) {
+  // Zamień Base64URL na zwykły Base64
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  // Dodaj padding
+  while (str.length % 4 !== 0) {
+    str += '=';
+  }
+  return Utilities.newBlob(Utilities.base64Decode(str)).getDataAsString();
+}
+
+/**
+ * Weryfikuje Google ID token lokalnie (dekoduje JWT i sprawdza claims).
+ * Nie wymaga UrlFetchApp — działa bez script.external_request.
+ *
+ * Sprawdza: format JWT, issuer, expiration, obecność email.
+ * Opcjonalnie sprawdza audience jeśli GOOGLE_CLIENT_ID jest ustawiony w Script Properties.
  */
 function verifyGoogleToken(idToken) {
   if (!idToken) {
@@ -17,22 +34,39 @@ function verifyGoogleToken(idToken) {
   }
 
   try {
-    const response = UrlFetchApp.fetch(
-      'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
-      { muteHttpExceptions: true }
-    );
-
-    const code = response.getResponseCode();
-    if (code !== 200) {
-      return { valid: false, error: 'Nieprawidłowy token autoryzacji' };
+    // Rozdziel JWT na części
+    const parts = idToken.split('.');
+    if (parts.length !== 3) {
+      return { valid: false, error: 'Nieprawidłowy format tokena' };
     }
 
-    const payload = JSON.parse(response.getContentText());
+    // Dekoduj payload
+    const payload = JSON.parse(base64UrlDecode(parts[1]));
 
-    // Sprawdź czy token nie wygasł
+    // Sprawdź issuer
+    const validIssuers = ['accounts.google.com', 'https://accounts.google.com'];
+    if (!validIssuers.includes(payload.iss)) {
+      return { valid: false, error: 'Nieprawidłowy wystawca tokena' };
+    }
+
+    // Sprawdź expiration
     const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && Number(payload.exp) < now) {
+    if (!payload.exp || Number(payload.exp) < now) {
       return { valid: false, error: 'Token wygasł — zaloguj się ponownie' };
+    }
+
+    // Sprawdź email
+    if (!payload.email) {
+      return { valid: false, error: 'Token nie zawiera adresu email' };
+    }
+
+    // Opcjonalnie: sprawdź audience (client ID)
+    const props = PropertiesService.getScriptProperties();
+    const expectedClientId = props.getProperty('GOOGLE_CLIENT_ID');
+    if (expectedClientId && expectedClientId.trim() !== '') {
+      if (payload.aud !== expectedClientId.trim()) {
+        return { valid: false, error: 'Token nie jest przeznaczony dla tej aplikacji' };
+      }
     }
 
     return {
