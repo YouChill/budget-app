@@ -160,17 +160,17 @@ const SummaryCard = ({ title, amount, icon, type }) => {
   const renderIcon = () => icon();
   
   return (
-    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${colors[type]} p-6 text-white shadow-lg`}>
+    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${colors[type]} p-4 sm:p-6 text-white shadow-lg`}>
       <div className="absolute right-0 top-0 -mr-4 -mt-4 h-24 w-24 rounded-full bg-white/10"></div>
       <div className="absolute right-0 bottom-0 -mr-8 -mb-8 h-32 w-32 rounded-full bg-white/5"></div>
       <div className="relative">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="rounded-lg bg-white/20 p-2">
+        <div className="flex items-center gap-2 sm:gap-3 mb-2 sm:mb-3">
+          <div className="rounded-lg bg-white/20 p-1.5 sm:p-2">
             {renderIcon()}
           </div>
           <span className="text-sm font-medium text-white/80">{title}</span>
         </div>
-        <p className="text-3xl font-bold tracking-tight">{formatCurrency(amount)}</p>
+        <p className="text-2xl sm:text-3xl font-bold tracking-tight truncate">{formatCurrency(amount)}</p>
       </div>
     </div>
   );
@@ -387,49 +387,56 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading, editD
 // Komponent pojedynczej transakcji
 const TransactionItem = ({ transaction, onDelete, onEdit }) => {
   const isExpense = transaction.typ === 'Wydatek';
-  
+
   return (
-    <div className="group flex items-center gap-4 rounded-2xl bg-white p-4 shadow-sm hover:bg-gray-50 transition-colors border border-gray-100">
-      <div className={`rounded-xl p-3 ${isExpense ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
-        {isExpense ? <Icons.TrendingDown /> : <Icons.TrendingUp />}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="font-medium text-gray-800">{transaction.kategoria}</p>
-          {transaction.podkategoria && (
-            <span className="text-sm text-gray-400">/ {transaction.podkategoria}</span>
-          )}
+    <div className="group flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 rounded-2xl bg-white p-3 sm:p-4 shadow-sm hover:bg-gray-50 transition-colors border border-gray-100">
+      {/* Icon + Info */}
+      <div className="flex items-start gap-3 flex-1 min-w-0">
+        <div className={`rounded-xl p-2.5 sm:p-3 shrink-0 ${isExpense ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+          {isExpense ? <Icons.TrendingDown /> : <Icons.TrendingUp />}
         </div>
-        <div className="flex items-center gap-2 mt-1">
-          <span className="text-sm text-gray-500">{formatDate(transaction.data)}</span>
-          <span className="text-gray-300">•</span>
-          <span className="text-sm text-gray-500">{transaction.osoba}</span>
-          {transaction.komentarz && (
-            <>
-              <span className="text-gray-300">•</span>
-              <span className="text-sm text-gray-400 truncate">{transaction.komentarz}</span>
-            </>
-          )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-medium text-gray-800">{transaction.kategoria}</p>
+            {transaction.podkategoria && (
+              <span className="text-sm text-gray-400 truncate">/ {transaction.podkategoria}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-x-2 gap-y-0.5 mt-1 flex-wrap">
+            <span className="text-sm text-gray-500 whitespace-nowrap">{formatDate(transaction.data)}</span>
+            <span className="text-gray-300">•</span>
+            <span className="text-sm text-gray-500 whitespace-nowrap">{transaction.osoba}</span>
+            {transaction.komentarz && (
+              <>
+                <span className="text-gray-300 hidden sm:inline">•</span>
+                <span className="text-sm text-gray-400 truncate max-w-[200px] sm:max-w-[150px] basis-full sm:basis-auto">{transaction.komentarz}</span>
+              </>
+            )}
+          </div>
         </div>
       </div>
-      <div className="flex items-center gap-3">
-        <p className={`text-lg font-semibold ${isExpense ? 'text-rose-600' : 'text-emerald-600'}`}>
+
+      {/* Amount + Action buttons */}
+      <div className="flex items-center gap-2 sm:gap-3 justify-between sm:justify-end pl-[52px] sm:pl-0">
+        <p className={`text-base sm:text-lg font-semibold whitespace-nowrap ${isExpense ? 'text-rose-600' : 'text-emerald-600'}`}>
           {isExpense ? '-' : '+'}{formatCurrency(transaction.kwota)}
         </p>
-        <button
-          onClick={() => onEdit(transaction)}
-          className="opacity-0 group-hover:opacity-100 w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:bg-indigo-100 hover:text-indigo-600 transition-[opacity,colors]"
-          title="Edytuj"
-        >
-          <Icons.Edit />
-        </button>
-        <button
-          onClick={() => onDelete(transaction.id)}
-          className="opacity-0 group-hover:opacity-100 w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-[opacity,colors]"
-          title="Usuń"
-        >
-          <Icons.Trash />
-        </button>
+        <div className="flex items-center gap-1 sm:gap-2">
+          <button
+            onClick={() => onEdit(transaction)}
+            className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:bg-indigo-100 hover:text-indigo-600 transition-[opacity,colors]"
+            title="Edytuj"
+          >
+            <Icons.Edit />
+          </button>
+          <button
+            onClick={() => onDelete(transaction.id)}
+            className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-[opacity,colors]"
+            title="Usuń"
+          >
+            <Icons.Trash />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1238,15 +1245,16 @@ export default function BudgetApp() {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-100 to-indigo-50">
       {/* Header */}
       <header className="sticky top-0 z-40 backdrop-blur-lg bg-white/70 border-b border-gray-200/50">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-2.5 text-white shadow-lg">
+        <div className="max-w-4xl mx-auto px-3 py-2 sm:px-4 sm:py-4">
+          {/* Top row: logo/title + action buttons */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <div className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-2 sm:p-2.5 text-white shadow-lg shrink-0">
                 <Icons.Wallet />
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-800">Budżet Domowy</h1>
-                <div className="flex items-center gap-2">
+              <div className="min-w-0">
+                <h1 className="text-base sm:text-xl font-bold text-gray-800 truncate">Budżet Domowy</h1>
+                <div className="hidden sm:flex items-center gap-2">
                   <p className="text-sm text-gray-500">Kontroluj swoje finanse</p>
                   {isRefreshing && (
                     <span className="flex items-center gap-1 text-xs text-indigo-500">
@@ -1254,14 +1262,19 @@ export default function BudgetApp() {
                     </span>
                   )}
                 </div>
+                {isRefreshing && (
+                  <span className="flex sm:hidden items-center gap-1 text-xs text-indigo-500">
+                    <Icons.Loader /> Odświeżam...
+                  </span>
+                )}
               </div>
             </div>
-            
-            <div className="flex items-center gap-2">
+
+            <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               {/* Przycisk importu CSV */}
               <button
                 onClick={() => setShowCSVImport(true)}
-                className="rounded-xl p-2.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-all"
+                className="rounded-xl p-2 sm:p-2.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-all"
                 title="Import z CSV"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
@@ -1270,7 +1283,7 @@ export default function BudgetApp() {
               {/* Przycisk budżetów */}
               <button
                 onClick={() => setShowBudgets(true)}
-                className="rounded-xl p-2.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-all"
+                className="rounded-xl p-2 sm:p-2.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-all"
                 title="Budżety"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10v6a2 2 0 0 1-2 2H7"/><path d="M3 6h18"/><path d="M8 6v12"/></svg>
@@ -1279,23 +1292,23 @@ export default function BudgetApp() {
               {/* Przycisk ustawień */}
               <button
                 onClick={() => setShowSettings(true)}
-                className="rounded-xl p-2.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-all"
+                className="rounded-xl p-2 sm:p-2.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-all"
                 title="Ustawienia"
               >
                 <Icons.Settings />
               </button>
 
               {/* User info & logout */}
-              <div className="flex items-center gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 px-3 py-1.5">
+              <div className="flex items-center gap-1.5 sm:gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 px-2 py-1 sm:px-3 sm:py-1.5">
                 {user?.picture ? (
                   <img
                     src={user.picture}
                     alt={user.name}
-                    className="w-7 h-7 rounded-full"
+                    className="w-6 h-6 sm:w-7 sm:h-7 rounded-full"
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <div className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+                  <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
                     <Icons.User />
                   </div>
                 )}
@@ -1314,25 +1327,27 @@ export default function BudgetApp() {
                   </svg>
                 </button>
               </div>
+            </div>
+          </div>
 
-              {/* Nawigacja miesięcy */}
-              <div className="flex items-center gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
-                <button
-                  onClick={() => changeMonth(-1)}
-                  className="rounded-xl p-2 text-gray-600 hover:bg-gray-100 transition-colors"
-                >
-                  <Icons.ChevronLeft />
-                </button>
-                <span className="px-3 py-1 text-sm font-medium text-gray-700 min-w-[140px] text-center capitalize">
-                  {getMonthName(currentPeriod.month, currentPeriod.year)}
-                </span>
-                <button
-                  onClick={() => changeMonth(1)}
-                  className="rounded-xl p-2 text-gray-600 hover:bg-gray-100 transition-colors"
-                >
-                  <Icons.ChevronRight />
-                </button>
-              </div>
+          {/* Month navigation - separate row on mobile, inline on desktop */}
+          <div className="flex justify-center mt-2 sm:mt-2">
+            <div className="flex items-center gap-1 sm:gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
+              <button
+                onClick={() => changeMonth(-1)}
+                className="rounded-xl p-1.5 sm:p-2 text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                <Icons.ChevronLeft />
+              </button>
+              <span className="px-2 sm:px-3 py-1 text-sm font-medium text-gray-700 min-w-[130px] sm:min-w-[140px] text-center capitalize">
+                {getMonthName(currentPeriod.month, currentPeriod.year)}
+              </span>
+              <button
+                onClick={() => changeMonth(1)}
+                className="rounded-xl p-1.5 sm:p-2 text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                <Icons.ChevronRight />
+              </button>
             </div>
           </div>
         </div>
