@@ -299,6 +299,23 @@ function doPost(e) {
 
   try {
     switch(action) {
+      // Read actions (moved from doGet to avoid token-in-URL length issues)
+      case 'getTransakcje':
+        result = getTransakcje(data.miesiac, data.rok);
+        break;
+      case 'getBudgets':
+        result = getBudgets(data.miesiac, data.rok);
+        break;
+      case 'getKategorie':
+        result = getKategorie();
+        break;
+      case 'getOsoby':
+        result = getOsoby();
+        break;
+      case 'getAllData':
+        result = getAllData(data.miesiac, data.rok);
+        break;
+      // Write actions
       case 'addTransakcja':
         result = addTransakcja(data.transakcja);
         break;

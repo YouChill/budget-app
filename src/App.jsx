@@ -7,13 +7,8 @@ import { useAuth } from './contexts/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
-// Authenticated fetch helpers
-const authFetchGet = (url, token) => {
-  const separator = url.includes('?') ? '&' : '?';
-  return fetch(`${url}${separator}token=${encodeURIComponent(token)}`);
-};
-
-const authFetchPost = (url, body, token) => {
+// Authenticated fetch — always use POST to avoid token-in-URL length issues
+const authFetch = (url, body, token) => {
   const data = typeof body === 'string' ? JSON.parse(body) : body;
   return fetch(url, {
     method: 'POST',
@@ -503,7 +498,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
     
     setIsProcessing(true);
     try {
-      const res = await authFetchPost(apiUrl, {
+      const res = await authFetch(apiUrl, {
           action: 'addKategoria',
           typ: newKatTyp,
           kategoria: nazwa,
@@ -560,7 +555,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
     setIsProcessing(true);
     
     try {
-      const res = await authFetchPost(apiUrl, {
+      const res = await authFetch(apiUrl, {
           action: 'deleteKategoria',
           typ,
           kategoria,
@@ -603,7 +598,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
     
     setIsProcessing(true);
     try {
-      const res = await authFetchPost(apiUrl, {
+      const res = await authFetch(apiUrl, {
           action: 'addOsoba',
           osoba: nazwa
         }, authToken);
@@ -649,7 +644,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
     setIsProcessing(true);
     
     try {
-      const res = await authFetchPost(apiUrl, {
+      const res = await authFetch(apiUrl, {
           action: 'deleteOsoba',
           osoba
         }, authToken);
@@ -1032,8 +1027,11 @@ export default function BudgetApp() {
     
     // 2. Pobierz świeże dane w tle
     try {
-      const url = `${API_URL}?action=getAllData&miesiac=${currentPeriod.month}&rok=${currentPeriod.year}`;
-      const response = await authFetchGet(url, token);
+      const response = await authFetch(API_URL, {
+          action: 'getAllData',
+          miesiac: currentPeriod.month,
+          rok: currentPeriod.year
+        }, token);
       const data = await response.json();
       
       if (data.error) {
@@ -1050,7 +1048,11 @@ export default function BudgetApp() {
       setOsoby(noweOsoby);
       // Pobierz budżety dla okresu
       try {
-        const bRes = await authFetchGet(`${API_URL}?action=getBudgets&miesiac=${currentPeriod.month}&rok=${currentPeriod.year}`, token);
+        const bRes = await authFetch(API_URL, {
+            action: 'getBudgets',
+            miesiac: currentPeriod.month,
+            rok: currentPeriod.year
+          }, token);
         const bData = await bRes.json();
         if (!bData.error) {
           setBudgets(Array.isArray(bData) ? bData : []);
@@ -1085,7 +1087,7 @@ export default function BudgetApp() {
   const handleAddTransaction = async (transakcja) => {
     setIsSaving(true);
     try {
-      const res = await authFetchPost(API_URL, {
+      const res = await authFetch(API_URL, {
           action: 'addTransakcja',
           transakcja
         }, token);
@@ -1109,7 +1111,7 @@ export default function BudgetApp() {
   const handleEditTransaction = async (transakcja) => {
     setIsSaving(true);
     try {
-      const res = await authFetchPost(API_URL, {
+      const res = await authFetch(API_URL, {
           action: 'updateTransakcja',
           id: editingTransaction.id,
           transakcja
@@ -1148,7 +1150,7 @@ export default function BudgetApp() {
     if (!window.confirm('Czy na pewno chcesz usunąć tę transakcję?')) return;
     
     try {
-      await authFetchPost(API_URL, {
+      await authFetch(API_URL, {
           action: 'deleteTransakcja',
           id
         }, token);
@@ -1452,7 +1454,11 @@ export default function BudgetApp() {
           authToken={token}
           onSaved={async () => {
             try {
-              const bRes = await authFetchGet(`${API_URL}?action=getBudgets&miesiac=${currentPeriod.month}&rok=${currentPeriod.year}`, token);
+              const bRes = await authFetch(API_URL, {
+            action: 'getBudgets',
+            miesiac: currentPeriod.month,
+            rok: currentPeriod.year
+          }, token);
               const bData = await bRes.json();
               if (!bData.error) setBudgets(Array.isArray(bData) ? bData : []);
             } catch (err) {
