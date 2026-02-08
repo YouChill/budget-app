@@ -4,6 +4,7 @@ import Budgets from '/components/Budgets';
 import CSVImport from '/components/CSVImport';
 import LoginPage from './components/LoginPage';
 import { useAuth } from './contexts/AuthContext';
+import { useToast } from './contexts/ToastContext';
 
 // Sprawdź czy zmienna środowiskowa jest ustawiona
 if (!import.meta.env.VITE_API_URL) {
@@ -1000,6 +1001,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
 // ============================================
 export default function BudgetApp() {
   const { user, token, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const { addToast } = useToast();
 
   const [currentPeriod, setCurrentPeriod] = useState(getCurrentMonth());
   const [transakcje, setTransakcje] = useState([]);
@@ -1115,17 +1117,18 @@ export default function BudgetApp() {
       if (result.success) {
         await fetchData();
         setShowForm(false);
+        addToast('Transakcja została dodana');
       } else {
-        setError('Nie udało się dodać transakcji');
+        addToast('Nie udało się dodać transakcji', 'error');
       }
     } catch (err) {
-      setError('Błąd podczas zapisywania');
+      addToast('Błąd podczas zapisywania', 'error');
       console.error(err);
     } finally {
       setIsSaving(false);
     }
   };
-  
+
   // Edycja transakcji
   const handleEditTransaction = async (transakcja) => {
     setIsSaving(true);
@@ -1141,11 +1144,12 @@ export default function BudgetApp() {
         await fetchData();
         setEditingTransaction(null);
         setShowForm(false);
+        addToast('Transakcja została zaktualizowana');
       } else {
-        setError('Nie udało się zaktualizować transakcji');
+        addToast('Nie udało się zaktualizować transakcji', 'error');
       }
     } catch (err) {
-      setError('Błąd podczas aktualizacji');
+      addToast('Błąd podczas aktualizacji', 'error');
       console.error(err);
     } finally {
       setIsSaving(false);
@@ -1169,13 +1173,19 @@ export default function BudgetApp() {
     if (!window.confirm('Czy na pewno chcesz usunąć tę transakcję?')) return;
     
     try {
-      await authFetch(API_URL, {
+      const res = await authFetch(API_URL, {
           action: 'deleteTransakcja',
           id
         }, token);
-      await fetchData();
+      const result = await res.json();
+      if (result.success !== false) {
+        await fetchData();
+        addToast('Transakcja została usunięta');
+      } else {
+        addToast('Nie udało się usunąć transakcji', 'error');
+      }
     } catch (err) {
-      setError('Błąd podczas usuwania');
+      addToast('Błąd podczas usuwania', 'error');
       console.error(err);
     }
   };
