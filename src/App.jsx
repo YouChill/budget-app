@@ -1,10 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import CategoryCharts from '/components/CategoryCharts';
 import Budgets from '/components/Budgets';
 import CSVImport from '/components/CSVImport';
 import LoginPage from './components/LoginPage';
+import OfflineBanner from './components/OfflineBanner';
 import { useAuth } from './contexts/AuthContext';
 import { useToast } from './contexts/ToastContext';
+import { useOffline } from './hooks/useOffline';
+import { addToQueue, getQueuedOperations, processQueue } from './services/offlineQueue';
 
 // Sprawdź czy zmienna środowiskowa jest ustawiona
 if (!import.meta.env.VITE_API_URL) {
@@ -1002,6 +1005,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
 export default function BudgetApp() {
   const { user, token, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const { addToast } = useToast();
+  const { isOffline } = useOffline();
 
   const [currentPeriod, setCurrentPeriod] = useState(getCurrentMonth());
   const [transakcje, setTransakcje] = useState([]);
@@ -1017,6 +1021,9 @@ export default function BudgetApp() {
   const [showCSVImport, setShowCSVImport] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [error, setError] = useState(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingCount, setPendingCount] = useState(() => getQueuedOperations().length);
+  const wasOfflineRef = useRef(isOffline);
   
   // Klucz cache dla transakcji danego miesiąca
   const getCacheKey = (month, year) => `budzet_trans_${month}_${year}`;
@@ -1045,7 +1052,17 @@ export default function BudgetApp() {
     }
     
     setError(null);
-    
+
+    // If offline, just show cached data — don't attempt network fetch
+    if (!navigator.onLine) {
+      if (!hasCache) {
+        setError('Brak połączenia z internetem i brak danych w cache.');
+      }
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
     // 2. Pobierz świeże dane w tle
     try {
       const response = await authFetch(API_URL, {
@@ -1103,9 +1120,56 @@ export default function BudgetApp() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-  
+
+  // Sync queued operations when coming back online
+  useEffect(() => {
+    if (wasOfflineRef.current && !isOffline && token) {
+      const syncQueue = async () => {
+        const queue = getQueuedOperations();
+        if (queue.length === 0) {
+          wasOfflineRef.current = false;
+          return;
+        }
+        setIsSyncing(true);
+        try {
+          const result = await processQueue(authFetch, API_URL, token);
+          if (result.succeeded > 0) {
+            addToast(`Zsynchronizowano ${result.succeeded} ${result.succeeded === 1 ? 'operację' : 'operacji'}`);
+          }
+          if (result.failed > 0) {
+            addToast(`Nie udało się zsynchronizować ${result.failed} operacji`, 'error');
+          }
+          setPendingCount(0);
+          // Refresh data from server after sync
+          await fetchData(false);
+        } finally {
+          setIsSyncing(false);
+        }
+      };
+      syncQueue();
+    }
+    wasOfflineRef.current = isOffline;
+  }, [isOffline, token, fetchData, addToast]);
+
   // Dodawanie transakcji
   const handleAddTransaction = async (transakcja) => {
+    if (isOffline) {
+      // Optimistic update + queue
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const optimistic = { ...transakcja, id: tempId, _offline: true };
+      const noweTransakcje = [...transakcje, optimistic];
+      setTransakcje(noweTransakcje);
+      const cacheKey = getCacheKey(currentPeriod.month, currentPeriod.year);
+      sessionStorage.setItem(cacheKey, JSON.stringify(noweTransakcje));
+
+      addToQueue({ action: 'addTransakcja', payload: { action: 'addTransakcja', transakcja } });
+      setPendingCount(getQueuedOperations().length);
+
+      setShowForm(false);
+      addToast('Transakcja zapisana offline — zsynchronizuje się po połączeniu');
+      return;
+    }
+
     setIsSaving(true);
     try {
       const res = await authFetch(API_URL, {
@@ -1113,7 +1177,7 @@ export default function BudgetApp() {
           transakcja
         }, token);
       const result = await res.json();
-      
+
       if (result.success) {
         await fetchData();
         setShowForm(false);
@@ -1131,6 +1195,27 @@ export default function BudgetApp() {
 
   // Edycja transakcji
   const handleEditTransaction = async (transakcja) => {
+    if (isOffline) {
+      // Optimistic update + queue
+      const noweTransakcje = transakcje.map(t =>
+        t.id === editingTransaction.id ? { ...t, ...transakcja, _offline: true } : t
+      );
+      setTransakcje(noweTransakcje);
+      const cacheKey = getCacheKey(currentPeriod.month, currentPeriod.year);
+      sessionStorage.setItem(cacheKey, JSON.stringify(noweTransakcje));
+
+      addToQueue({
+        action: 'updateTransakcja',
+        payload: { action: 'updateTransakcja', id: editingTransaction.id, transakcja },
+      });
+      setPendingCount(getQueuedOperations().length);
+
+      setEditingTransaction(null);
+      setShowForm(false);
+      addToast('Zmiana zapisana offline — zsynchronizuje się po połączeniu');
+      return;
+    }
+
     setIsSaving(true);
     try {
       const res = await authFetch(API_URL, {
@@ -1139,7 +1224,7 @@ export default function BudgetApp() {
           transakcja
         }, token);
       const result = await res.json();
-      
+
       if (result.success) {
         await fetchData();
         setEditingTransaction(null);
@@ -1171,7 +1256,24 @@ export default function BudgetApp() {
   // Usuwanie transakcji
   const handleDeleteTransaction = async (id) => {
     if (!window.confirm('Czy na pewno chcesz usunąć tę transakcję?')) return;
-    
+
+    if (isOffline) {
+      // Optimistic update + queue
+      const noweTransakcje = transakcje.filter(t => t.id !== id);
+      setTransakcje(noweTransakcje);
+      const cacheKey = getCacheKey(currentPeriod.month, currentPeriod.year);
+      sessionStorage.setItem(cacheKey, JSON.stringify(noweTransakcje));
+
+      // Don't queue delete for temp (not-yet-synced) transactions
+      if (!String(id).startsWith('temp_')) {
+        addToQueue({ action: 'deleteTransakcja', payload: { action: 'deleteTransakcja', id } });
+        setPendingCount(getQueuedOperations().length);
+      }
+
+      addToast('Usunięcie zapisane offline — zsynchronizuje się po połączeniu');
+      return;
+    }
+
     try {
       const res = await authFetch(API_URL, {
           action: 'deleteTransakcja',
@@ -1253,6 +1355,9 @@ export default function BudgetApp() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-100 to-indigo-50">
+      {/* Offline banner */}
+      <OfflineBanner isOffline={isOffline} pendingCount={pendingCount} isSyncing={isSyncing} />
+
       {/* Header */}
       <header className="sticky top-0 z-40 backdrop-blur-lg bg-white/70 border-b border-gray-200/50">
         <div className="max-w-4xl mx-auto px-3 py-2 sm:px-4 sm:py-4">
@@ -1283,27 +1388,30 @@ export default function BudgetApp() {
             <div className="flex items-center gap-1 sm:gap-2 shrink-0">
               {/* Przycisk importu CSV */}
               <button
-                onClick={() => setShowCSVImport(true)}
-                className="rounded-xl p-2 sm:p-2.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-all"
-                title="Import z CSV"
+                onClick={() => !isOffline && setShowCSVImport(true)}
+                className={`rounded-xl p-2 sm:p-2.5 transition-all ${isOffline ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-100 hover:text-indigo-600'}`}
+                title={isOffline ? 'Niedostępne offline' : 'Import z CSV'}
+                disabled={isOffline}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
               </button>
 
               {/* Przycisk budżetów */}
               <button
-                onClick={() => setShowBudgets(true)}
-                className="rounded-xl p-2 sm:p-2.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-all"
-                title="Budżety"
+                onClick={() => !isOffline && setShowBudgets(true)}
+                className={`rounded-xl p-2 sm:p-2.5 transition-all ${isOffline ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-100 hover:text-indigo-600'}`}
+                title={isOffline ? 'Niedostępne offline' : 'Budżety'}
+                disabled={isOffline}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10v6a2 2 0 0 1-2 2H7"/><path d="M3 6h18"/><path d="M8 6v12"/></svg>
               </button>
 
               {/* Przycisk ustawień */}
               <button
-                onClick={() => setShowSettings(true)}
-                className="rounded-xl p-2 sm:p-2.5 text-gray-500 hover:bg-gray-100 hover:text-indigo-600 transition-all"
-                title="Ustawienia"
+                onClick={() => !isOffline && setShowSettings(true)}
+                className={`rounded-xl p-2 sm:p-2.5 transition-all ${isOffline ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-100 hover:text-indigo-600'}`}
+                title={isOffline ? 'Niedostępne offline' : 'Ustawienia'}
+                disabled={isOffline}
               >
                 <Icons.Settings />
               </button>
