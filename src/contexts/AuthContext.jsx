@@ -61,11 +61,16 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('budget_auth_user');
     // Clear session storage cache as well
     sessionStorage.clear();
-    // Revoke Google session
+    // Re-initialize GIS so the login button works again
     if (window.google?.accounts?.id) {
       window.google.accounts.id.disableAutoSelect();
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleCredentialResponse,
+        auto_select: false,
+      });
     }
-  }, []);
+  }, [handleCredentialResponse]);
 
   // Initialize: check for stored token
   useEffect(() => {
