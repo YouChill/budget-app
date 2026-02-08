@@ -244,21 +244,21 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading, editD
   };
   
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm sm:p-4">
+      <div className="w-full max-w-md max-h-[95vh] sm:max-h-[90vh] rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl flex flex-col">
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 shrink-0">
           <h2 className="text-xl font-semibold text-gray-800">
             {isEditMode ? 'Edytuj transakcję' : 'Nowa transakcja'}
           </h2>
-          <button 
+          <button
             onClick={onClose}
             className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
           >
             <Icons.X />
           </button>
         </div>
-        
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto flex-1">
           {/* Typ transakcji */}
           <div className="flex gap-2">
             {['Wydatek', 'Przychód'].map(typ => (
@@ -281,13 +281,13 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading, editD
           
           {/* Data i kwota */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
+            <div className="min-w-0 overflow-hidden">
               <label className="block text-sm font-medium text-gray-600 mb-2">Data</label>
               <input
                 type="date"
                 value={formData.data}
                 onChange={e => setFormData(prev => ({ ...prev, data: e.target.value }))}
-                className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                className="w-full min-w-0 rounded-xl border border-gray-200 px-3 py-3 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
               />
             </div>
             <div>
