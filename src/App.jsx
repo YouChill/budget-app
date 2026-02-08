@@ -5,7 +5,19 @@ import CSVImport from '/components/CSVImport';
 import LoginPage from './components/LoginPage';
 import { useAuth } from './contexts/AuthContext';
 
+// Sprawdź czy zmienna środowiskowa jest ustawiona
+if (!import.meta.env.VITE_API_URL) {
+  throw new Error(
+    '❌ VITE_API_URL nie jest ustawiona!\n' +
+    '📝 Utwórz plik .env w głównym katalogu projektu:\n' +
+    'VITE_API_URL=https://script.google.com/macros/s/TWÓJ_KLUCZ/exec'
+  );
+}
+
 const API_URL = import.meta.env.VITE_API_URL;
+
+// Log dla debugowania (usuń po wdrożeniu)
+//console.log('🔧 API_URL:', API_URL);
 
 // Authenticated fetch — always use POST to avoid token-in-URL length issues
 const authFetch = (url, body, token) => {
