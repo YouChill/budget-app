@@ -4,15 +4,15 @@ import { useAuth } from '../contexts/AuthContext';
 export default function LoginPage() {
   const { error, setError, clientId, isLoading } = useAuth();
   const buttonRef = useRef(null);
-  const rendered = useRef(false);
 
   useEffect(() => {
-    if (!clientId || rendered.current) return;
+    if (!clientId) return;
 
     const renderButton = () => {
       if (!window.google?.accounts?.id || !buttonRef.current) return;
 
-      rendered.current = true;
+      // Clear previous button content before re-rendering
+      buttonRef.current.innerHTML = '';
       window.google.accounts.id.renderButton(buttonRef.current, {
         type: 'standard',
         theme: 'outline',
