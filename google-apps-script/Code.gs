@@ -449,8 +449,8 @@ function validateTransaction(transakcja) {
     return { valid: false, error: 'Kwota musi być liczbą' };
   }
   
-  if (kwota <= 0) {
-    return { valid: false, error: 'Kwota musi być większa od 0' };
+  if (kwota === 0 || isNaN(kwota)) {
+    return { valid: false, error: 'Kwota musi być różna od 0 i numeryczna' };
   }
   
   // Waliduj kategorię
