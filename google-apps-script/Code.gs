@@ -562,12 +562,17 @@ function addTransakcja(transakcja) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName('Transakcje');
   
+  // Normalizuj kwotę - przechowuj wartość bezwzględną
+  // Typ określa czy to wydatek czy przychód
+  const kwotaNum = Number(transakcja.kwota);
+  const kwotaBezWartosc = Math.abs(kwotaNum);
+  
   const id = Utilities.getUuid();
   sheet.appendRow([
     id,
     transakcja.data,
     transakcja.typ,
-    Number(transakcja.kwota),
+    kwotaBezWartosc,
     transakcja.kategoria,
     transakcja.podkategoria || '',
     transakcja.osoba || '',
@@ -605,12 +610,17 @@ function addTransakcjeBatch(transakcje) {
       continue;
     }
     
+    // Normalizuj kwotę - przechowuj wartość bezwzględną
+    // Typ określa czy to wydatek czy przychód
+    const kwotaNum = Number(transakcja.kwota);
+    const kwotaBezWartosc = Math.abs(kwotaNum);
+    
     const id = Utilities.getUuid();
     rows.push([
       id,
       transakcja.data,
       transakcja.typ,
-      Number(transakcja.kwota),
+      kwotaBezWartosc,
       transakcja.kategoria,
       transakcja.podkategoria || '',
       transakcja.osoba || '',
@@ -652,12 +662,16 @@ function updateTransakcja(id, transakcja) {
   const sheet = ss.getSheetByName('Transakcje');
   const data = sheet.getDataRange().getValues();
   
+  // Normalizuj kwotę - przechowuj wartość bezwzględną
+  const kwotaNum = Number(transakcja.kwota);
+  const kwotaBezWartosc = Math.abs(kwotaNum);
+  
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === id) {
       sheet.getRange(i + 1, 2, 1, 7).setValues([[
         transakcja.data,
         transakcja.typ,
-        Number(transakcja.kwota),
+        kwotaBezWartosc,
         transakcja.kategoria,
         transakcja.podkategoria || '',
         transakcja.osoba || '',
