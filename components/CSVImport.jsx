@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Papa from 'papaparse';
 
 // Mapowanie słów kluczowych na kategorie
@@ -66,12 +66,19 @@ const categoryMapping = {
   'prezent': { kategoria: 'Inne', podkategoria: 'Prezenty' },
 };
 
-const categorizeDescription = (description) => {
+const categorizeDescription = (description, userRules = []) => {
   if (!description) return null;
 
   const lowerDesc = description.toLowerCase();
 
-  // Szukaj dokładnych dopasowań
+  // Najpierw sprawdź reguły użytkownika (mają priorytet)
+  for (const rule of userRules) {
+    if (lowerDesc.includes(rule.keyword.toLowerCase())) {
+      return { kategoria: rule.kategoria, podkategoria: rule.podkategoria };
+    }
+  }
+
+  // Potem szukaj w domyślnym mapowaniu
   for (const [keyword, category] of Object.entries(categoryMapping)) {
     if (lowerDesc.includes(keyword)) {
       return category;
@@ -82,6 +89,7 @@ const categorizeDescription = (description) => {
 };
 
 const STORAGE_KEY = 'csv_import_progress';
+const RULES_STORAGE_KEY = 'csv_recognition_rules';
 
 // Check if JWT token is expired (with 60s buffer)
 function checkTokenExpired(token) {
@@ -114,6 +122,29 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
   const [isLoading, setIsLoading] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const [sessionError, setSessionError] = useState(false);
+
+  // Feature 6: Recognition rules
+  const [recognitionRules, setRecognitionRules] = useState([]);
+  const [showRuleForm, setShowRuleForm] = useState(false);
+  const [ruleForm, setRuleForm] = useState({ keyword: '', kategoria: '', podkategoria: '' });
+  const [ruleNotification, setRuleNotification] = useState(null);
+  const [showRulesList, setShowRulesList] = useState(false);
+
+  // Feature 7: Additional details column
+  const [showDetailsColumn, setShowDetailsColumn] = useState(false);
+  const [expandedRows, setExpandedRows] = useState(new Set());
+
+  // Load recognition rules from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(RULES_STORAGE_KEY);
+      if (saved) {
+        setRecognitionRules(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error('Failed to load recognition rules:', e);
+    }
+  }, []);
 
   // Restore saved progress from localStorage on mount
   useEffect(() => {
@@ -173,6 +204,13 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
     return () => clearInterval(heartbeat);
   }, [step, apiUrl, authToken]);
 
+  // Auto-dismiss rule notification after 4 seconds
+  useEffect(() => {
+    if (!ruleNotification) return;
+    const timer = setTimeout(() => setRuleNotification(null), 4000);
+    return () => clearTimeout(timer);
+  }, [ruleNotification]);
+
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -210,8 +248,16 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
       .filter(row => row[columnMapping.data] && row[columnMapping.kwota])
       .map(row => {
         const opis = columnMapping.opis ? row[columnMapping.opis] : '';
-        const categoryData = categorizeDescription(opis);
+        const categoryData = categorizeDescription(opis, recognitionRules);
         const kwotaNum = parseFloat(row[columnMapping.kwota].toString().replace(/,/g, '.'));
+
+        // Feature 7: Store all original CSV fields
+        const csvRawFields = {};
+        for (const [key, value] of Object.entries(row)) {
+          if (key !== columnMapping.data && key !== columnMapping.kwota && key !== columnMapping.opis) {
+            csvRawFields[key] = value;
+          }
+        }
 
         return {
           data: row[columnMapping.data],
@@ -220,12 +266,96 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
           kategoria: categoryData?.kategoria || 'Inne',
           podkategoria: categoryData?.podkategoria || 'Nieprzewidziane',
           typ: kwotaNum < 0 ? 'Wydatek' : 'Przychód',
+          _originalOpis: opis,
+          _csvRaw: csvRawFields,
         };
       });
 
     setTransactions(processed);
     setStep(3);
     return true;
+  };
+
+  // Feature 6: Apply a single rule to unmapped transactions
+  const applyRuleToTransactions = useCallback((rule, currentTransactions) => {
+    const keyword = rule.keyword.toLowerCase();
+    let matchCount = 0;
+
+    const updated = currentTransactions.map(tx => {
+      // Only apply to transactions that haven't been manually categorized
+      // (still on default Inne/Nieprzewidziane)
+      const isUnmapped = tx.kategoria === 'Inne' && tx.podkategoria === 'Nieprzewidziane';
+      if (!isUnmapped) return tx;
+
+      const lowerOpis = (tx.opis || '').toLowerCase();
+      if (lowerOpis.includes(keyword)) {
+        matchCount++;
+        return {
+          ...tx,
+          kategoria: rule.kategoria,
+          podkategoria: rule.podkategoria || '',
+        };
+      }
+      return tx;
+    });
+
+    return { updated, matchCount };
+  }, []);
+
+  // Feature 6: Handle adding a new recognition rule
+  const handleAddRule = () => {
+    const { keyword, kategoria, podkategoria } = ruleForm;
+    if (!keyword.trim()) {
+      alert('Podaj warunek (tekst do wyszukania)');
+      return;
+    }
+    if (!kategoria) {
+      alert('Wybierz kategorię');
+      return;
+    }
+
+    const newRule = {
+      keyword: keyword.trim(),
+      kategoria,
+      podkategoria: podkategoria || '',
+      createdAt: Date.now(),
+    };
+
+    // Save rule to list
+    const updatedRules = [...recognitionRules, newRule];
+    setRecognitionRules(updatedRules);
+    try {
+      localStorage.setItem(RULES_STORAGE_KEY, JSON.stringify(updatedRules));
+    } catch (e) {
+      console.error('Failed to save recognition rules:', e);
+    }
+
+    // Apply rule to current transactions
+    const { updated, matchCount } = applyRuleToTransactions(newRule, transactions);
+    setTransactions(updated);
+
+    // Show notification
+    setRuleNotification({
+      keyword: newRule.keyword,
+      kategoria: newRule.kategoria,
+      podkategoria: newRule.podkategoria,
+      matchCount,
+    });
+
+    // Reset form
+    setRuleForm({ keyword: '', kategoria: '', podkategoria: '' });
+    setShowRuleForm(false);
+  };
+
+  // Feature 6: Delete a recognition rule
+  const handleDeleteRule = (index) => {
+    const updatedRules = recognitionRules.filter((_, i) => i !== index);
+    setRecognitionRules(updatedRules);
+    try {
+      localStorage.setItem(RULES_STORAGE_KEY, JSON.stringify(updatedRules));
+    } catch (e) {
+      console.error('Failed to save recognition rules:', e);
+    }
   };
 
   const handleImport = async () => {
@@ -243,13 +373,17 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
     setIsLoading(true);
     try {
       // Normalize kwota to numbers and update typ based on final amount
+      // Strip internal fields (_csvRaw, _originalOpis) before sending
       const normalizedTransactions = transactions.map(tx => {
         const kwota = typeof tx.kwota === 'string'
           ? parseFloat(tx.kwota.replace(',', '.')) || 0
           : (tx.kwota || 0);
         return {
-          ...tx,
+          data: tx.data,
           kwota,
+          opis: tx.opis,
+          kategoria: tx.kategoria,
+          podkategoria: tx.podkategoria,
           typ: kwota < 0 ? 'Wydatek' : 'Przychód',
         };
       });
@@ -304,11 +438,34 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
     window.location.reload();
   };
 
+  // Feature 7: Toggle row details on mobile
+  const toggleRowExpand = (idx) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) {
+        next.delete(idx);
+      } else {
+        next.add(idx);
+      }
+      return next;
+    });
+  };
+
+  // Compute available categories based on typ for rule form
+  const ruleFormTyp = 'Wydatek';
+  const ruleCategories = Object.keys(kategorie?.[ruleFormTyp] || {});
+  const ruleSubcategories = kategorie?.[ruleFormTyp]?.[ruleForm.kategoria] || [];
+
+  // Count unmapped transactions
+  const unmappedCount = transactions.filter(
+    tx => tx.kategoria === 'Inne' && tx.podkategoria === 'Nieprzewidziane'
+  ).length;
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
+      <div className="bg-white rounded-lg max-w-5xl w-full max-h-[90vh] flex flex-col">
         {/* Header - z-10 ensures it stays above table headers and edit buttons */}
-        <div className="sticky top-0 bg-gray-100 px-6 py-4 flex justify-between items-center border-b z-10">
+        <div className="sticky top-0 bg-gray-100 px-6 py-4 flex justify-between items-center border-b z-10 shrink-0">
           <h2 className="text-xl font-bold">Import z CSV</h2>
           <button
             onClick={handleClose}
@@ -319,7 +476,7 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="p-6 overflow-auto flex-1">
           {/* Session expired error */}
           {sessionError && (
             <div className="mb-4 bg-red-50 border border-red-300 rounded-lg p-4">
@@ -407,7 +564,7 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
 
               <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
                 <p className="text-sm text-yellow-800">
-                  💡 Format daty: YYYY-MM-DD. Kwota ujemna = wydatek, dodatnia = przychód
+                  Format daty: YYYY-MM-DD. Kwota ujemna = wydatek, dodatnia = przychód
                 </p>
               </div>
 
@@ -431,103 +588,339 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
           {/* Step 3: Preview */}
           {step === 3 && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="font-semibold text-lg">
                   Podgląd importu ({transactions.length} transakcji)
                 </h3>
-                {lastSaved && (
-                  <span className="text-xs text-gray-400">
-                    Auto-zapis: {lastSaved.toLocaleTimeString('pl-PL')}
-                  </span>
-                )}
+                <div className="flex items-center gap-3">
+                  {lastSaved && (
+                    <span className="text-xs text-gray-400">
+                      Auto-zapis: {lastSaved.toLocaleTimeString('pl-PL')}
+                    </span>
+                  )}
+                  {/* Feature 7: Toggle details column */}
+                  <button
+                    onClick={() => setShowDetailsColumn(!showDetailsColumn)}
+                    className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                      showDetailsColumn
+                        ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                        : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {showDetailsColumn ? 'Ukryj szczegóły' : 'Pokaż szczegóły'}
+                  </button>
+                </div>
               </div>
 
+              {/* Rule notification */}
+              {ruleNotification && (
+                <div className="bg-green-50 border border-green-300 rounded-lg p-3 flex items-center justify-between animate-[slideIn_0.3s_ease-out]">
+                  <div className="flex items-center gap-2">
+                    <span className="text-green-600 font-bold text-lg">&#10003;</span>
+                    <div className="text-sm text-green-800">
+                      <span className="font-medium">Reguła dodana!</span>{' '}
+                      {ruleNotification.matchCount > 0 ? (
+                        <>Automatycznie przypisano <strong>{ruleNotification.matchCount}</strong> transakcji
+                          do kategorii <strong>{ruleNotification.kategoria}</strong>
+                          {ruleNotification.podkategoria && <> &gt; <strong>{ruleNotification.podkategoria}</strong></>}
+                        </>
+                      ) : (
+                        <>Brak pasujących nieprzypisanych transakcji</>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setRuleNotification(null)}
+                    className="text-green-600 hover:text-green-800 ml-2"
+                  >
+                    &#10005;
+                  </button>
+                </div>
+              )}
+
               {/* Table wrapper with its own scroll context so thead sticks within it */}
-              <div className="overflow-auto border rounded max-h-[55vh]">
+              <div className="overflow-auto border rounded max-h-[40vh]">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-100 sticky top-0 z-[1]">
                     <tr>
-                      <th className="px-4 py-2 text-left">Data</th>
-                      <th className="px-4 py-2 text-right">Kwota</th>
-                      <th className="px-4 py-2 text-left">Opis</th>
-                      <th className="px-4 py-2 text-left">Kategoria</th>
-                      <th className="px-4 py-2 text-left">Podkategoria</th>
-                      <th className="px-4 py-2 text-center">Akcje</th>
+                      <th className="px-3 py-2 text-left whitespace-nowrap">Data</th>
+                      <th className="px-3 py-2 text-right whitespace-nowrap">Kwota</th>
+                      <th className="px-3 py-2 text-left whitespace-nowrap">Opis</th>
+                      <th className="px-3 py-2 text-left whitespace-nowrap">Kategoria</th>
+                      <th className="px-3 py-2 text-left whitespace-nowrap">Podkategoria</th>
+                      {showDetailsColumn && (
+                        <th className="px-3 py-2 text-left whitespace-nowrap hidden md:table-cell">Informacje dodatkowe</th>
+                      )}
+                      <th className="px-3 py-2 text-center whitespace-nowrap">Akcje</th>
                     </tr>
                   </thead>
                   <tbody>
                     {transactions.map((tx, idx) => (
-                      <tr key={idx} className="border-t hover:bg-gray-50">
-                        <td className="px-4 py-2">
-                          <input
-                            type="date"
-                            value={tx.data}
-                            onChange={(e) => handleEditTransaction(idx, 'data', e.target.value)}
-                            className="border rounded px-2 py-1 w-full"
-                          />
-                        </td>
-                        <td className="px-4 py-2 text-right font-semibold">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={tx.kwota}
-                            onChange={(e) => {
-                              const raw = e.target.value;
-                              const normalized = raw.replace(',', '.');
-                              // Allow empty, minus sign alone, or valid decimal number pattern
-                              if (normalized === '' || normalized === '-' || /^-?\d*\.?\d*$/.test(normalized)) {
-                                handleEditTransaction(idx, 'kwota', normalized);
-                              }
-                            }}
-                            onBlur={(e) => {
-                              const val = parseFloat(e.target.value.toString().replace(',', '.'));
-                              handleEditTransaction(idx, 'kwota', isNaN(val) ? 0 : val);
-                            }}
-                            className="border rounded px-2 py-1 w-full text-right"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
-                          <input
-                            type="text"
-                            value={tx.opis}
-                            onChange={(e) => handleEditTransaction(idx, 'opis', e.target.value)}
-                            className="border rounded px-2 py-1 w-full text-sm"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
-                          <select
-                            value={tx.kategoria}
-                            onChange={(e) => handleEditTransaction(idx, 'kategoria', e.target.value)}
-                            className="border rounded px-2 py-1 w-full text-sm"
-                          >
-                            {Object.keys(kategorie?.Wydatek || {}).map(k => (
-                              <option key={k} value={k}>{k}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-4 py-2">
-                          <select
-                            value={tx.podkategoria}
-                            onChange={(e) => handleEditTransaction(idx, 'podkategoria', e.target.value)}
-                            className="border rounded px-2 py-1 w-full text-sm"
-                          >
-                            {(kategorie?.Wydatek?.[tx.kategoria] || []).map(pk => (
-                              <option key={pk} value={pk}>{pk}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-4 py-2 text-center">
-                          <button
-                            onClick={() => handleDeleteTransaction(idx)}
-                            className="text-red-600 hover:text-red-800 font-bold"
-                          >
-                            ✕
-                          </button>
-                        </td>
-                      </tr>
+                      <React.Fragment key={idx}>
+                        <tr className={`border-t hover:bg-gray-50 ${
+                          tx.kategoria === 'Inne' && tx.podkategoria === 'Nieprzewidziane'
+                            ? 'bg-yellow-50/50'
+                            : ''
+                        }`}>
+                          <td className="px-3 py-2">
+                            <input
+                              type="date"
+                              value={tx.data}
+                              onChange={(e) => handleEditTransaction(idx, 'data', e.target.value)}
+                              className="border rounded px-2 py-1 w-full min-w-[130px]"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-right font-semibold">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={tx.kwota}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                const normalized = raw.replace(',', '.');
+                                if (normalized === '' || normalized === '-' || /^-?\d*\.?\d*$/.test(normalized)) {
+                                  handleEditTransaction(idx, 'kwota', normalized);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const val = parseFloat(e.target.value.toString().replace(',', '.'));
+                                handleEditTransaction(idx, 'kwota', isNaN(val) ? 0 : val);
+                              }}
+                              className="border rounded px-2 py-1 w-full text-right min-w-[90px]"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={tx.opis}
+                              onChange={(e) => handleEditTransaction(idx, 'opis', e.target.value)}
+                              className="border rounded px-2 py-1 w-full text-sm min-w-[120px]"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={tx.kategoria}
+                              onChange={(e) => handleEditTransaction(idx, 'kategoria', e.target.value)}
+                              className="border rounded px-2 py-1 w-full text-sm min-w-[110px]"
+                            >
+                              {Object.keys(kategorie?.Wydatek || {}).map(k => (
+                                <option key={k} value={k}>{k}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={tx.podkategoria}
+                              onChange={(e) => handleEditTransaction(idx, 'podkategoria', e.target.value)}
+                              className="border rounded px-2 py-1 w-full text-sm min-w-[120px]"
+                            >
+                              {(kategorie?.Wydatek?.[tx.kategoria] || []).map(pk => (
+                                <option key={pk} value={pk}>{pk}</option>
+                              ))}
+                            </select>
+                          </td>
+                          {/* Feature 7: Details column - visible on desktop */}
+                          {showDetailsColumn && (
+                            <td className="px-3 py-2 hidden md:table-cell">
+                              <div className="text-xs text-gray-500 space-y-0.5 max-w-[200px]">
+                                {tx._originalOpis && tx._originalOpis !== tx.opis && (
+                                  <div><span className="font-medium text-gray-600">Oryginał:</span> {tx._originalOpis}</div>
+                                )}
+                                {tx._csvRaw && Object.entries(tx._csvRaw).map(([key, value]) => (
+                                  value ? (
+                                    <div key={key} className="truncate">
+                                      <span className="font-medium text-gray-600">{key}:</span> {value}
+                                    </div>
+                                  ) : null
+                                ))}
+                                {(!tx._csvRaw || Object.keys(tx._csvRaw).length === 0) && !tx._originalOpis && (
+                                  <div className="text-gray-400 italic">Brak dodatkowych danych</div>
+                                )}
+                              </div>
+                            </td>
+                          )}
+                          <td className="px-3 py-2 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1">
+                              {/* Feature 7: Mobile expand button */}
+                              {showDetailsColumn && (
+                                <button
+                                  onClick={() => toggleRowExpand(idx)}
+                                  className="md:hidden text-indigo-500 hover:text-indigo-700 text-sm px-1"
+                                  title="Szczegóły"
+                                >
+                                  {expandedRows.has(idx) ? '\u25B2' : '\u25BC'}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDeleteTransaction(idx)}
+                                className="text-red-600 hover:text-red-800 font-bold"
+                              >
+                                &#10005;
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {/* Feature 7: Expandable details row for mobile */}
+                        {showDetailsColumn && expandedRows.has(idx) && (
+                          <tr className="md:hidden border-t bg-gray-50">
+                            <td colSpan={7} className="px-4 py-2">
+                              <div className="text-xs text-gray-500 space-y-1">
+                                <div className="font-medium text-gray-700 mb-1">Informacje dodatkowe:</div>
+                                {tx._originalOpis && tx._originalOpis !== tx.opis && (
+                                  <div><span className="font-medium text-gray-600">Oryginalny opis:</span> {tx._originalOpis}</div>
+                                )}
+                                <div><span className="font-medium text-gray-600">Data:</span> {tx.data}</div>
+                                <div><span className="font-medium text-gray-600">Typ:</span> {tx.typ}</div>
+                                {tx._csvRaw && Object.entries(tx._csvRaw).map(([key, value]) => (
+                                  value ? (
+                                    <div key={key}>
+                                      <span className="font-medium text-gray-600">{key}:</span> {value}
+                                    </div>
+                                  ) : null
+                                ))}
+                                {(!tx._csvRaw || Object.keys(tx._csvRaw).length === 0) && (
+                                  <div className="text-gray-400 italic">Brak dodatkowych pól z CSV</div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Feature 6: Recognition rules panel - always visible at bottom of step 3 */}
+              <div className="border rounded-lg bg-indigo-50 border-indigo-200">
+                <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-indigo-700 font-medium text-sm">
+                      Reguły rozpoznawania
+                    </span>
+                    {recognitionRules.length > 0 && (
+                      <span className="text-xs bg-indigo-200 text-indigo-700 px-2 py-0.5 rounded-full">
+                        {recognitionRules.length}
+                      </span>
+                    )}
+                    {unmappedCount > 0 && (
+                      <span className="text-xs text-amber-600">
+                        ({unmappedCount} nieprzypisanych)
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    {recognitionRules.length > 0 && (
+                      <button
+                        onClick={() => { setShowRulesList(!showRulesList); setShowRuleForm(false); }}
+                        className="text-xs px-3 py-1.5 rounded border border-indigo-300 text-indigo-700 hover:bg-indigo-100 transition-colors"
+                      >
+                        {showRulesList ? 'Ukryj listę' : 'Lista reguł'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setShowRuleForm(!showRuleForm); setShowRulesList(false); }}
+                      className={`text-xs px-3 py-1.5 rounded transition-colors ${
+                        showRuleForm
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      }`}
+                    >
+                      {showRuleForm ? 'Anuluj' : '+ Dodaj regułę'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Rules list */}
+                {showRulesList && recognitionRules.length > 0 && (
+                  <div className="px-4 pb-3 border-t border-indigo-200 pt-3">
+                    <div className="space-y-1.5 max-h-[120px] overflow-auto">
+                      {recognitionRules.map((rule, i) => (
+                        <div key={i} className="flex items-center justify-between bg-white rounded px-3 py-1.5 text-xs">
+                          <span>
+                            Jeśli opis zawiera &quot;<strong>{rule.keyword}</strong>&quot; &rarr;{' '}
+                            <span className="text-indigo-600 font-medium">{rule.kategoria}</span>
+                            {rule.podkategoria && (
+                              <> &gt; <span className="text-indigo-500">{rule.podkategoria}</span></>
+                            )}
+                          </span>
+                          <button
+                            onClick={() => handleDeleteRule(i)}
+                            className="text-red-400 hover:text-red-600 ml-2 font-bold"
+                          >
+                            &#10005;
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Add rule form */}
+                {showRuleForm && (
+                  <div className="px-4 pb-4 border-t border-indigo-200 pt-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Warunek (tekst w opisie)
+                        </label>
+                        <input
+                          type="text"
+                          value={ruleForm.keyword}
+                          onChange={(e) => setRuleForm(prev => ({ ...prev, keyword: e.target.value }))}
+                          placeholder="np. Biedronka, Allegro..."
+                          className="w-full border rounded px-2.5 py-1.5 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Kategoria
+                        </label>
+                        <select
+                          value={ruleForm.kategoria}
+                          onChange={(e) => setRuleForm(prev => ({
+                            ...prev,
+                            kategoria: e.target.value,
+                            podkategoria: '',
+                          }))}
+                          className="w-full border rounded px-2.5 py-1.5 text-sm"
+                        >
+                          <option value="">Wybierz...</option>
+                          {ruleCategories.map(k => (
+                            <option key={k} value={k}>{k}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Podkategoria (opcjonalnie)
+                        </label>
+                        <select
+                          value={ruleForm.podkategoria}
+                          onChange={(e) => setRuleForm(prev => ({ ...prev, podkategoria: e.target.value }))}
+                          className="w-full border rounded px-2.5 py-1.5 text-sm"
+                          disabled={!ruleForm.kategoria}
+                        >
+                          <option value="">Wybierz...</option>
+                          {ruleSubcategories.map(pk => (
+                            <option key={pk} value={pk}>{pk}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          onClick={handleAddRule}
+                          className="w-full px-3 py-1.5 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700 transition-colors"
+                        >
+                          Dodaj i zastosuj
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Reguła zostanie zastosowana do nieprzypisanych transakcji i zapisana do przyszłych importów.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3">
@@ -551,7 +944,7 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
           {/* Step 4: Success */}
           {step === 4 && (
             <div className="text-center space-y-4">
-              <div className="text-5xl">✓</div>
+              <div className="text-5xl">&#10003;</div>
               <h3 className="font-semibold text-lg text-green-600">
                 Import zakończony pomyślnie!
               </h3>
