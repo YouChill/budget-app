@@ -238,6 +238,18 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
     }));
   };
 
+  const parseKwota = (kwotaStr) => {
+    if (!kwotaStr) return 0;
+    // Konwertuj na string i usuń białe znaki
+    let str = kwotaStr.toString().trim();
+    // Obsługuj różne separatory dziesiętne (przecinek lub kropka)
+    str = str.replace(/,/g, '.');
+    // Parsuj jako liczbę
+    const num = parseFloat(str);
+    // Zwróć liczbę lub 0 jeśli NaN
+    return isNaN(num) ? 0 : num;
+  };
+
   const prepareTransactions = () => {
     if (!columnMapping.data || !columnMapping.kwota) {
       alert('Musisz zmapować co najmniej kolumnę daty i kwoty');
@@ -249,7 +261,7 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
       .map(row => {
         const opis = columnMapping.opis ? row[columnMapping.opis] : '';
         const categoryData = categorizeDescription(opis, recognitionRules);
-        const kwotaNum = parseFloat(row[columnMapping.kwota].toString().replace(/,/g, '.'));
+        const kwotaNum = parseKwota(row[columnMapping.kwota]);
 
         // Feature 7: Store all original CSV fields
         const csvRawFields = {};
@@ -375,9 +387,7 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
       // Normalize kwota to numbers and update typ based on final amount
       // Strip internal fields (_csvRaw, _originalOpis) before sending
       const normalizedTransactions = transactions.map(tx => {
-        const kwota = typeof tx.kwota === 'string'
-          ? parseFloat(tx.kwota.replace(',', '.')) || 0
-          : (tx.kwota || 0);
+        const kwota = parseKwota(tx.kwota);
         return {
           data: tx.data,
           kwota,
@@ -683,8 +693,8 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
                                 }
                               }}
                               onBlur={(e) => {
-                                const val = parseFloat(e.target.value.toString().replace(',', '.'));
-                                handleEditTransaction(idx, 'kwota', isNaN(val) ? 0 : val);
+                                const val = parseKwota(e.target.value);
+                                handleEditTransaction(idx, 'kwota', val);
                               }}
                               className="border rounded px-2 py-1 w-full text-right min-w-[90px]"
                             />
