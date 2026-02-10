@@ -319,7 +319,11 @@ export default function CategoryCharts({ transakcje = [], budgets = [], currentP
         {/* ---- Szczegółowa lista kategorii ---- */}
         <div className="mt-6 space-y-2">
           {pieData.map((item, index) => {
-            const budgetForCat = (budgets || []).find(b => b.kategoria === item.name && (!currentPeriod || (Number(b.miesiac) === Number(currentPeriod.month) && Number(b.rok) === Number(currentPeriod.year))));
+            const budgetForCat = (budgets || []).find(b => (
+              b.kategoria === item.name &&
+              (b.osoba === 'Wszyscy' || !b.osoba) &&
+              (!currentPeriod || (Number(b.miesiac) === Number(currentPeriod.month) && Number(b.rok) === Number(currentPeriod.year)))
+            ));
             const limit = budgetForCat ? Number(budgetForCat.limit) : null;
             const percent = limit ? Math.min(item.value / limit, 1) : null;
             let barColor = 'bg-emerald-400';

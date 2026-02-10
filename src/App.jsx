@@ -1592,6 +1592,7 @@ export default function BudgetApp() {
         <Budgets
           onClose={() => setShowBudgets(false)}
           kategorie={kategorie}
+          osoby={osoby}
           apiUrl={API_URL}
           month={currentPeriod.month}
           year={currentPeriod.year}
@@ -1617,6 +1618,7 @@ export default function BudgetApp() {
         <CSVImport
           onClose={() => setShowCSVImport(false)}
           kategorie={kategorie}
+          osoby={osoby}
           apiUrl={API_URL}
           authToken={token}
           onSaved={() => {
