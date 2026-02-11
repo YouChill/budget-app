@@ -377,10 +377,15 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading, editD
           <button
             type="submit"
             disabled={isLoading || !formData.kwota || !formData.kategoria}
-            className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 py-4 font-semibold text-white shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 py-4 font-semibold text-white shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {isLoading ? <Icons.Loader /> : isEditMode ? <Icons.Edit /> : <Icons.Plus />}
-            {isLoading ? 'Zapisywanie...' : isEditMode ? 'Zapisz zmiany' : 'Dodaj transakcję'}
+            {isLoading ? (
+              <><Icons.Loader /> Zapisywanie...</>
+            ) : isEditMode ? (
+              <><Icons.Edit /> Zapisz zmiany</>
+            ) : (
+              <><Icons.Plus /> Dodaj transakcję</>
+            )}
           </button>
         </form>
       </div>
