@@ -1629,6 +1629,7 @@ export default function BudgetApp() {
           month={currentPeriod.month}
           year={currentPeriod.year}
           budgets={budgets}
+          osoby={osoby}
           authToken={token}
           onSaved={async () => {
             try {
