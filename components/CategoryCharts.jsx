@@ -322,6 +322,8 @@ export default function CategoryCharts({ transakcje = [], budgets = [], currentP
             const budgetForCat = (budgets || []).find(b => b.kategoria === item.name && (!currentPeriod || (Number(b.miesiac) === Number(currentPeriod.month) && Number(b.rok) === Number(currentPeriod.year))));
             const limit = budgetForCat ? Number(budgetForCat.limit) : null;
             const percent = limit ? Math.min(item.value / limit, 1) : null;
+            const zrodlo = budgetForCat ? budgetForCat.zrodlo : null;
+            const rocznyLimit = budgetForCat ? budgetForCat.rocznyLimit : null;
             let barColor = 'bg-emerald-400';
             if (percent !== null) {
               if (percent >= 1) barColor = 'bg-rose-500';
@@ -348,10 +350,18 @@ export default function CategoryCharts({ transakcje = [], budgets = [], currentP
                   {limit !== null && (
                     <div className="mt-2">
                       <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                        <div className={`${barColor} h-2`} style={{ width: `${(item.value / limit) * 100}%` }} />
+                        <div className={`${barColor} h-2`} style={{ width: `${Math.min((item.value / limit) * 100, 100)}%` }} />
                       </div>
                       <div className="flex items-center justify-between text-xs text-gray-500 mt-1">
-                        <span>{Math.round((item.value / limit) * 100)}% z {formatCurrency(limit)}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span>{Math.round((item.value / limit) * 100)}% z {formatCurrency(limit)}</span>
+                          {zrodlo === 'monthly' && rocznyLimit !== null && (
+                            <span className="text-amber-600">(nadpisany, roczny: {formatCurrency(rocznyLimit)})</span>
+                          )}
+                          {zrodlo === 'yearly' && (
+                            <span className="text-purple-500">(roczny)</span>
+                          )}
+                        </div>
                         {item.value / limit >= 1 ? (
                           <span className="text-rose-600 font-semibold">Przekroczono</span>
                         ) : item.value / limit >= 0.8 ? (
