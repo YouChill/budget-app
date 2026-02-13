@@ -1,0 +1,16 @@
+{
+  "name": "budget-migration",
+  "version": "1.0.0",
+  "description": "Jednorazowy skrypt migracji Google Sheets → Supabase",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "node migrate.mjs",
+    "migrate:dry": "node migrate.mjs --dry-run"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "dotenv": "^16.4.7",
+    "papaparse": "^5.5.3"
+  }
+}
