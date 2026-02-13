@@ -1,0 +1,128 @@
+/**
+ * Formatuje kwotę do formatu polskiego PLN
+ * @param {number} amount - Kwota do sformatowania
+ * @returns {string} Sformatowana kwota (np. "1 234,56 zł")
+ */
+export const formatCurrency = (amount) => {
+  return new Intl.NumberFormat('pl-PL', {
+    style: 'currency',
+    currency: 'PLN',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(amount);
+};
+
+/**
+ * Formatuje datę do formatu polskiego
+ * @param {string|Date} dateString - Data jako string ISO lub obiekt Date
+ * @returns {string} Sformatowana data (np. "13/02/2026")
+ */
+export const formatDate = (dateString) => {
+  const date = new Date(dateString);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+/**
+ * Nazwy miesięcy w języku polskim
+ */
+export const MONTH_NAMES = [
+  '', // 0 - nieużywane
+  'Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec',
+  'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień'
+];
+
+/**
+ * Zwraca nazwę miesiąca
+ * @param {number} month - Numer miesiąca (1-12)
+ * @param {number} year - Rok
+ * @returns {string} Nazwa miesiąca z rokiem (np. "Luty 2026")
+ */
+export const getMonthName = (month, year) => {
+  const date = new Date(year, month - 1);
+  return date.toLocaleDateString('pl-PL', { 
+    month: 'long', 
+    year: 'numeric' 
+  });
+};
+
+/**
+ * Oblicza sumę przychodów z listy transakcji
+ * @param {Array} transakcje - Lista transakcji
+ * @returns {number} Suma przychodów
+ */
+export const calculateIncome = (transakcje = []) => {
+  return transakcje
+    .filter(t => t.typ === 'Przychód')
+    .reduce((sum, t) => sum + (parseFloat(t.kwota) || 0), 0);
+};
+
+/**
+ * Oblicza sumę wydatków z listy transakcji
+ * @param {Array} transakcje - Lista transakcji
+ * @returns {number} Suma wydatków
+ */
+export const calculateExpenses = (transakcje = []) => {
+  return transakcje
+    .filter(t => t.typ === 'Wydatek')
+    .reduce((sum, t) => sum + (parseFloat(t.kwota) || 0), 0);
+};
+
+/**
+ * Oblicza bilans (przychody - wydatki)
+ * @param {Array} transakcje - Lista transakcji
+ * @returns {number} Bilans
+ */
+export const calculateBalance = (transakcje = []) => {
+  const income = calculateIncome(transakcje);
+  const expenses = calculateExpenses(transakcje);
+  return income - expenses;
+};
+
+/**
+ * Zmienia miesiąc o podaną wartość
+ * @param {number} month - Aktualny miesiąc (1-12)
+ * @param {number} year - Aktualny rok
+ * @param {number} delta - Zmiana miesiąca
+ * @returns {{month: number, year: number}} Nowy miesiąc i rok
+ */
+export const changeMonth = (month, year, delta) => {
+  let newMonth = month + delta;
+  let newYear = year;
+
+  // Obsługuj wielokrotne przejścia lat
+  while (newMonth < 1) {
+    newMonth += 12;
+    newYear--;
+  }
+  while (newMonth > 12) {
+    newMonth -= 12;
+    newYear++;
+  }
+
+  return { month: newMonth, year: newYear };
+};
+
+/**
+ * Zwraca bieżący miesiąc i rok
+ * @returns {{month: number, year: number}} Bieżący miesiąc i rok
+ */
+export const getCurrentMonth = () => {
+  const now = new Date();
+  return { month: now.getMonth() + 1, year: now.getFullYear() };
+};
+
+/**
+ * Sortuje transakcje od najnowszych do najstarszych
+ * @param {Array} transakcje - Lista transakcji
+ * @returns {Array} Posortowana lista transakcji
+ */
+export const sortTransactionsByDate = (transakcje = []) => {
+  return [...transakcje].sort((a, b) => {
+    const dateA = new Date(a.data);
+    const dateB = new Date(b.data);
+    return dateB - dateA;
+  });
+};

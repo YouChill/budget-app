@@ -1,0 +1,46 @@
+Typ,Kategoria,Podkategoria
+Wydatek,Mieszkanie,Czynsz
+Wydatek,Mieszkanie,Prąd
+Wydatek,Mieszkanie,Gaz
+Wydatek,Mieszkanie,Woda
+Wydatek,Mieszkanie,Internet
+Wydatek,Mieszkanie,Telefon
+Wydatek,Mieszkanie,Ubezpieczenie mieszkania
+Wydatek,Dzieci,Przedszkole/Szkoła
+Wydatek,Dzieci,Zajęcia dodatkowe
+Wydatek,Dzieci,Ubrania dzieci
+Wydatek,Dzieci,Zabawki/książki
+Wydatek,Dzieci,Lekarz/leki dzieci
+Wydatek,Transport,Paliwo
+Wydatek,Transport,Ubezpieczenie auta
+Wydatek,Transport,Serwis/naprawy
+Wydatek,Transport,Komunikacja miejska
+Wydatek,Transport,Parking
+Wydatek,Kredyty/Raty,Kredyt hipoteczny
+Wydatek,Kredyty/Raty,Kredyt gotówkowy
+Wydatek,Kredyty/Raty,Raty
+Wydatek,Jedzenie,Zakupy domowe
+Wydatek,Jedzenie,Restauracje/miasto
+Wydatek,Jedzenie,Praca
+Wydatek,Jedzenie,Kawa/przekąski
+Wydatek,Zdrowie,Lekarz
+Wydatek,Zdrowie,Leki
+Wydatek,Zdrowie,Suplementy
+Wydatek,Rozrywka,Kino/koncerty
+Wydatek,Rozrywka,Subskrypcje
+Wydatek,Rozrywka,Hobby
+Wydatek,Rozrywka,Wyjazdy/wakacje
+Wydatek,Dom,Wyposażenie
+Wydatek,Dom,Chemia/środki czystości
+Wydatek,Dom,Naprawy
+Wydatek,Dom,Ogród
+Wydatek,Ubrania,Dorośli
+Wydatek,Inne,Prezenty
+Wydatek,Inne,Fryzjer/kosmetyki
+Wydatek,Inne,Nieprzewidziane
+Przychód,Wynagrodzenie,Paweł
+Przychód,Wynagrodzenie,Teresa
+Przychód,Inne przychody,800+
+Przychód,Inne przychody,Zwroty
+Przychód,Inne przychody,Premia
+Przychód,Inne przychody,Sprzedaż rzeczy
