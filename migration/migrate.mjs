@@ -15,6 +15,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
 import Papa from 'papaparse';
@@ -187,10 +188,10 @@ function transformTransakcje(rows, householdId) {
         komentarz: (row['Komentarz'] || '').trim() || null,
       };
 
-      // Zachowaj istniejące UUID jeśli jest
-      if (id && isValidUUID(id)) {
-        record.id = id;
-      }
+      // Zachowaj istniejące UUID lub wygeneruj nowy
+      // (batch insert wymaga id we WSZYSTKICH rekordach — inaczej Supabase
+      //  wstawia NULL dla brakujących, łamiąc NOT NULL constraint)
+      record.id = id && isValidUUID(id) ? id : crypto.randomUUID();
 
       return record;
     })
