@@ -1,13 +1,104 @@
 import { supabase } from '../lib/supabase';
 
-const HOUSEHOLD_ID = import.meta.env.VITE_HOUSEHOLD_ID;
+// Fallback dla backward compatibility (dla development bez auth)
+const FALLBACK_HOUSEHOLD_ID = import.meta.env.VITE_HOUSEHOLD_ID;
 
-if (!HOUSEHOLD_ID) {
-  throw new Error(
-    'Brak VITE_HOUSEHOLD_ID!\n' +
-    'Dodaj do .env.local:\n' +
-    'VITE_HOUSEHOLD_ID=twoj-household-uuid'
-  );
+// ═══════════════════════════════════════════
+// PROFILE & HOUSEHOLD FUNCTIONS
+// ═══════════════════════════════════════════
+
+/**
+ * Pobiera profil zalogowanego użytkownika wraz z household_id
+ */
+export async function getUserProfile() {
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  
+  if (authError || !user) {
+    throw new Error('Użytkownik nie zalogowany');
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('id, email, display_name, household_id')
+    .eq('id', user.id)
+    .single();
+
+  if (profileError) {
+    // Profil nie istnieje — twórz go
+    if (profileError.code === 'PGRST116') {
+      // Spróbuj automatycznie stworzyć profil z ostatnim household
+      const { data: households } = await supabase
+        .from('households')
+        .select('id')
+        .limit(1);
+
+      if (households && households.length > 0) {
+        const { data: created } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            email: user.email,
+            display_name: user.user_metadata?.name || user.email,
+            household_id: households[0].id,
+          })
+          .select('id, email, display_name, household_id')
+          .single();
+
+        return created;
+      }
+    }
+    throw profileError;
+  }
+
+  if (!profile.household_id) {
+    throw new Error('Profil użytkownika nie ma przypisanego gospodarstwa (household)');
+  }
+
+  return profile;
+}
+
+/**
+ * Przydziel użytkownika do gospodarstwa (household) — admin operation
+ */
+export async function assignUserToHousehold(userId, householdId) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({ household_id: householdId })
+    .eq('id', userId)
+    .select();
+
+  if (error) throw error;
+  return data[0];
+}
+
+/**
+ * Pobiera household_id zalogowanego użytkownika
+ * Falls back do VITE_HOUSEHOLD_ID dla backward compatibility
+ */
+async function getHouseholdId() {
+  try {
+    const profile = await getUserProfile();
+    return profile.household_id;
+  } catch (err) {
+    console.warn('Nie udało się pobrać household_id z profilu, używam fallback', err);
+    if (FALLBACK_HOUSEHOLD_ID) {
+      return FALLBACK_HOUSEHOLD_ID;
+    }
+    throw new Error('Brak household_id — zaloguj się lub ustaw VITE_HOUSEHOLD_ID');
+  }
+}
+
+/**
+ * Obsługuje błędy 401/403 — redirect na login
+ */
+function handleAuthError(error) {
+  if (error?.status === 401 || error?.status === 403) {
+    // Trigger logout by clearing auth state
+    localStorage.removeItem('budget_auth_token');
+    localStorage.removeItem('budget_auth_user');
+    window.location.href = '/';
+  }
+  throw error;
 }
 
 // ═══════════════════════════════════════════
@@ -15,78 +106,107 @@ if (!HOUSEHOLD_ID) {
 // ═══════════════════════════════════════════
 
 export async function getTransakcje(miesiac, rok) {
+  const householdId = await getHouseholdId();
   const startDate = `${rok}-${String(miesiac).padStart(2, '0')}-01`;
   const endDate = miesiac === 12
     ? `${rok + 1}-01-01`
     : `${rok}-${String(miesiac + 1).padStart(2, '0')}-01`;
 
-  const { data, error } = await supabase
-    .from('transakcje')
-    .select('id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz')
-    .eq('household_id', HOUSEHOLD_ID)
-    .gte('data', startDate)
-    .lt('data', endDate)
-    .order('data', { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from('transakcje')
+      .select('id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz')
+      .eq('household_id', householdId)
+      .gte('data', startDate)
+      .lt('data', endDate)
+      .order('data', { ascending: false });
 
-  if (error) throw error;
-  return data;
+    if (error) {
+      handleAuthError(error);
+    }
+    return data;
+  } catch (err) {
+    handleAuthError(err);
+  }
 }
 
 export async function addTransakcja(transakcja) {
-  const { data, error } = await supabase
-    .from('transakcje')
-    .insert({
-      household_id: HOUSEHOLD_ID,
-      data: transakcja.data,
-      typ: transakcja.typ,
-      kwota: Math.abs(transakcja.kwota),
-      kategoria: transakcja.kategoria,
-      podkategoria: transakcja.podkategoria || null,
-      osoba: transakcja.osoba,
-      komentarz: transakcja.komentarz || null,
-    })
-    .select('id')
-    .single();
+  const householdId = await getHouseholdId();
+  try {
+    const { data, error } = await supabase
+      .from('transakcje')
+      .insert({
+        household_id: householdId,
+        data: transakcja.data,
+        typ: transakcja.typ,
+        kwota: Math.abs(transakcja.kwota),
+        kategoria: transakcja.kategoria,
+        podkategoria: transakcja.podkategoria || null,
+        osoba: transakcja.osoba,
+        komentarz: transakcja.komentarz || null,
+      })
+      .select('id')
+      .single();
 
-  if (error) throw error;
-  return { success: true, id: data.id };
+    if (error) {
+      handleAuthError(error);
+    }
+    return { success: true, id: data.id };
+  } catch (err) {
+    handleAuthError(err);
+  }
 }
 
 export async function updateTransakcja(id, transakcja) {
-  const { error } = await supabase
-    .from('transakcje')
-    .update({
-      data: transakcja.data,
-      typ: transakcja.typ,
-      kwota: Math.abs(transakcja.kwota),
-      kategoria: transakcja.kategoria,
-      podkategoria: transakcja.podkategoria || null,
-      osoba: transakcja.osoba,
-      komentarz: transakcja.komentarz || null,
-    })
-    .eq('id', id)
-    .eq('household_id', HOUSEHOLD_ID);
+  const householdId = await getHouseholdId();
+  try {
+    const { error } = await supabase
+      .from('transakcje')
+      .update({
+        data: transakcja.data,
+        typ: transakcja.typ,
+        kwota: Math.abs(transakcja.kwota),
+        kategoria: transakcja.kategoria,
+        podkategoria: transakcja.podkategoria || null,
+        osoba: transakcja.osoba,
+        komentarz: transakcja.komentarz || null,
+      })
+      .eq('id', id)
+      .eq('household_id', householdId);
 
-  if (error) throw error;
-  return { success: true };
+    if (error) {
+      handleAuthError(error);
+    }
+    return { success: true };
+  } catch (err) {
+    handleAuthError(err);
+  }
 }
 
 export async function deleteTransakcja(id) {
-  const { error } = await supabase
-    .from('transakcje')
-    .delete()
-    .eq('id', id)
-    .eq('household_id', HOUSEHOLD_ID);
+  const householdId = await getHouseholdId();
+  try {
+    const { error } = await supabase
+      .from('transakcje')
+      .delete()
+      .eq('id', id)
+      .eq('household_id', householdId);
 
-  if (error) throw error;
-  return { success: true };
+    if (error) {
+      handleAuthError(error);
+    }
+    return { success: true };
+  } catch (err) {
+    handleAuthError(err);
+  }
 }
 
 export async function addTransakcjeBatch(transakcje) {
+  const householdId = await getHouseholdId();
   const records = transakcje.map(t => {
     const kwota = typeof t.kwota === 'number' ? t.kwota : parseFloat(t.kwota);
     return {
-      household_id: HOUSEHOLD_ID,
+      household_id: householdId,
       data: t.data,
       typ: t.typ || (kwota < 0 ? 'Wydatek' : 'Przychód'),
       kwota: Math.abs(kwota),
@@ -97,13 +217,19 @@ export async function addTransakcjeBatch(transakcje) {
     };
   });
 
-  const { data, error } = await supabase
-    .from('transakcje')
-    .insert(records)
-    .select('id');
+  try {
+    const { data, error } = await supabase
+      .from('transakcje')
+      .insert(records)
+      .select('id');
 
-  if (error) throw error;
-  return { success: true, count: data.length, ids: data.map(d => d.id) };
+    if (error) {
+      handleAuthError(error);
+    }
+    return { success: true, count: data.length, ids: data.map(d => d.id) };
+  } catch (err) {
+    handleAuthError(err);
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -111,57 +237,79 @@ export async function addTransakcjeBatch(transakcje) {
 // ═══════════════════════════════════════════
 
 export async function getKategorie() {
-  const { data, error } = await supabase
-    .from('kategorie')
-    .select('typ, kategoria, podkategoria')
-    .eq('household_id', HOUSEHOLD_ID)
-    .order('typ')
-    .order('kategoria')
-    .order('podkategoria');
+  const householdId = await getHouseholdId();
+  try {
+    const { data, error } = await supabase
+      .from('kategorie')
+      .select('typ, kategoria, podkategoria')
+      .eq('household_id', householdId)
+      .order('typ')
+      .order('kategoria')
+      .order('podkategoria');
 
-  if (error) throw error;
-
-  // Transform flat rows → nested { Wydatek: { cat: [subcats] }, Przychód: {...} }
-  const result = { Wydatek: {}, Przychód: {} };
-  for (const row of data) {
-    if (!result[row.typ]) result[row.typ] = {};
-    if (!result[row.typ][row.kategoria]) result[row.typ][row.kategoria] = [];
-    if (row.podkategoria) {
-      result[row.typ][row.kategoria].push(row.podkategoria);
+    if (error) {
+      handleAuthError(error);
     }
+
+    // Transform flat rows → nested { Wydatek: { cat: [subcats] }, Przychód: {...} }
+    const result = { Wydatek: {}, Przychód: {} };
+    for (const row of data) {
+      if (!result[row.typ]) result[row.typ] = {};
+      if (!result[row.typ][row.kategoria]) result[row.typ][row.kategoria] = [];
+      if (row.podkategoria) {
+        result[row.typ][row.kategoria].push(row.podkategoria);
+      }
+    }
+    return result;
+  } catch (err) {
+    handleAuthError(err);
   }
-  return result;
+}
 }
 
 export async function addKategoria(typ, kategoria, podkategoria) {
-  const { error } = await supabase
-    .from('kategorie')
-    .insert({
-      household_id: HOUSEHOLD_ID,
-      typ,
-      kategoria,
-      podkategoria: podkategoria || null,
-    });
+  const householdId = await getHouseholdId();
+  try {
+    const { error } = await supabase
+      .from('kategorie')
+      .insert({
+        household_id: householdId,
+        typ,
+        kategoria,
+        podkategoria: podkategoria || null,
+      });
 
-  if (error) throw error;
-  return { success: true };
+    if (error) {
+      handleAuthError(error);
+    }
+    return { success: true };
+  } catch (err) {
+    handleAuthError(err);
+  }
 }
 
 export async function deleteKategoria(typ, kategoria, podkategoria) {
-  let query = supabase
-    .from('kategorie')
-    .delete()
-    .eq('household_id', HOUSEHOLD_ID)
-    .eq('typ', typ)
-    .eq('kategoria', kategoria);
+  const householdId = await getHouseholdId();
+  try {
+    let query = supabase
+      .from('kategorie')
+      .delete()
+      .eq('household_id', householdId)
+      .eq('typ', typ)
+      .eq('kategoria', kategoria);
 
-  if (podkategoria) {
-    query = query.eq('podkategoria', podkategoria);
+    if (podkategoria) {
+      query = query.eq('podkategoria', podkategoria);
+    }
+
+    const { error } = await query;
+    if (error) {
+      handleAuthError(error);
+    }
+    return { success: true };
+  } catch (err) {
+    handleAuthError(err);
   }
-
-  const { error } = await query;
-  if (error) throw error;
-  return { success: true };
 }
 
 // ═══════════════════════════════════════════
@@ -169,37 +317,58 @@ export async function deleteKategoria(typ, kategoria, podkategoria) {
 // ═══════════════════════════════════════════
 
 export async function getOsoby() {
-  const { data, error } = await supabase
-    .from('osoby')
-    .select('nazwa')
-    .eq('household_id', HOUSEHOLD_ID)
-    .order('nazwa');
+  const householdId = await getHouseholdId();
+  try {
+    const { data, error } = await supabase
+      .from('osoby')
+      .select('nazwa')
+      .eq('household_id', householdId)
+      .order('nazwa');
 
-  if (error) throw error;
-  return data.map(o => o.nazwa);
+    if (error) {
+      handleAuthError(error);
+    }
+    return data.map(o => o.nazwa);
+  } catch (err) {
+    handleAuthError(err);
+  }
 }
 
 export async function addOsoba(osoba) {
-  const { error } = await supabase
-    .from('osoby')
-    .insert({
-      household_id: HOUSEHOLD_ID,
-      nazwa: osoba,
-    });
+  const householdId = await getHouseholdId();
+  try {
+    const { error } = await supabase
+      .from('osoby')
+      .insert({
+        household_id: householdId,
+        nazwa: osoba,
+      });
 
-  if (error) throw error;
-  return { success: true };
+    if (error) {
+      handleAuthError(error);
+    }
+    return { success: true };
+  } catch (err) {
+    handleAuthError(err);
+  }
 }
 
 export async function deleteOsoba(osoba) {
-  const { error } = await supabase
-    .from('osoby')
-    .delete()
-    .eq('household_id', HOUSEHOLD_ID)
-    .eq('nazwa', osoba);
+  const householdId = await getHouseholdId();
+  try {
+    const { error } = await supabase
+      .from('osoby')
+      .delete()
+      .eq('household_id', householdId)
+      .eq('nazwa', osoba);
 
-  if (error) throw error;
-  return { success: true };
+    if (error) {
+      handleAuthError(error);
+    }
+    return { success: true };
+  } catch (err) {
+    handleAuthError(err);
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -222,125 +391,155 @@ function transformBudget(b, zrodlo) {
 }
 
 export async function getBudgets(miesiac, rok) {
-  // Get monthly budgets for the specific month
-  const { data: monthly, error: monthlyError } = await supabase
-    .from('budzety')
-    .select('*')
-    .eq('household_id', HOUSEHOLD_ID)
-    .eq('zakres', 'monthly')
-    .eq('miesiac', miesiac)
-    .eq('rok', rok);
+  const householdId = await getHouseholdId();
+  try {
+    // Get monthly budgets for the specific month
+    const { data: monthly, error: monthlyError } = await supabase
+      .from('budzety')
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('zakres', 'monthly')
+      .eq('miesiac', miesiac)
+      .eq('rok', rok);
 
-  if (monthlyError) throw monthlyError;
+    if (monthlyError) {
+      handleAuthError(monthlyError);
+    }
 
-  // Get yearly budgets
-  const { data: yearly, error: yearlyError } = await supabase
-    .from('budzety')
-    .select('*')
-    .eq('household_id', HOUSEHOLD_ID)
-    .eq('zakres', 'yearly')
-    .eq('rok', rok);
+    // Get yearly budgets
+    const { data: yearly, error: yearlyError } = await supabase
+      .from('budzety')
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('zakres', 'yearly')
+      .eq('rok', rok);
 
-  if (yearlyError) throw yearlyError;
+    if (yearlyError) {
+      handleAuthError(yearlyError);
+    }
 
-  // Resolve hierarchy: monthly overrides yearly
-  const resolved = [];
-  const monthlyByKey = new Map();
+    // Resolve hierarchy: monthly overrides yearly
+    const resolved = [];
+    const monthlyByKey = new Map();
 
-  for (const b of monthly) {
-    const key = `${b.kategoria}|${b.osoba || ''}`;
-    monthlyByKey.set(key, b);
-    resolved.push(transformBudget(b, 'monthly'));
-  }
+    for (const b of monthly) {
+      const key = `${b.kategoria}|${b.osoba || ''}`;
+      monthlyByKey.set(key, b);
+      resolved.push(transformBudget(b, 'monthly'));
+    }
 
-  for (const b of yearly) {
-    const key = `${b.kategoria}|${b.osoba || ''}`;
-    if (!monthlyByKey.has(key)) {
-      resolved.push(transformBudget(b, 'yearly'));
-    } else {
-      // Monthly exists — attach yearly info
-      const existing = resolved.find(r =>
-        r.kategoria === b.kategoria && (r.osoba || '') === (b.osoba || '') && r.zrodlo === 'monthly'
-      );
-      if (existing) {
-        existing.rocznyLimit = b.limit_kwota;
-        existing.roczneNotatki = b.notatki;
+    for (const b of yearly) {
+      const key = `${b.kategoria}|${b.osoba || ''}`;
+      if (!monthlyByKey.has(key)) {
+        resolved.push(transformBudget(b, 'yearly'));
+      } else {
+        // Monthly exists — attach yearly info
+        const existing = resolved.find(r =>
+          r.kategoria === b.kategoria && (r.osoba || '') === (b.osoba || '') && r.zrodlo === 'monthly'
+        );
+        if (existing) {
+          existing.rocznyLimit = b.limit_kwota;
+          existing.roczneNotatki = b.notatki;
+        }
       }
     }
-  }
 
-  return resolved;
+    return resolved;
+  } catch (err) {
+    handleAuthError(err);
+  }
 }
 
 export async function getAllBudgetsForYear(rok) {
-  const { data, error } = await supabase
-    .from('budzety')
-    .select('*')
-    .eq('household_id', HOUSEHOLD_ID)
-    .eq('rok', rok)
-    .order('kategoria')
-    .order('zakres')
-    .order('miesiac');
+  const householdId = await getHouseholdId();
+  try {
+    const { data, error } = await supabase
+      .from('budzety')
+      .select('*')
+      .eq('household_id', householdId)
+      .eq('rok', rok)
+      .order('kategoria')
+      .order('zakres')
+      .order('miesiac');
 
-  if (error) throw error;
+    if (error) {
+      handleAuthError(error);
+    }
 
-  return data.map(b => ({
-    kategoria: b.kategoria,
-    limit: b.limit_kwota,
-    miesiac: b.miesiac,
-    rok: b.rok,
-    osoba: b.osoba || '',
-    zakres: b.zakres,
-    notatki: b.notatki || '',
-  }));
+    return data.map(b => ({
+      kategoria: b.kategoria,
+      limit: b.limit_kwota,
+      miesiac: b.miesiac,
+      rok: b.rok,
+      osoba: b.osoba || '',
+      zakres: b.zakres,
+      notatki: b.notatki || '',
+    }));
+  } catch (err) {
+    handleAuthError(err);
+  }
 }
 
 export async function setBudget(budget) {
-  const record = {
-    household_id: HOUSEHOLD_ID,
-    kategoria: budget.kategoria,
-    limit_kwota: budget.limit,
-    rok: Number(budget.rok),
-    osoba: budget.osoba || null,
-    zakres: budget.zakres,
-    notatki: budget.notatki || null,
-    miesiac: budget.zakres === 'monthly' ? Number(budget.miesiac) : null,
-  };
+  const householdId = await getHouseholdId();
+  try {
+    const record = {
+      household_id: householdId,
+      kategoria: budget.kategoria,
+      limit_kwota: budget.limit,
+      rok: Number(budget.rok),
+      osoba: budget.osoba || null,
+      zakres: budget.zakres,
+      notatki: budget.notatki || null,
+      miesiac: budget.zakres === 'monthly' ? Number(budget.miesiac) : null,
+    };
 
-  const { error } = await supabase
-    .from('budzety')
-    .upsert(record, {
-      onConflict: 'household_id,kategoria,osoba,zakres,rok,miesiac',
-    });
+    const { error } = await supabase
+      .from('budzety')
+      .upsert(record, {
+        onConflict: 'household_id,kategoria,osoba,zakres,rok,miesiac',
+      });
 
-  if (error) throw error;
-  return { success: true };
+    if (error) {
+      handleAuthError(error);
+    }
+    return { success: true };
+  } catch (err) {
+    handleAuthError(err);
+  }
 }
 
 export async function deleteBudget(budget) {
-  let query = supabase
-    .from('budzety')
-    .delete()
-    .eq('household_id', HOUSEHOLD_ID)
-    .eq('kategoria', budget.kategoria)
-    .eq('zakres', budget.zakres)
-    .eq('rok', budget.rok);
+  const householdId = await getHouseholdId();
+  try {
+    let query = supabase
+      .from('budzety')
+      .delete()
+      .eq('household_id', householdId)
+      .eq('kategoria', budget.kategoria)
+      .eq('zakres', budget.zakres)
+      .eq('rok', budget.rok);
 
-  if (budget.osoba) {
-    query = query.eq('osoba', budget.osoba);
-  } else {
-    query = query.is('osoba', null);
+    if (budget.osoba) {
+      query = query.eq('osoba', budget.osoba);
+    } else {
+      query = query.is('osoba', null);
+    }
+
+    if (budget.zakres === 'monthly' && budget.miesiac) {
+      query = query.eq('miesiac', budget.miesiac);
+    } else {
+      query = query.is('miesiac', null);
+    }
+
+    const { error } = await query;
+    if (error) {
+      handleAuthError(error);
+    }
+    return { success: true };
+  } catch (err) {
+    handleAuthError(err);
   }
-
-  if (budget.zakres === 'monthly' && budget.miesiac) {
-    query = query.eq('miesiac', budget.miesiac);
-  } else {
-    query = query.is('miesiac', null);
-  }
-
-  const { error } = await query;
-  if (error) throw error;
-  return { success: true };
 }
 
 // ═══════════════════════════════════════════
