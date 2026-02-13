@@ -8,29 +8,7 @@ import { useAuth } from './contexts/AuthContext';
 import { useToast } from './contexts/ToastContext';
 import { useOffline } from './hooks/useOffline';
 import { addToQueue, getQueuedOperations, processQueue } from './services/offlineQueue';
-
-// Sprawdź czy zmienna środowiskowa jest ustawiona
-if (!import.meta.env.VITE_API_URL) {
-  throw new Error(
-    '❌ VITE_API_URL nie jest ustawiona!\n' +
-    '📝 Utwórz plik .env w głównym katalogu projektu:\n' +
-    'VITE_API_URL=https://script.google.com/macros/s/TWÓJ_KLUCZ/exec'
-  );
-}
-
-const API_URL = import.meta.env.VITE_API_URL;
-
-// Log dla debugowania (usuń po wdrożeniu)
-//console.log('🔧 API_URL:', API_URL);
-
-// Authenticated fetch — always use POST to avoid token-in-URL length issues
-const authFetch = (url, body, token) => {
-  const data = typeof body === 'string' ? JSON.parse(body) : body;
-  return fetch(url, {
-    method: 'POST',
-    body: JSON.stringify({ ...data, token }),
-  });
-};
+import * as api from './services/api';
 
 // Pomocnicze funkcje
 const formatCurrency = (amount) => {
@@ -468,7 +446,7 @@ const TransactionItem = ({ transaction, onDelete, onEdit, isOffline, addToast })
 // ============================================
 // PANEL USTAWIEŃ - Zarządzanie słownikami
 // ============================================
-const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChange, onOsobyChange, apiUrl, authToken }) => {
+const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChange, onOsobyChange }) => {
   const [activeTab, setActiveTab] = useState('kategorie');
   const [isProcessing, setIsProcessing] = useState(false);
   const [settingsError, setSettingsError] = useState(null);
@@ -540,14 +518,8 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
     
     setIsProcessing(true);
     try {
-      const res = await authFetch(apiUrl, {
-          action: 'addKategoria',
-          typ: newKatTyp,
-          kategoria: nazwa,
-          podkategoria: podkat
-        }, authToken);
-      const result = await res.json();
-      
+      const result = await api.addKategoria(newKatTyp, nazwa, podkat);
+
       if (result.success) {
         const updated = { ...kategorie };
         if (!updated[newKatTyp]) updated[newKatTyp] = {};
@@ -597,14 +569,8 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
     setIsProcessing(true);
     
     try {
-      const res = await authFetch(apiUrl, {
-          action: 'deleteKategoria',
-          typ,
-          kategoria,
-          podkategoria: podkategoria || ''
-        }, authToken);
-      const result = await res.json();
-      
+      const result = await api.deleteKategoria(typ, kategoria, podkategoria);
+
       if (result.success) {
         const updated = { ...kategorie };
         if (podkategoria) {
@@ -640,12 +606,8 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
     
     setIsProcessing(true);
     try {
-      const res = await authFetch(apiUrl, {
-          action: 'addOsoba',
-          osoba: nazwa
-        }, authToken);
-      const result = await res.json();
-      
+      const result = await api.addOsoba(nazwa);
+
       if (result.success) {
         onOsobyChange([...osoby, nazwa]);
         setNewOsoba('');
@@ -686,12 +648,8 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
     setIsProcessing(true);
     
     try {
-      const res = await authFetch(apiUrl, {
-          action: 'deleteOsoba',
-          osoba
-        }, authToken);
-      const result = await res.json();
-      
+      const result = await api.deleteOsoba(osoba);
+
       if (result.success) {
         onOsobyChange(osoby.filter(o => o !== osoba));
         showSuccess(`Usunięto osobę "${osoba}"`);
@@ -1084,36 +1042,20 @@ export default function BudgetApp() {
 
     // 2. Pobierz świeże dane w tle
     try {
-      const response = await authFetch(API_URL, {
-          action: 'getAllData',
-          miesiac: currentPeriod.month,
-          rok: currentPeriod.year
-        }, token);
-      const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.error);
-      }
-      
+      const data = await api.getAllData(currentPeriod.month, currentPeriod.year);
+
       // Aktualizuj stan
       const noweTransakcje = Array.isArray(data.transakcje) ? data.transakcje : [];
       const noweKategorie = data.kategorie || { Wydatek: {}, Przychód: {} };
       const noweOsoby = Array.isArray(data.osoby) ? data.osoby : [];
-      
+
       setTransakcje(noweTransakcje);
       setKategorie(noweKategorie);
       setOsoby(noweOsoby);
       // Pobierz budżety dla okresu
       try {
-        const bRes = await authFetch(API_URL, {
-            action: 'getBudgets',
-            miesiac: currentPeriod.month,
-            rok: currentPeriod.year
-          }, token);
-        const bData = await bRes.json();
-        if (!bData.error) {
-          setBudgets(Array.isArray(bData) ? bData : []);
-        }
+        const bData = await api.getBudgets(currentPeriod.month, currentPeriod.year);
+        setBudgets(Array.isArray(bData) ? bData : []);
       } catch (err) {
         console.warn('Nie udało się pobrać budżetów', err);
       }
@@ -1126,14 +1068,14 @@ export default function BudgetApp() {
     } catch (err) {
       // Pokaż błąd tylko jeśli nie mamy cache
       if (!hasCache) {
-        setError('Nie udało się połączyć z arkuszem. Sprawdź połączenie i odśwież stronę.');
+        setError('Nie udało się pobrać danych. Sprawdź połączenie i odśwież stronę.');
       }
       console.error(err);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [currentPeriod, token]);
+  }, [currentPeriod]);
 
   // Ładuj dane przy starcie i zmianie miesiąca
   useEffect(() => {
@@ -1142,7 +1084,7 @@ export default function BudgetApp() {
 
   // Sync queued operations when coming back online
   useEffect(() => {
-    if (wasOfflineRef.current && !isOffline && token) {
+    if (wasOfflineRef.current && !isOffline) {
       const syncQueue = async () => {
         const queue = getQueuedOperations();
         if (queue.length === 0) {
@@ -1151,7 +1093,7 @@ export default function BudgetApp() {
         }
         setIsSyncing(true);
         try {
-          const result = await processQueue(authFetch, API_URL, token);
+          const result = await processQueue();
           if (result.succeeded > 0) {
             addToast(`Zsynchronizowano ${result.succeeded} ${result.succeeded === 1 ? 'operację' : 'operacji'}`);
           }
@@ -1168,7 +1110,7 @@ export default function BudgetApp() {
       syncQueue();
     }
     wasOfflineRef.current = isOffline;
-  }, [isOffline, token, fetchData, addToast]);
+  }, [isOffline, fetchData, addToast]);
 
   // Dodawanie transakcji
   const handleAddTransaction = async (transakcja) => {
@@ -1191,11 +1133,7 @@ export default function BudgetApp() {
 
     setIsSaving(true);
     try {
-      const res = await authFetch(API_URL, {
-          action: 'addTransakcja',
-          transakcja
-        }, token);
-      const result = await res.json();
+      const result = await api.addTransakcja(transakcja);
 
       if (result.success) {
         await fetchData();
@@ -1237,12 +1175,7 @@ export default function BudgetApp() {
 
     setIsSaving(true);
     try {
-      const res = await authFetch(API_URL, {
-          action: 'updateTransakcja',
-          id: editingTransaction.id,
-          transakcja
-        }, token);
-      const result = await res.json();
+      const result = await api.updateTransakcja(editingTransaction.id, transakcja);
 
       if (result.success) {
         await fetchData();
@@ -1294,11 +1227,7 @@ export default function BudgetApp() {
     }
 
     try {
-      const res = await authFetch(API_URL, {
-          action: 'deleteTransakcja',
-          id
-        }, token);
-      const result = await res.json();
+      const result = await api.deleteTransakcja(id);
       if (result.success !== false) {
         await fetchData();
         addToast('Transakcja została usunięta');
@@ -1616,8 +1545,6 @@ export default function BudgetApp() {
           transakcje={transakcje}
           onKategorieChange={handleKategorieChange}
           onOsobyChange={handleOsobyChange}
-          apiUrl={API_URL}
-          authToken={token}
         />
       )}
 
@@ -1625,21 +1552,14 @@ export default function BudgetApp() {
         <Budgets
           onClose={() => setShowBudgets(false)}
           kategorie={kategorie}
-          apiUrl={API_URL}
           month={currentPeriod.month}
           year={currentPeriod.year}
           budgets={budgets}
           osoby={osoby}
-          authToken={token}
           onSaved={async () => {
             try {
-              const bRes = await authFetch(API_URL, {
-            action: 'getBudgets',
-            miesiac: currentPeriod.month,
-            rok: currentPeriod.year
-          }, token);
-              const bData = await bRes.json();
-              if (!bData.error) setBudgets(Array.isArray(bData) ? bData : []);
+              const bData = await api.getBudgets(currentPeriod.month, currentPeriod.year);
+              setBudgets(Array.isArray(bData) ? bData : []);
             } catch (err) {
               console.warn('Nie udało się odświeżyć budżetów', err);
             }
@@ -1651,8 +1571,6 @@ export default function BudgetApp() {
         <CSVImport
           onClose={() => setShowCSVImport(false)}
           kategorie={kategorie}
-          apiUrl={API_URL}
-          authToken={token}
           onSaved={() => {
             setShowCSVImport(false);
             fetchData();

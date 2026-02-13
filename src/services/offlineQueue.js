@@ -1,3 +1,5 @@
+import { processOfflineOperation } from './api';
+
 const QUEUE_KEY = 'budget_offline_queue';
 
 function getQueue() {
@@ -38,10 +40,10 @@ export function removeFromQueue(operationId) {
 }
 
 /**
- * Process all queued operations sequentially.
+ * Process all queued operations sequentially via Supabase API.
  * Returns { succeeded: number, failed: number, errors: string[] }
  */
-export async function processQueue(authFetch, apiUrl, token) {
+export async function processQueue() {
   const queue = getQueue();
   if (queue.length === 0) return { succeeded: 0, failed: 0, errors: [] };
 
@@ -51,18 +53,11 @@ export async function processQueue(authFetch, apiUrl, token) {
 
   for (const op of queue) {
     try {
-      const res = await authFetch(apiUrl, op.payload, token);
-      const result = await res.json();
-
-      if (result.success === false || result.error) {
-        failed++;
-        errors.push(result.error || `Operacja ${op.action} nie powiodla sie`);
-      } else {
-        succeeded++;
-      }
+      await processOfflineOperation(op);
+      succeeded++;
     } catch (err) {
       failed++;
-      errors.push(`Blad sieci: ${op.action}`);
+      errors.push(err.message || `Operacja ${op.action} nie powiodla sie`);
     }
   }
 

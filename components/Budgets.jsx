@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import * as api from '../src/services/api';
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('pl-PL', {
@@ -14,7 +15,7 @@ const MONTH_NAMES = [
   'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień'
 ];
 
-export default function Budgets({ onClose, kategorie = {}, apiUrl, month, year, budgets = [], onSaved, authToken, osoby = [] }) {
+export default function Budgets({ onClose, kategorie = {}, month, year, budgets = [], onSaved, osoby = [] }) {
   const expenseCats = Object.keys(kategorie['Wydatek'] || {});
 
   const [form, setForm] = useState({
@@ -36,14 +37,8 @@ export default function Budgets({ onClose, kategorie = {}, apiUrl, month, year, 
   const fetchAllBudgets = async () => {
     setIsLoadingAll(true);
     try {
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'getAllBudgetsForYear', rok: form.rok, token: authToken })
-      });
-      const data = await res.json();
-      if (!data.error) {
-        setAllBudgets(Array.isArray(data) ? data : []);
-      }
+      const data = await api.getAllBudgetsForYear(form.rok);
+      setAllBudgets(Array.isArray(data) ? data : []);
     } catch (err) {
       console.warn('Nie udało się pobrać budżetów rocznych', err);
     } finally {
@@ -122,21 +117,15 @@ export default function Budgets({ onClose, kategorie = {}, apiUrl, month, year, 
         budgetData.miesiac = Number(form.miesiac);
       }
 
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'setBudget', budget: budgetData, token: authToken })
-      });
-      const data = await res.json();
+      const data = await api.setBudget(budgetData);
       if (data.success) {
         await fetchAllBudgets();
         if (onSaved) onSaved();
         setForm(prev => ({ ...prev, limit: '', notatki: '' }));
-      } else {
-        alert(data.error || 'Błąd zapisu budżetu');
       }
     } catch (err) {
       console.error(err);
-      alert('Błąd połączenia');
+      alert(err.message || 'Błąd zapisu budżetu');
     } finally {
       setIsSaving(false);
     }
@@ -146,20 +135,14 @@ export default function Budgets({ onClose, kategorie = {}, apiUrl, month, year, 
     if (!window.confirm(`Czy na pewno chcesz usunąć budżet ${budget.zakres === 'yearly' ? 'roczny' : 'miesięczny'} dla "${budget.kategoria}"?`)) return;
 
     try {
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'deleteBudget', budget, token: authToken })
-      });
-      const data = await res.json();
+      const data = await api.deleteBudget(budget);
       if (data.success) {
         await fetchAllBudgets();
         if (onSaved) onSaved();
-      } else {
-        alert(data.error || 'Błąd usuwania budżetu');
       }
     } catch (err) {
       console.error(err);
-      alert('Błąd połączenia');
+      alert(err.message || 'Błąd usuwania budżetu');
     }
   };
 
