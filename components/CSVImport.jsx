@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Papa from 'papaparse';
+import * as api from '../src/services/api';
 
 // Mapowanie słów kluczowych na kategorie
 const categoryMapping = {
@@ -91,25 +92,8 @@ const categorizeDescription = (description, userRules = []) => {
 const STORAGE_KEY = 'csv_import_progress';
 const RULES_STORAGE_KEY = 'csv_recognition_rules';
 
-// Check if JWT token is expired (with 60s buffer)
-function checkTokenExpired(token) {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const payload = JSON.parse(decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    ));
-    if (!payload || !payload.exp) return true;
-    return Date.now() >= (payload.exp - 60) * 1000;
-  } catch {
-    return true;
-  }
-}
 
-export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, authToken }) {
+export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
   const [step, setStep] = useState(1); // 1: Upload, 2: Mapping, 3: Preview, 4: Success
   const [csvData, setCsvData] = useState(null);
   const [headers, setHeaders] = useState([]);
@@ -121,7 +105,6 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
   const [transactions, setTransactions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
-  const [sessionError, setSessionError] = useState(false);
 
   // Feature 6: Recognition rules
   const [recognitionRules, setRecognitionRules] = useState([]);
@@ -185,24 +168,6 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
       }
     }
   }, [transactions, step]);
-
-  // Heartbeat - keep session alive during category mapping (step 3)
-  useEffect(() => {
-    if (step !== 3 || !apiUrl || !authToken) return;
-
-    const heartbeat = setInterval(async () => {
-      try {
-        await fetch(apiUrl, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'keepAlive', token: authToken }),
-        });
-      } catch (e) {
-        console.error('Session heartbeat failed:', e);
-      }
-    }, 5 * 60 * 1000); // every 5 minutes
-
-    return () => clearInterval(heartbeat);
-  }, [step, apiUrl, authToken]);
 
   // Auto-dismiss rule notification after 4 seconds
   useEffect(() => {
@@ -376,12 +341,6 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
       return;
     }
 
-    // Check token validity before attempting import
-    if (checkTokenExpired(authToken)) {
-      setSessionError(true);
-      return;
-    }
-
     setIsLoading(true);
     try {
       // Normalize kwota to numbers and update typ based on final amount
@@ -398,30 +357,16 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
         };
       });
 
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        body: JSON.stringify({
-          action: 'addTransakcjeBatch',
-          transakcje: normalizedTransactions,
-          token: authToken
-        })
-      });
-      const data = await res.json();
+      const data = await api.addTransakcjeBatch(normalizedTransactions);
 
       if (data.success) {
         localStorage.removeItem(STORAGE_KEY);
         setStep(4);
         if (onSaved) onSaved();
-      } else if (data.error && (data.error.toLowerCase().includes('token') || data.error.toLowerCase().includes('auth') || data.error.toLowerCase().includes('unauthorized'))) {
-        setSessionError(true);
-        setIsLoading(false);
-      } else {
-        alert(data.error || 'Błąd importu');
-        setIsLoading(false);
       }
     } catch (err) {
       console.error(err);
-      alert('Błąd połączenia. Twój postęp został zapisany lokalnie.');
+      alert(err.message || 'Błąd importu. Twój postęp został zapisany lokalnie.');
       setIsLoading(false);
     }
   };
@@ -441,11 +386,6 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
       localStorage.removeItem(STORAGE_KEY);
     }
     onClose();
-  };
-
-  const handleRelogin = () => {
-    // Progress is already saved in localStorage; redirect to re-authenticate
-    window.location.reload();
   };
 
   // Feature 7: Toggle row details on mobile
@@ -487,23 +427,6 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
 
         {/* Content */}
         <div className="p-6 overflow-auto flex-1">
-          {/* Session expired error */}
-          {sessionError && (
-            <div className="mb-4 bg-red-50 border border-red-300 rounded-lg p-4">
-              <h4 className="font-semibold text-red-800 mb-1">Sesja wygasła</h4>
-              <p className="text-sm text-red-700 mb-3">
-                Twoja sesja wygasła, ale postęp został zapisany lokalnie.
-                Zaloguj się ponownie, aby kontynuować import.
-              </p>
-              <button
-                onClick={handleRelogin}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm"
-              >
-                Zaloguj ponownie
-              </button>
-            </div>
-          )}
-
           {/* Step 1: Upload */}
           {step === 1 && (
             <div className="space-y-4">
@@ -942,7 +865,7 @@ export default function CSVImport({ onClose, apiUrl, kategorie = {}, onSaved, au
                 </button>
                 <button
                   onClick={handleImport}
-                  disabled={isLoading || sessionError}
+                  disabled={isLoading}
                   className="flex-1 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
                 >
                   {isLoading ? 'Importuję...' : 'Importuj transakcje'}
