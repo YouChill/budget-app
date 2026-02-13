@@ -265,7 +265,6 @@ export async function getKategorie() {
     handleAuthError(err);
   }
 }
-}
 
 export async function addKategoria(typ, kategoria, podkategoria) {
   const householdId = await getHouseholdId();
