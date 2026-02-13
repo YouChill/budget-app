@@ -80,10 +80,14 @@ function parseCSV(filePath) {
   const resolved = path.resolve(__dirname, filePath);
   const content = fs.readFileSync(resolved, 'utf-8');
 
-  const result = Papa.parse(content, {
+  // Usuń BOM jeśli jest na początku pliku
+  const clean = content.replace(/^\uFEFF/, '');
+
+  const result = Papa.parse(clean, {
     header: true,
     skipEmptyLines: true,
     dynamicTyping: false, // zachowaj jako stringi, parsujemy ręcznie
+    transformHeader: (h) => h.trim(),
   });
 
   if (result.errors.length > 0) {
@@ -248,7 +252,16 @@ async function insertBatch(supabase, table, records) {
   for (let i = 0; i < records.length; i += BATCH_SIZE) {
     const batch = records.slice(i, i + BATCH_SIZE);
 
-    const { data, error } = await supabase.from(table).insert(batch).select();
+    // Usuń pola z wartością undefined (Supabase traktuje je jako NULL/explicit)
+    const cleanBatch = batch.map((row) => {
+      const clean = {};
+      for (const [k, v] of Object.entries(row)) {
+        if (v !== undefined) clean[k] = v;
+      }
+      return clean;
+    });
+
+    const { data, error } = await supabase.from(table).insert(cleanBatch).select();
 
     if (error) {
       allErrors.push(`Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${error.message}`);
