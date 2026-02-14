@@ -4,7 +4,7 @@ Aplikacja do śledzenia domowych wydatków i przychodów. Stworzona z myślą o 
 
 ![React](https://img.shields.io/badge/React-19-blue)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-4-38B2AC)
-![Google Sheets](https://img.shields.io/badge/Backend-Google%20Sheets-green)
+![Supabase](https://img.shields.io/badge/Backend-Supabase-3ECF8E)
 
 ## ✨ Funkcjonalności
 
@@ -14,7 +14,8 @@ Aplikacja do śledzenia domowych wydatków i przychodów. Stworzona z myślą o 
 - 🗑️ **Usuwanie transakcji**
 - 👥 **Wieloosobowe** — oznaczanie kto wprowadził transakcję
 - 🔐 **Autoryzacja Google OAuth 2.0** — logowanie kontem Google z weryfikacją JWT
-- ☁️ **Synchronizacja** — dane w Google Sheets, dostępne z każdego urządzenia
+- ☁️ **Synchronizacja** — dane w Supabase (PostgreSQL), dostępne z każdego urządzenia
+- 🔄 **Real-time sync** — automatyczna aktualizacja danych między urządzeniami w czasie rzeczywistym
 - 📈 **Wykresy** — wykresy kołowe i słupkowe wydatków wg kategorii (Recharts)
 - 💳 **Import CSV** — import wyciągów bankowych z automatycznym dopasowaniem kategorii
 - 🎯 **Budżety** — ustawianie miesięcznych limitów wydatków wg kategorii
@@ -26,14 +27,17 @@ Aplikacja do śledzenia domowych wydatków i przychodów. Stworzona z myślą o 
 - **Wykresy:** Recharts
 - **Import CSV:** PapaParse
 - **Obsługa gestów:** react-swipeable
-- **Autoryzacja:** Google Identity Services (OAuth 2.0, JWT)
-- **Backend:** Google Sheets + Google Apps Script
+- **Autoryzacja:** Google OAuth 2.0 + Supabase Auth
+- **Backend:** Supabase (PostgreSQL + PostgREST API)
+- **Real-time:** Supabase Realtime (WebSocket)
+- **Storage:** Supabase Storage (opcjonalnie do backupów CSV)
 - **Hosting:** Netlify / Vercel (opcjonalnie)
 
 ## 📋 Wymagania
 
 - Node.js 18+
-- Konto Google (do arkusza i autoryzacji OAuth)
+- Konto Supabase (baza danych PostgreSQL)
+- Konto Google (do autoryzacji OAuth logowania)
 
 ## 🚀 Instalacja
 
@@ -56,33 +60,27 @@ npm install
 cp .env.example .env
 ```
 
-Uzupełnij plik `.env`:
+Uzupełnij plik `.env` z danymi Supabase i Google OAuth:
 
 ```env
-VITE_API_URL=https://script.google.com/macros/s/TWOJ_KLUCZ/exec
+VITE_SUPABASE_URL=https://twoj-projekt.supabase.co
+VITE_SUPABASE_ANON_KEY=twoj-anon-key
+VITE_HOUSEHOLD_ID=twoj-household-uuid
 VITE_GOOGLE_CLIENT_ID=TWOJ_CLIENT_ID.apps.googleusercontent.com
 ```
 
-### 4. Skonfiguruj backend (Google Sheets + Apps Script)
+Szczegółowa instrukcja: [SETUP_SUPABASE.md](./docs/SETUP_SUPABASE.md)
 
-Szczegółowa instrukcja: [SETUP_GOOGLE.md](./docs/SETUP_GOOGLE.md)
+### 4. Skonfiguruj autoryzację Google OAuth
 
-Krótko:
-1. Utwórz nowy arkusz Google
-2. Wklej skrypt Apps Script z pliku `google-apps-script/Code.gs`
-3. Wdróż jako aplikację internetową
-4. Skopiuj URL i wklej do `.env` jako `VITE_API_URL`
-
-### 5. Skonfiguruj autoryzację Google OAuth
-
-Szczegółowa instrukcja: [SETUP_AUTH.md](./docs/SETUP_AUTH.md)
+Szczegółowa instrukcja: [SETUP_AUTH_PHASE3.md](./docs/SETUP_AUTH_PHASE3.md)
 
 Krótko:
 1. Utwórz projekt w Google Cloud Console
 2. Skonfiguruj OAuth 2.0 Client ID
 3. Wklej Client ID do `.env` jako `VITE_GOOGLE_CLIENT_ID`
 
-### 6. Uruchom lokalnie
+### 5. Uruchom lokalnie
 
 ```bash
 npm run dev
@@ -95,52 +93,86 @@ Aplikacja będzie dostępna pod adresem: `http://localhost:5173`
 ```
 budzet-domowy/
 ├── src/
-│   ├── App.jsx              # Główna aplikacja React
-│   ├── main.jsx             # Punkt wejścia
-│   ├── index.css            # Style Tailwind
+│   ├── App.jsx                  # Główna aplikacja React
+│   ├── main.jsx                 # Punkt wejścia
+│   ├── index.css                # Style Tailwind
 │   ├── components/
-│   │   └── LoginPage.jsx    # Strona logowania Google OAuth
-│   └── contexts/
-│       └── AuthContext.jsx   # Kontekst autoryzacji (JWT)
+│   │   ├── LoginPage.jsx        # Strona logowania Google OAuth
+│   │   ├── TransactionForm.jsx  # Formularz transakcji
+│   │   └── TransactionItem.jsx  # Pojedyncza transakcja
+│   ├── contexts/
+│   │   ├── AuthContext.jsx      # Kontekst autoryzacji (JWT)
+│   │   └── ToastContext.jsx     # Kontekst powiadomień
+│   ├── hooks/
+│   │   └── useOffline.js        # Hook do offline mode
+│   ├── lib/
+│   │   └── supabase.js          # Klient Supabase
+│   ├── services/
+│   │   ├── api.js               # API do Supabase
+│   │   └── offlineQueue.js      # Kolejka offline operations
+│   └── __tests__/               # Testy
 ├── components/
-│   ├── CategoryCharts.jsx   # Wykresy kategorii (Recharts)
-│   ├── CSVImport.jsx        # Import CSV z banku
-│   └── Budgets.jsx          # Zarządzanie budżetami
-├── google-apps-script/
-│   ├── Code.gs              # Backend Google Apps Script
-│   └── appsscript.json      # Manifest GAS
+│   ├── CategoryCharts.jsx       # Wykresy kategorii (Recharts)
+│   ├── CSVImport.jsx            # Import CSV z banku
+│   └── Budgets.jsx              # Zarządzanie budżetami
+├── migration/
+│   └── *.sql                    # Migracje bazy danych
 ├── docs/
-│   ├── SETUP_GOOGLE.md      # Instrukcja konfiguracji Google Sheets
-│   ├── SETUP_AUTH.md        # Instrukcja konfiguracji OAuth
-│   └── CSV_IMPORT.md        # Dokumentacja importu CSV
-├── public/                   # Zasoby statyczne (favicony, manifest)
+│   ├── SETUP_SUPABASE.md        # Instrukcja konfiguracji Supabase
+│   ├── SETUP_AUTH_PHASE3.md     # Instrukcja konfiguracji OAuth
+│   └── CSV_IMPORT.md            # Dokumentacja importu CSV
+├── public/                      # Zasoby statyczne (favicony, manifest)
 ├── index.html
 ├── package.json
 ├── vite.config.js
 ├── postcss.config.js
 ├── eslint.config.js
-└── .env.example              # Szablon zmiennych środowiskowych
+└── .env.example                 # Szablon zmiennych środowiskowych
 ```
 
-## 📊 Struktura danych w arkuszu
+## 📊 Struktura danych w Supabase
 
-Aplikacja korzysta z 4 zakładek w arkuszu Google:
+Aplikacja korzysta z poniższych tabel w PostgreSQL:
 
-### Transakcje
-| ID | Data | Typ | Kwota | Kategoria | Podkategoria | Osoba | Komentarz |
-|----|------|-----|-------|-----------|--------------|-------|-----------|
+### transakcje
+| Pole | Typ | Opis |
+|------|-----|------|
+| id | UUID | Klucz główny |
+| household_id | UUID | Gospodarstwo |
+| data | DATE | Data transakcji |
+| typ | TEXT | 'Wydatek' lub 'Przychód' |
+| kwota | NUMERIC | Kwota w PLN |
+| kategoria | TEXT | Kategoria wydatku |
+| podkategoria | TEXT | Podkategoria |
+| osoba | TEXT | Osoba wpisująca |
+| komentarz | TEXT | Notatka |
+| created_at | TIMESTAMP | Data utworzenia |
 
-### Kategorie
-| Typ | Kategoria | Podkategoria |
-|-----|-----------|--------------|
+### kategorie
+| Pole | Typ |
+|------|-----|
+| id | UUID |
+| household_id | UUID |
+| typ | TEXT |
+| nazwa | TEXT |
+| podkategorie | JSONB |
 
-### Osoby
-| Osoba |
-|-------|
+### osoby
+| Pole | Typ |
+|------|-----|
+| id | UUID |
+| household_id | UUID |
+| nazwa | TEXT |
 
-### Budżety
-| Miesiąc | Kategoria | Limit |
-|---------|-----------|-------|
+### budgets
+| Pole | Typ |
+|------|-----|
+| id | UUID |
+| household_id | UUID |
+| month | INTEGER |
+| year | INTEGER |
+| kategoria | TEXT |
+| limit | NUMERIC |
 
 ## 🔧 Konfiguracja
 
@@ -150,12 +182,14 @@ Konfiguracja odbywa się poprzez plik `.env` (skopiuj z `.env.example`):
 
 | Zmienna | Opis |
 |---------|------|
-| `VITE_API_URL` | URL wdrożonego skryptu Google Apps Script |
+| `VITE_SUPABASE_URL` | URL projektu Supabase |
+| `VITE_SUPABASE_ANON_KEY` | Klucz anonimowy (public) Supabase |
+| `VITE_HOUSEHOLD_ID` | UUID gospodarstwa domowego |
 | `VITE_GOOGLE_CLIENT_ID` | Client ID z Google Cloud Console (OAuth 2.0) |
 
 ### Domyślne kategorie
 
-Kategorie są definiowane w skrypcie Google Apps Script w funkcji `initializeSpreadsheet()`. Możesz je edytować bezpośrednio w arkuszu Google lub zmodyfikować skrypt. Aplikacja zawiera 40+ predefiniowanych kategorii (Mieszkanie, Transport, Jedzenie, Zdrowie, Rozrywka, Odzież, Dom, Dzieci, Kredyty i inne).
+Kategorie są przechowywane w bazie Supabase i mogą być edytowane bezpośrednio w aplikacji w sekcji Ustawienia. Aplikacja zawiera 40+ predefiniowanych kategorii (Mieszkanie, Transport, Jedzenie, Zdrowie, Rozrywka, Odzież, Dom, Dzieci, Kredyty i inne).
 
 ## 🚢 Deployment
 
@@ -165,28 +199,35 @@ Kategorie są definiowane w skrypcie Google Apps Script w funkcji `initializeSpr
 ```bash
 npm run build
 ```
-2. Przeciągnij folder `dist` na [netlify.com](https://netlify.com)
-3. Ustaw zmienne środowiskowe (`VITE_API_URL`, `VITE_GOOGLE_CLIENT_ID`) w ustawieniach projektu
+2. Połącz repozytorium GitHub z [netlify.com](https://netlify.com)
+3. Netlify automatycznie wykryje Vite i skonfiguruje build
+4. Ustaw zmienne środowiskowe w ustawieniach projektu: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_HOUSEHOLD_ID`, `VITE_GOOGLE_CLIENT_ID`
 
 ### Vercel
 
 1. Połącz repozytorium GitHub z [vercel.com](https://vercel.com)
 2. Vercel automatycznie wykryje Vite i skonfiguruje build
 3. Ustaw zmienne środowiskowe w ustawieniach projektu
+4. Aktywuj Edge Config dla realtime support (opcjonalnie)
 
-**Ważne:** Dodaj domenę hostingu do **Authorized JavaScript origins** w ustawieniach OAuth w Google Cloud Console.
+**Ważne:** Dodaj domenę hostingu do **Authorized JavaScript origins** w ustawieniach OAuth w Google Cloud Console oraz do **Authorized URLs** w ustawieniach Supabase.
 
 ## 🗺️ Roadmap
 
-- [x] MVP — dodawanie/usuwanie transakcji
+- [x] MVP — dodawanie/usuwanie/edycja transakcji
 - [x] Podsumowanie miesiąca
-- [x] Optymalizacja ładowania danych
 - [x] Autoryzacja Google OAuth 2.0
+- [x] Migracja na Supabase (PostgreSQL)
 - [x] Wykresy kategorii (kołowe i słupkowe)
 - [x] Import CSV z banku
 - [x] Budżetowanie (plan vs realizacja)
-- [x] Edycja transakcji
-- [ ] Zarządzanie słownikami w aplikacji
+- [x] Offline mode z offline queue
+- [x] Zarządzanie słownikami w aplikacji
+- [x] Real-time subscriptions
+- [ ] Eksport danych do CSV (backup)
+- [ ] Integracje bankowe (API banków)
+- [ ] Raporty szczegółowe
+- [ ] Wiele gospodarstw (multi-household)
 
 ## 🤝 Współtworzenie
 

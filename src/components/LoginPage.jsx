@@ -105,7 +105,7 @@ export default function LoginPage() {
             <p className="text-xs text-gray-400 text-center">
               Dostęp tylko dla autoryzowanych użytkowników.
               <br />
-              Dane są przechowywane w Google Sheets.
+              Dane są przechowywane w Supabase PostgreSQL.
             </p>
           </div>
         </div>
