@@ -4,6 +4,7 @@ import Budgets from '/components/Budgets';
 import CSVImport from '/components/CSVImport';
 import LoginPage from './components/LoginPage';
 import OfflineBanner from './components/OfflineBanner';
+import YearlySummary from './components/YearlySummary';
 import { useAuth } from './contexts/AuthContext';
 import { useToast } from './contexts/ToastContext';
 import { useOffline } from './hooks/useOffline';
@@ -127,6 +128,20 @@ const Icons = {
   Loader: () => (
     <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+    </svg>
+  ),
+  Calendar: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+      <line x1="16" y1="2" x2="16" y2="6"/>
+      <line x1="8" y1="2" x2="8" y2="6"/>
+      <line x1="3" y1="10" x2="21" y2="10"/>
+    </svg>
+  ),
+  Piggy: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 5c-1.5 0-2.8 1.4-3 2-3.5-1.5-11-.3-11 5 0 1.8 0 3 2 4.5V20h4v-2h3v2h4v-4c1-.5 1.7-1 2-2h2v-4h-2c0-1-.5-1.5-1-2"/>
+      <path d="M2 9.5a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0"/>
     </svg>
   )
 };
@@ -1001,7 +1016,39 @@ export default function BudgetApp() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [pendingCount, setPendingCount] = useState(() => getQueuedOperations().length);
   const wasOfflineRef = useRef(isOffline);
+
+  // Yearly summary view state
+  const [activeView, setActiveView] = useState('monthly');
+  const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
+  const [availableYears, setAvailableYears] = useState([new Date().getFullYear()]);
+  const [showHint, setShowHint] = useState(() => !localStorage.getItem('yearlyViewHintSeen'));
+  const [pulseActive, setPulseActive] = useState(() => !localStorage.getItem('yearlyViewHintSeen'));
   
+  // Fetch available years for yearly view
+  useEffect(() => {
+    if (!isAuthenticated || isOffline) return;
+    api.getAvailableYears().then(years => {
+      setAvailableYears(years);
+    }).catch(() => {});
+  }, [isAuthenticated, isOffline]);
+
+  // Auto-stop pulse animation after 5 seconds
+  useEffect(() => {
+    if (!pulseActive) return;
+    const timer = setTimeout(() => setPulseActive(false), 5000);
+    return () => clearTimeout(timer);
+  }, [pulseActive]);
+
+  // Handle yearly view toggle
+  const handleToggleView = () => {
+    setActiveView(v => v === 'monthly' ? 'yearly' : 'monthly');
+    if (showHint) {
+      setShowHint(false);
+      setPulseActive(false);
+      localStorage.setItem('yearlyViewHintSeen', 'true');
+    }
+  };
+
   // Pobierz wszystkie dane
   const fetchData = useCallback(async (showLoadingSpinner = true) => {
     if (showLoadingSpinner) {
@@ -1359,8 +1406,40 @@ export default function BudgetApp() {
           {/* Top row: logo/title + action buttons */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-              <div className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-2 sm:p-2.5 text-white shadow-lg shrink-0">
-                <Icons.Wallet />
+              {/* Flip icon toggle: Wallet (monthly) ↔ Calendar (yearly) */}
+              <div className="relative">
+                <button
+                  onClick={handleToggleView}
+                  className={`relative w-10 h-10 sm:w-11 sm:h-11 cursor-pointer shrink-0 ${pulseActive ? 'animate-pulse' : ''}`}
+                  style={{ perspective: '600px' }}
+                  title={activeView === 'monthly' ? 'Podsumowanie roku' : 'Widok miesięczny'}
+                >
+                  <div
+                    className="absolute inset-0 transition-transform duration-500"
+                    style={{
+                      transformStyle: 'preserve-3d',
+                      transform: activeView === 'yearly' ? 'rotateY(180deg)' : 'rotateY(0deg)',
+                    }}
+                  >
+                    {/* Front — Wallet */}
+                    <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-2 sm:p-2.5 text-white shadow-lg flex items-center justify-center"
+                         style={{ backfaceVisibility: 'hidden' }}>
+                      <Icons.Wallet />
+                    </div>
+                    {/* Back — Calendar */}
+                    <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-2 sm:p-2.5 text-white shadow-lg flex items-center justify-center"
+                         style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
+                      <Icons.Calendar />
+                    </div>
+                  </div>
+                </button>
+                {/* One-time hint badge */}
+                {showHint && (
+                  <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-xs rounded-lg px-3 py-1.5 whitespace-nowrap shadow-lg z-50 pointer-events-none">
+                    Kliknij, aby zobaczyć rok
+                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-800 rotate-45"></div>
+                  </div>
+                )}
               </div>
               <div className="min-w-0">
                 <h1 className="text-base sm:text-xl font-bold text-gray-800 truncate">Budżet Domowy</h1>
@@ -1431,25 +1510,43 @@ export default function BudgetApp() {
             </div>
           </div>
 
-          {/* Month navigation - separate row on mobile, inline on desktop */}
+          {/* Navigation - monthly or yearly */}
           <div className="flex justify-center mt-2 sm:mt-2">
-            <div className="flex items-center gap-1 sm:gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
-              <button
-                onClick={() => changeMonth(-1)}
-                className="rounded-xl p-1.5 sm:p-2 text-gray-600 hover:bg-gray-100 transition-colors"
-              >
-                <Icons.ChevronLeft />
-              </button>
-              <span className="px-2 sm:px-3 py-1 text-sm font-medium text-gray-700 min-w-[130px] sm:min-w-[140px] text-center capitalize">
-                {getMonthName(currentPeriod.month, currentPeriod.year)}
-              </span>
-              <button
-                onClick={() => changeMonth(1)}
-                className="rounded-xl p-1.5 sm:p-2 text-gray-600 hover:bg-gray-100 transition-colors"
-              >
-                <Icons.ChevronRight />
-              </button>
-            </div>
+            {activeView === 'monthly' ? (
+              <div className="flex items-center gap-1 sm:gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
+                <button
+                  onClick={() => changeMonth(-1)}
+                  className="rounded-xl p-1.5 sm:p-2 text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  <Icons.ChevronLeft />
+                </button>
+                <span className="px-2 sm:px-3 py-1 text-sm font-medium text-gray-700 min-w-[130px] sm:min-w-[140px] text-center capitalize">
+                  {getMonthName(currentPeriod.month, currentPeriod.year)}
+                </span>
+                <button
+                  onClick={() => changeMonth(1)}
+                  className="rounded-xl p-1.5 sm:p-2 text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  <Icons.ChevronRight />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 bg-white rounded-2xl shadow-sm border border-gray-100 p-1 flex-wrap justify-center">
+                {availableYears.map(y => (
+                  <button
+                    key={y}
+                    onClick={() => setSelectedYear(y)}
+                    className={`rounded-xl px-3 py-1.5 text-sm font-medium transition-all ${
+                      selectedYear === y
+                        ? 'bg-indigo-500 text-white shadow-sm'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {y}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -1469,7 +1566,9 @@ export default function BudgetApp() {
           </div>
         )}
         
-        {isLoading ? (
+        {activeView === 'yearly' ? (
+          <YearlySummary year={selectedYear} />
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-20">
             <div className="flex items-center gap-3 text-gray-500">
               <Icons.Loader />
@@ -1480,26 +1579,26 @@ export default function BudgetApp() {
           <>
             {/* Karty podsumowania */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <SummaryCard 
-                title="Przychody" 
-                amount={przychody} 
+              <SummaryCard
+                title="Przychody"
+                amount={przychody}
                 icon={Icons.TrendingUp}
                 type="income"
               />
-              <SummaryCard 
-                title="Wydatki" 
-                amount={wydatki} 
+              <SummaryCard
+                title="Wydatki"
+                amount={wydatki}
                 icon={Icons.TrendingDown}
                 type="expense"
               />
-              <SummaryCard 
-                title="Bilans" 
-                amount={bilans} 
+              <SummaryCard
+                title="Bilans"
+                amount={bilans}
                 icon={Icons.Wallet}
                 type="balance"
               />
             </div>
-            
+
             {/* Wykresy kategorii */}
             <CategoryCharts transakcje={transakcje} budgets={budgets} currentPeriod={currentPeriod} />
 
@@ -1524,7 +1623,7 @@ export default function BudgetApp() {
                   Dodaj
                 </button>
               </div>
-              
+
               <div className="p-4 space-y-3 max-h-[500px] overflow-y-auto">
                 {sortedTransakcje.length === 0 ? (
                   <div className="text-center py-12 text-gray-500">
@@ -1614,7 +1713,7 @@ export default function BudgetApp() {
       )}
       
       {/* FAB dla mobile */}
-      {!showForm && !isLoading && !isOffline && (
+      {!showForm && !isLoading && !isOffline && activeView === 'monthly' && (
         <button
           onClick={() => setShowForm(true)}
           className="fixed bottom-6 right-6 md:hidden rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 p-4 text-white shadow-2xl shadow-indigo-400 hover:scale-110 transition-transform"
