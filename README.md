@@ -1,4 +1,4 @@
-# 💰 Budżet Domowy
+# Budżet Domowy
 
 Aplikacja do śledzenia domowych wydatków i przychodów. Stworzona z myślą o wspólnym zarządzaniu finansami przez pary/rodziny.
 
@@ -6,21 +6,23 @@ Aplikacja do śledzenia domowych wydatków i przychodów. Stworzona z myślą o 
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-4-38B2AC)
 ![Supabase](https://img.shields.io/badge/Backend-Supabase-3ECF8E)
 
-## ✨ Funkcjonalności
+## Funkcjonalności
 
-- 📊 **Dashboard** — podsumowanie miesiąca (przychody, wydatki, bilans)
-- ➕ **Dodawanie i edycja transakcji** — z kategorią, podkategorią, osobą i komentarzem
-- 📅 **Nawigacja miesięczna** — przeglądanie różnych miesięcy
-- 🗑️ **Usuwanie transakcji**
-- 👥 **Wieloosobowe** — oznaczanie kto wprowadził transakcję
-- 🔐 **Autoryzacja Google OAuth 2.0** — logowanie kontem Google z weryfikacją JWT
-- ☁️ **Synchronizacja** — dane w Supabase (PostgreSQL), dostępne z każdego urządzenia
-- 🔄 **Real-time sync** — automatyczna aktualizacja danych między urządzeniami w czasie rzeczywistym
-- 📈 **Wykresy** — wykresy kołowe i słupkowe wydatków wg kategorii (Recharts)
-- 💳 **Import CSV** — import wyciągów bankowych z automatycznym dopasowaniem kategorii
-- 🎯 **Budżety** — ustawianie miesięcznych limitów wydatków wg kategorii
+- **Dashboard** — podsumowanie miesiąca (przychody, wydatki, bilans)
+- **Dodawanie i edycja transakcji** — z kategorią, podkategorią, osobą i komentarzem
+- **Nawigacja miesięczna** — przeglądanie różnych miesięcy
+- **Usuwanie transakcji** — swipe na mobile lub przycisk
+- **Wieloosobowe** — oznaczanie kto wprowadził transakcję
+- **Autoryzacja Google OAuth 2.0** — logowanie kontem Google z weryfikacją JWT
+- **Synchronizacja** — dane w Supabase (PostgreSQL), dostępne z każdego urządzenia
+- **Real-time sync** — automatyczna aktualizacja danych między urządzeniami w czasie rzeczywistym
+- **Wykresy** — wykresy kołowe i słupkowe wydatków wg kategorii (Recharts)
+- **Import CSV** — import wyciągów bankowych z automatycznym dopasowaniem kategorii
+- **Budżety** — ustawianie miesięcznych limitów wydatków wg kategorii (z powtarzalnością roczną/miesięczną)
+- **Podsumowanie roczne** — KPI roczne, wykresy miesięczne przychody vs wydatki, oszczędności skumulowane, porównanie rok do roku, podział wydatków na osoby
+- **Offline mode** — kolejka operacji offline z automatyczną synchronizacją po powrocie do sieci
 
-## 🛠️ Stack technologiczny
+## Stack technologiczny
 
 - **Frontend:** React 19 + Vite 6
 - **Stylowanie:** Tailwind CSS 4
@@ -30,22 +32,21 @@ Aplikacja do śledzenia domowych wydatków i przychodów. Stworzona z myślą o 
 - **Autoryzacja:** Google OAuth 2.0 + Supabase Auth
 - **Backend:** Supabase (PostgreSQL + PostgREST API)
 - **Real-time:** Supabase Realtime (WebSocket)
-- **Storage:** Supabase Storage (opcjonalnie do backupów CSV)
 - **Hosting:** Netlify / Vercel (opcjonalnie)
 
-## 📋 Wymagania
+## Wymagania
 
 - Node.js 18+
 - Konto Supabase (baza danych PostgreSQL)
 - Konto Google (do autoryzacji OAuth logowania)
 
-## 🚀 Instalacja
+## Instalacja
 
 ### 1. Sklonuj repozytorium
 
 ```bash
-git clone https://github.com/TWOJA-NAZWA/budzet-domowy.git
-cd budzet-domowy
+git clone https://github.com/YouChill/budget-app.git
+cd budget-app
 ```
 
 ### 2. Zainstaluj zależności
@@ -88,10 +89,10 @@ npm run dev
 
 Aplikacja będzie dostępna pod adresem: `http://localhost:5173`
 
-## 📁 Struktura projektu
+## Struktura projektu
 
 ```
-budzet-domowy/
+budget-app/
 ├── src/
 │   ├── App.jsx                  # Główna aplikacja React
 │   ├── main.jsx                 # Punkt wejścia
@@ -99,7 +100,9 @@ budzet-domowy/
 │   ├── components/
 │   │   ├── LoginPage.jsx        # Strona logowania Google OAuth
 │   │   ├── TransactionForm.jsx  # Formularz transakcji
-│   │   └── TransactionItem.jsx  # Pojedyncza transakcja
+│   │   ├── TransactionItem.jsx  # Pojedyncza transakcja (swipe)
+│   │   ├── YearlySummary.jsx    # Podsumowanie roczne z wykresami
+│   │   └── OfflineBanner.jsx    # Banner trybu offline
 │   ├── contexts/
 │   │   ├── AuthContext.jsx      # Kontekst autoryzacji (JWT)
 │   │   └── ToastContext.jsx     # Kontekst powiadomień
@@ -110,13 +113,17 @@ budzet-domowy/
 │   ├── services/
 │   │   ├── api.js               # API do Supabase
 │   │   └── offlineQueue.js      # Kolejka offline operations
-│   └── __tests__/               # Testy
+│   ├── utils/
+│   │   └── calculations.js      # Obliczenia finansowe (agregacje, YoY)
+│   └── __tests__/               # Testy jednostkowe i integracyjne
 ├── components/
 │   ├── CategoryCharts.jsx       # Wykresy kategorii (Recharts)
 │   ├── CSVImport.jsx            # Import CSV z banku
 │   └── Budgets.jsx              # Zarządzanie budżetami
 ├── migration/
-│   └── *.sql                    # Migracje bazy danych
+│   ├── migrate.mjs              # Skrypt jednorazowej migracji z CSV
+│   ├── *.sql                    # Migracje bazy danych (DDL, RLS)
+│   └── csv/                     # Przykładowe dane CSV
 ├── docs/
 │   ├── SETUP_SUPABASE.md        # Instrukcja konfiguracji Supabase
 │   ├── SETUP_AUTH_PHASE3.md     # Instrukcja konfiguracji OAuth
@@ -130,7 +137,7 @@ budzet-domowy/
 └── .env.example                 # Szablon zmiennych środowiskowych
 ```
 
-## 📊 Struktura danych w Supabase
+## Struktura danych w Supabase
 
 Aplikacja korzysta z poniższych tabel w PostgreSQL:
 
@@ -174,7 +181,7 @@ Aplikacja korzysta z poniższych tabel w PostgreSQL:
 | kategoria | TEXT |
 | limit | NUMERIC |
 
-## 🔧 Konfiguracja
+## Konfiguracja
 
 ### Zmienne środowiskowe
 
@@ -191,7 +198,7 @@ Konfiguracja odbywa się poprzez plik `.env` (skopiuj z `.env.example`):
 
 Kategorie są przechowywane w bazie Supabase i mogą być edytowane bezpośrednio w aplikacji w sekcji Ustawienia. Aplikacja zawiera 40+ predefiniowanych kategorii (Mieszkanie, Transport, Jedzenie, Zdrowie, Rozrywka, Odzież, Dom, Dzieci, Kredyty i inne).
 
-## 🚢 Deployment
+## Deployment
 
 ### Netlify
 
@@ -208,11 +215,10 @@ npm run build
 1. Połącz repozytorium GitHub z [vercel.com](https://vercel.com)
 2. Vercel automatycznie wykryje Vite i skonfiguruje build
 3. Ustaw zmienne środowiskowe w ustawieniach projektu
-4. Aktywuj Edge Config dla realtime support (opcjonalnie)
 
 **Ważne:** Dodaj domenę hostingu do **Authorized JavaScript origins** w ustawieniach OAuth w Google Cloud Console oraz do **Authorized URLs** w ustawieniach Supabase.
 
-## 🗺️ Roadmap
+## Roadmap
 
 - [x] MVP — dodawanie/usuwanie/edycja transakcji
 - [x] Podsumowanie miesiąca
@@ -224,15 +230,16 @@ npm run build
 - [x] Offline mode z offline queue
 - [x] Zarządzanie słownikami w aplikacji
 - [x] Real-time subscriptions
+- [x] Podsumowanie roczne z porównaniem lat i podziałem na osoby
 - [ ] Eksport danych do CSV (backup)
 - [ ] Integracje bankowe (API banków)
 - [ ] Raporty szczegółowe
 - [ ] Wiele gospodarstw (multi-household)
 
-## 🤝 Współtworzenie
+## Współtworzenie
 
 Pull requesty są mile widziane! Przy większych zmianach proszę najpierw otworzyć issue.
 
-## 📄 Licencja
+## Licencja
 
 MIT
