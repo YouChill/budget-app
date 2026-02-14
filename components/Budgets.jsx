@@ -259,8 +259,8 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
             </div>
 
             {/* Limit + Okres */}
-            <div className={`grid gap-3 ${form.zakres === 'monthly' ? 'grid-cols-4' : 'grid-cols-2'}`}>
-              <div className={form.zakres === 'monthly' ? 'col-span-2' : ''}>
+            <div className={`grid gap-3 ${form.zakres === 'monthly' ? 'grid-cols-6' : 'grid-cols-2'}`}>
+              <div className={form.zakres === 'monthly' ? 'col-span-3' : ''}>
                 <label className="block text-sm text-gray-600 mb-2">Limit (PLN)</label>
                 <input
                   type="number"
