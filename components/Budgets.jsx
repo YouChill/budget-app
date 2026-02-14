@@ -278,7 +278,7 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
                   <select
                     value={form.miesiac}
                     onChange={e => setForm(prev => ({ ...prev, miesiac: Number(e.target.value) }))}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-3 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all bg-white"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all bg-white"
                   >
                     {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
                       <option key={m} value={m}>{MONTH_NAMES[m]}</option>
