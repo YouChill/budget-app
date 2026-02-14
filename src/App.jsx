@@ -8,6 +8,7 @@ import { useAuth } from './contexts/AuthContext';
 import { useToast } from './contexts/ToastContext';
 import { useOffline } from './hooks/useOffline';
 import { addToQueue, getQueuedOperations, processQueue } from './services/offlineQueue';
+import { supabase } from './lib/supabase';
 import * as api from './services/api';
 
 // Pomocnicze funkcje
@@ -989,7 +990,6 @@ export default function BudgetApp() {
   const [kategorie, setKategorie] = useState({ Wydatek: {}, Przychód: {} });
   const [osoby, setOsoby] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [budgets, setBudgets] = useState([]);
   const [showBudgets, setShowBudgets] = useState(false);
@@ -1002,45 +1002,22 @@ export default function BudgetApp() {
   const [pendingCount, setPendingCount] = useState(() => getQueuedOperations().length);
   const wasOfflineRef = useRef(isOffline);
   
-  // Klucz cache dla transakcji danego miesiąca
-  const getCacheKey = (month, year) => `budzet_trans_${month}_${year}`;
-  
   // Pobierz wszystkie dane
   const fetchData = useCallback(async (showLoadingSpinner = true) => {
-    const cacheKey = getCacheKey(currentPeriod.month, currentPeriod.year);
-    
-    // 1. Najpierw pokaż dane z cache (natychmiast)
-    const cachedKategorie = sessionStorage.getItem('budzet_kategorie');
-    const cachedOsoby = sessionStorage.getItem('budzet_osoby');
-    const cachedTransakcje = sessionStorage.getItem(cacheKey);
-    
-    const hasCache = cachedKategorie && cachedOsoby;
-    
-    if (hasCache) {
-      setKategorie(JSON.parse(cachedKategorie));
-      setOsoby(JSON.parse(cachedOsoby));
-      if (cachedTransakcje) {
-        setTransakcje(JSON.parse(cachedTransakcje));
-      }
-      setIsLoading(false);
-      setIsRefreshing(true); // Pokaż subtelny wskaźnik odświeżania
-    } else if (showLoadingSpinner) {
+    if (showLoadingSpinner) {
       setIsLoading(true);
     }
     
     setError(null);
 
-    // If offline, just show cached data — don't attempt network fetch
+    // If offline, just show cached data if available — don't attempt network fetch
     if (!navigator.onLine) {
-      if (!hasCache) {
-        setError('Brak połączenia z internetem i brak danych w cache.');
-      }
+      setError('Brak połączenia z internetem.');
       setIsLoading(false);
-      setIsRefreshing(false);
       return;
     }
 
-    // 2. Pobierz świeże dane w tle
+    // Pobierz świeże dane
     try {
       const data = await api.getAllData(currentPeriod.month, currentPeriod.year);
 
@@ -1052,6 +1029,7 @@ export default function BudgetApp() {
       setTransakcje(noweTransakcje);
       setKategorie(noweKategorie);
       setOsoby(noweOsoby);
+      
       // Pobierz budżety dla okresu
       try {
         const bData = await api.getBudgets(currentPeriod.month, currentPeriod.year);
@@ -1059,21 +1037,12 @@ export default function BudgetApp() {
       } catch (err) {
         console.warn('Nie udało się pobrać budżetów', err);
       }
-
-      // Zapisz do cache
-      sessionStorage.setItem(cacheKey, JSON.stringify(noweTransakcje));
-      sessionStorage.setItem('budzet_kategorie', JSON.stringify(noweKategorie));
-      sessionStorage.setItem('budzet_osoby', JSON.stringify(noweOsoby));
       
     } catch (err) {
-      // Pokaż błąd tylko jeśli nie mamy cache
-      if (!hasCache) {
-        setError('Nie udało się pobrać danych. Sprawdź połączenie i odśwież stronę.');
-      }
+      setError('Nie udało się pobrać danych. Sprawdź połączenie i odśwież stronę.');
       console.error(err);
     } finally {
       setIsLoading(false);
-      setIsRefreshing(false);
     }
   }, [currentPeriod]);
 
@@ -1112,6 +1081,92 @@ export default function BudgetApp() {
     wasOfflineRef.current = isOffline;
   }, [isOffline, fetchData, addToast]);
 
+  // Real-time subscriptions — nasłuchuj zmian w Supabase
+  useEffect(() => {
+    if (isOffline || !user) return; // Skip if offline or not authenticated
+
+    const getHouseholdId = async () => {
+      try {
+        const profile = await api.getUserProfile();
+        return profile.household_id;
+      } catch {
+        return null;
+      }
+    };
+
+    let subscriptions = [];
+
+    const setupSubscriptions = async () => {
+      const householdId = await getHouseholdId();
+      if (!householdId) return;
+
+      // Subscribe to transakcje changes
+      const transakcjeChannel = supabase
+        .channel(`transakcje:${householdId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'transakcje',
+            filter: `household_id=eq.${householdId}`,
+          },
+          (payload) => {
+            // Odśwież dane gdy zmienią się transakcje
+            fetchData(false);
+          }
+        )
+        .subscribe();
+
+      // Subscribe to kategorie changes
+      const kategorieChannel = supabase
+        .channel(`kategorie:${householdId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'kategorie',
+            filter: `household_id=eq.${householdId}`,
+          },
+          (payload) => {
+            // Odśwież dane gdy zmienią się kategorie
+            fetchData(false);
+          }
+        )
+        .subscribe();
+
+      // Subscribe to osoby changes
+      const osobyChannel = supabase
+        .channel(`osoby:${householdId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'osoby',
+            filter: `household_id=eq.${householdId}`,
+          },
+          (payload) => {
+            // Odśwież dane gdy zmienią się osoby
+            fetchData(false);
+          }
+        )
+        .subscribe();
+
+      subscriptions = [transakcjeChannel, kategorieChannel, osobyChannel];
+    };
+
+    setupSubscriptions();
+
+    // Cleanup subscriptions on unmount
+    return () => {
+      subscriptions.forEach((channel) => {
+        supabase.removeChannel(channel);
+      });
+    };
+  }, [user, isOffline, fetchData]);
+
   // Dodawanie transakcji
   const handleAddTransaction = async (transakcja) => {
     if (isOffline) {
@@ -1120,8 +1175,6 @@ export default function BudgetApp() {
       const optimistic = { ...transakcja, id: tempId, _offline: true };
       const noweTransakcje = [...transakcje, optimistic];
       setTransakcje(noweTransakcje);
-      const cacheKey = getCacheKey(currentPeriod.month, currentPeriod.year);
-      sessionStorage.setItem(cacheKey, JSON.stringify(noweTransakcje));
 
       addToQueue({ action: 'addTransakcja', payload: { action: 'addTransakcja', transakcja } });
       setPendingCount(getQueuedOperations().length);
@@ -1158,8 +1211,6 @@ export default function BudgetApp() {
         t.id === editingTransaction.id ? { ...t, ...transakcja, _offline: true } : t
       );
       setTransakcje(noweTransakcje);
-      const cacheKey = getCacheKey(currentPeriod.month, currentPeriod.year);
-      sessionStorage.setItem(cacheKey, JSON.stringify(noweTransakcje));
 
       addToQueue({
         action: 'updateTransakcja',
@@ -1213,8 +1264,6 @@ export default function BudgetApp() {
       // Optimistic update + queue
       const noweTransakcje = transakcje.filter(t => t.id !== id);
       setTransakcje(noweTransakcje);
-      const cacheKey = getCacheKey(currentPeriod.month, currentPeriod.year);
-      sessionStorage.setItem(cacheKey, JSON.stringify(noweTransakcje));
 
       // Don't queue delete for temp (not-yet-synced) transactions
       if (!String(id).startsWith('temp_')) {
@@ -1258,15 +1307,13 @@ export default function BudgetApp() {
     });
   };
   
-  // Callbacki dla ustawień — aktualizują stan + cache
+  // Callbacki dla ustawień — aktualizują stan
   const handleKategorieChange = (noweKategorie) => {
     setKategorie(noweKategorie);
-    sessionStorage.setItem('budzet_kategorie', JSON.stringify(noweKategorie));
   };
   
   const handleOsobyChange = (noweOsoby) => {
     setOsoby(noweOsoby);
-    sessionStorage.setItem('budzet_osoby', JSON.stringify(noweOsoby));
   };
   
   // Obliczenia
@@ -1317,19 +1364,7 @@ export default function BudgetApp() {
               </div>
               <div className="min-w-0">
                 <h1 className="text-base sm:text-xl font-bold text-gray-800 truncate">Budżet Domowy</h1>
-                <div className="hidden sm:flex items-center gap-2">
-                  <p className="text-sm text-gray-500">Kontroluj swoje finanse</p>
-                  {isRefreshing && (
-                    <span className="flex items-center gap-1 text-xs text-indigo-500">
-                      <Icons.Loader /> Odświeżam...
-                    </span>
-                  )}
-                </div>
-                {isRefreshing && (
-                  <span className="flex sm:hidden items-center gap-1 text-xs text-indigo-500">
-                    <Icons.Loader /> Odświeżam...
-                  </span>
-                )}
+                <p className="text-sm text-gray-500 hidden sm:block">Kontroluj swoje finanse</p>
               </div>
             </div>
 
