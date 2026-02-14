@@ -89,11 +89,19 @@ const categorizeDescription = (description, userRules = []) => {
   return null;
 };
 
+// C2: Walidacja kategorii z categoryMapping względem prop kategorie
+const validateCategoryExists = (kategoria, podkategoria, kategorieProp, typ) => {
+  const catExists = kategorieProp?.[typ]?.[kategoria];
+  if (!catExists) return { kategoria: 'Inne', podkategoria: 'Nieprzewidziane' };
+  const subExists = catExists.includes(podkategoria);
+  return { kategoria, podkategoria: subExists ? podkategoria : '' };
+};
+
 const STORAGE_KEY = 'csv_import_progress';
 const RULES_STORAGE_KEY = 'csv_recognition_rules';
 
 
-export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
+export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved }) {
   const [step, setStep] = useState(1); // 1: Upload, 2: Mapping, 3: Preview, 4: Success
   const [csvData, setCsvData] = useState(null);
   const [headers, setHeaders] = useState([]);
@@ -103,13 +111,18 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
     opis: null,
   });
   const [transactions, setTransactions] = useState([]);
+  const [txMeta, setTxMeta] = useState({}); // C3: { index: { _csvRaw, _originalOpis } }
   const [isLoading, setIsLoading] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
+  const [error, setError] = useState(null); // D3: inline error state
+
+  // A: Osoba selector
+  const [selectedOsoba, setSelectedOsoba] = useState('');
 
   // Feature 6: Recognition rules
   const [recognitionRules, setRecognitionRules] = useState([]);
   const [showRuleForm, setShowRuleForm] = useState(false);
-  const [ruleForm, setRuleForm] = useState({ keyword: '', kategoria: '', podkategoria: '' });
+  const [ruleForm, setRuleForm] = useState({ keyword: '', kategoria: '', podkategoria: '', typ: 'Wydatek' });
   const [ruleNotification, setRuleNotification] = useState(null);
   const [showRulesList, setShowRulesList] = useState(false);
 
@@ -135,10 +148,11 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        const { timestamp, transactions: savedTx, step: savedStep } = parsed;
+        const { timestamp, transactions: savedTx, txMeta: savedMeta, step: savedStep } = parsed;
         if (Date.now() - timestamp < 24 * 60 * 60 * 1000 && savedTx?.length > 0) {
           if (window.confirm('Znaleziono zapisany postęp importu CSV. Czy chcesz go przywrócić?')) {
             setTransactions(savedTx);
+            if (savedMeta) setTxMeta(savedMeta);
             setStep(savedStep || 3);
           } else {
             localStorage.removeItem(STORAGE_KEY);
@@ -160,6 +174,7 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
           timestamp: Date.now(),
           transactions,
+          txMeta,
           step,
         }));
         setLastSaved(new Date());
@@ -167,7 +182,7 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
         console.error('Failed to save CSV import progress:', e);
       }
     }
-  }, [transactions, step]);
+  }, [transactions, txMeta, step]);
 
   // Auto-dismiss rule notification after 4 seconds
   useEffect(() => {
@@ -175,6 +190,13 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
     const timer = setTimeout(() => setRuleNotification(null), 4000);
     return () => clearTimeout(timer);
   }, [ruleNotification]);
+
+  // D3: Auto-dismiss error after 6 seconds
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(null), 6000);
+    return () => clearTimeout(timer);
+  }, [error]);
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -190,8 +212,8 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
           setStep(2);
         }
       },
-      error: (error) => {
-        alert(`Błąd parsowania CSV: ${error.message}`);
+      error: (err) => {
+        setError(`Błąd parsowania CSV: ${err.message}`);
       },
     });
   };
@@ -203,52 +225,71 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
     }));
   };
 
+  // D2: parseKwota z obsługą formatu bankowego PL (1 234,56)
   const parseKwota = (kwotaStr) => {
     if (!kwotaStr) return 0;
-    // Konwertuj na string i usuń białe znaki
     let str = kwotaStr.toString().trim();
-    // Obsługuj różne separatory dziesiętne (przecinek lub kropka)
-    str = str.replace(/,/g, '.');
-    // Parsuj jako liczbę
+    // Usuń separatory tysięcy (spacja, nbsp)
+    str = str.replace(/[\s\u00A0]/g, '');
+    // Format europejski: "1.234,56" → "1234.56"
+    if (/\d{1,3}(\.\d{3})+(,\d+)?$/.test(str)) {
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else {
+      str = str.replace(',', '.');
+    }
     const num = parseFloat(str);
-    // Zwróć liczbę lub 0 jeśli NaN
     return isNaN(num) ? 0 : num;
   };
 
   const prepareTransactions = () => {
     if (!columnMapping.data || !columnMapping.kwota) {
-      alert('Musisz zmapować co najmniej kolumnę daty i kwoty');
+      setError('Musisz zmapować co najmniej kolumnę daty i kwoty');
       return false;
     }
 
+    // A: Walidacja osoby
+    if (!selectedOsoba) {
+      setError('Musisz wybrać osobę przed przejściem dalej');
+      return false;
+    }
+
+    const meta = {};
     const processed = csvData
       .filter(row => row[columnMapping.data] && row[columnMapping.kwota])
-      .map(row => {
+      .map((row, idx) => {
         const opis = columnMapping.opis ? row[columnMapping.opis] : '';
-        const categoryData = categorizeDescription(opis, recognitionRules);
         const kwotaNum = parseKwota(row[columnMapping.kwota]);
+        const typ = kwotaNum < 0 ? 'Wydatek' : 'Przychód';
 
-        // Feature 7: Store all original CSV fields
+        // C2: Kategoryzacja z walidacją
+        const categoryData = categorizeDescription(opis, recognitionRules);
+        const rawKategoria = categoryData?.kategoria || 'Inne';
+        const rawPodkategoria = categoryData?.podkategoria || 'Nieprzewidziane';
+        const validated = validateCategoryExists(rawKategoria, rawPodkategoria, kategorie, typ);
+
+        // C3: Metadata do osobnego obiektu
         const csvRawFields = {};
         for (const [key, value] of Object.entries(row)) {
           if (key !== columnMapping.data && key !== columnMapping.kwota && key !== columnMapping.opis) {
             csvRawFields[key] = value;
           }
         }
+        meta[idx] = { _originalOpis: opis, _csvRaw: csvRawFields };
 
         return {
           data: row[columnMapping.data],
           kwota: kwotaNum,
           opis: opis,
-          kategoria: categoryData?.kategoria || 'Inne',
-          podkategoria: categoryData?.podkategoria || 'Nieprzewidziane',
-          typ: kwotaNum < 0 ? 'Wydatek' : 'Przychód',
-          _originalOpis: opis,
-          _csvRaw: csvRawFields,
+          kategoria: validated.kategoria,
+          podkategoria: validated.podkategoria,
+          typ,
         };
       });
 
     setTransactions(processed);
+    setTxMeta(meta);
+    // D4: Wyczyść csvData po przetworzeniu
+    setCsvData(null);
     setStep(3);
     return true;
   };
@@ -259,8 +300,6 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
     let matchCount = 0;
 
     const updated = currentTransactions.map(tx => {
-      // Only apply to transactions that haven't been manually categorized
-      // (still on default Inne/Nieprzewidziane)
       const isUnmapped = tx.kategoria === 'Inne' && tx.podkategoria === 'Nieprzewidziane';
       if (!isUnmapped) return tx;
 
@@ -283,11 +322,11 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
   const handleAddRule = () => {
     const { keyword, kategoria, podkategoria } = ruleForm;
     if (!keyword.trim()) {
-      alert('Podaj warunek (tekst do wyszukania)');
+      setError('Podaj warunek (tekst do wyszukania)');
       return;
     }
     if (!kategoria) {
-      alert('Wybierz kategorię');
+      setError('Wybierz kategorię');
       return;
     }
 
@@ -320,7 +359,7 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
     });
 
     // Reset form
-    setRuleForm({ keyword: '', kategoria: '', podkategoria: '' });
+    setRuleForm({ keyword: '', kategoria: '', podkategoria: '', typ: 'Wydatek' });
     setShowRuleForm(false);
   };
 
@@ -337,14 +376,14 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
 
   const handleImport = async () => {
     if (transactions.length === 0) {
-      alert('Brak transakcji do importu');
+      setError('Brak transakcji do importu');
       return;
     }
 
     setIsLoading(true);
     try {
-      // Normalize kwota to numbers and update typ based on final amount
-      // Strip internal fields (_csvRaw, _originalOpis) before sending
+      // C3: transactions[] nie zawierają już metadanych — wysyłamy bezpośrednio
+      // A: Dodaj pole osoba do każdej transakcji
       const normalizedTransactions = transactions.map(tx => {
         const kwota = parseKwota(tx.kwota);
         return {
@@ -354,6 +393,7 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
           kategoria: tx.kategoria,
           podkategoria: tx.podkategoria,
           typ: kwota < 0 ? 'Wydatek' : 'Przychód',
+          osoba: selectedOsoba,
         };
       });
 
@@ -366,19 +406,33 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
       }
     } catch (err) {
       console.error(err);
-      alert(err.message || 'Błąd importu. Twój postęp został zapisany lokalnie.');
+      setError(err.message || 'Błąd importu. Twój postęp został zapisany lokalnie.');
       setIsLoading(false);
     }
   };
 
-  const handleEditTransaction = (index, field, value) => {
-    const updated = [...transactions];
-    updated[index][field] = value;
-    setTransactions(updated);
-  };
+  // D1: Immutable update
+  const handleEditTransaction = useCallback((index, field, value) => {
+    setTransactions(prev => prev.map((tx, i) =>
+      i === index ? { ...tx, [field]: value } : tx
+    ));
+  }, []);
 
   const handleDeleteTransaction = (index) => {
-    setTransactions(transactions.filter((_, i) => i !== index));
+    setTransactions(prev => prev.filter((_, i) => i !== index));
+    // C3: Cleanup metadata for deleted index and re-index
+    setTxMeta(prev => {
+      const next = {};
+      let newIdx = 0;
+      for (let i = 0; i < Object.keys(prev).length + 1; i++) {
+        if (i === index) continue;
+        if (prev[i]) {
+          next[newIdx] = prev[i];
+        }
+        newIdx++;
+      }
+      return next;
+    });
   };
 
   const handleClose = () => {
@@ -401,10 +455,9 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
     });
   };
 
-  // Compute available categories based on typ for rule form
-  const ruleFormTyp = 'Wydatek';
-  const ruleCategories = Object.keys(kategorie?.[ruleFormTyp] || {});
-  const ruleSubcategories = kategorie?.[ruleFormTyp]?.[ruleForm.kategoria] || [];
+  // C1: Compute available categories based on selected typ for rule form
+  const ruleCategories = Object.keys(kategorie?.[ruleForm.typ] || {});
+  const ruleSubcategories = kategorie?.[ruleForm.typ]?.[ruleForm.kategoria] || [];
 
   // Count unmapped transactions
   const unmappedCount = transactions.filter(
@@ -413,9 +466,9 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-5xl w-full max-h-[90vh] flex flex-col">
-        {/* Header - z-10 ensures it stays above table headers and edit buttons */}
-        <div className="sticky top-0 bg-gray-100 px-6 py-4 flex justify-between items-center border-b z-10 shrink-0">
+      <div className="bg-white rounded-2xl shadow-xl max-w-5xl w-full max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="sticky top-0 bg-white px-6 py-4 flex justify-between items-center border-b border-gray-100 z-10 shrink-0">
           <h2 className="text-xl font-bold">Import z CSV</h2>
           <button
             onClick={handleClose}
@@ -427,10 +480,18 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
 
         {/* Content */}
         <div className="p-6 overflow-auto flex-1">
+          {/* D3: Inline error */}
+          {error && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4 flex items-center justify-between">
+              <span>{error}</span>
+              <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 ml-2 font-bold">&#10005;</button>
+            </div>
+          )}
+
           {/* Step 1: Upload */}
           {step === 1 && (
             <div className="space-y-4">
-              <div className="bg-blue-50 border-2 border-dashed border-blue-300 rounded-lg p-8 text-center">
+              <div className="bg-indigo-50 border-2 border-dashed border-indigo-300 rounded-xl p-8 text-center">
                 <p className="text-gray-700 mb-4">Przeciągnij plik CSV lub kliknij aby wybrać</p>
                 <input
                   type="file"
@@ -453,11 +514,11 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-2">Data operacji *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Data operacji <span className="text-red-500">*</span></label>
                   <select
                     value={columnMapping.data || ''}
                     onChange={(e) => handleMappingChange('data', e.target.value)}
-                    className="w-full border rounded px-3 py-2"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   >
                     <option value="">Wybierz kolumnę</option>
                     {headers.map(h => (
@@ -467,11 +528,11 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Kwota *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Kwota <span className="text-red-500">*</span></label>
                   <select
                     value={columnMapping.kwota || ''}
                     onChange={(e) => handleMappingChange('kwota', e.target.value)}
-                    className="w-full border rounded px-3 py-2"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   >
                     <option value="">Wybierz kolumnę</option>
                     {headers.map(h => (
@@ -481,11 +542,11 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">Opis/Notatka</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Opis/Notatka</label>
                   <select
                     value={columnMapping.opis || ''}
                     onChange={(e) => handleMappingChange('opis', e.target.value)}
-                    className="w-full border rounded px-3 py-2"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   >
                     <option value="">Wybierz kolumnę</option>
                     {headers.map(h => (
@@ -495,8 +556,23 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                 </div>
               </div>
 
-              <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
-                <p className="text-sm text-yellow-800">
+              {/* A: Selector osoby */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Osoba <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedOsoba}
+                  onChange={(e) => setSelectedOsoba(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  <option value="">-- Wybierz osobę --</option>
+                  {osoby.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+
+              <div className="bg-indigo-50/60 border border-indigo-100 rounded-lg p-3">
+                <p className="text-sm text-indigo-800">
                   Format daty: YYYY-MM-DD. Kwota ujemna = wydatek, dodatnia = przychód
                 </p>
               </div>
@@ -504,13 +580,13 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
               <div className="flex gap-3">
                 <button
                   onClick={() => setStep(1)}
-                  className="flex-1 px-4 py-2 border rounded hover:bg-gray-100"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
                 >
                   Wstecz
                 </button>
                 <button
                   onClick={prepareTransactions}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
                 >
                   Dalej
                 </button>
@@ -572,9 +648,9 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
               )}
 
               {/* Table wrapper with its own scroll context so thead sticks within it */}
-              <div className="overflow-auto border rounded max-h-[40vh]">
+              <div className="overflow-auto border border-gray-200 rounded-lg max-h-[40vh]">
                 <table className="w-full text-sm">
-                  <thead className="bg-gray-100 sticky top-0 z-[1]">
+                  <thead className="bg-gray-50 sticky top-0 z-[1]">
                     <tr>
                       <th className="px-3 py-2 text-left whitespace-nowrap">Data</th>
                       <th className="px-3 py-2 text-right whitespace-nowrap">Kwota</th>
@@ -600,7 +676,7 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                               type="date"
                               value={tx.data}
                               onChange={(e) => handleEditTransaction(idx, 'data', e.target.value)}
-                              className="border rounded px-2 py-1 w-full min-w-[130px]"
+                              className="border border-gray-200 rounded-lg px-2 py-1 w-full min-w-[130px]"
                             />
                           </td>
                           <td className="px-3 py-2 text-right font-semibold">
@@ -619,7 +695,7 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                                 const val = parseKwota(e.target.value);
                                 handleEditTransaction(idx, 'kwota', val);
                               }}
-                              className="border rounded px-2 py-1 w-full text-right min-w-[90px]"
+                              className="border border-gray-200 rounded-lg px-2 py-1 w-full text-right min-w-[90px]"
                             />
                           </td>
                           <td className="px-3 py-2">
@@ -627,16 +703,17 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                               type="text"
                               value={tx.opis}
                               onChange={(e) => handleEditTransaction(idx, 'opis', e.target.value)}
-                              className="border rounded px-2 py-1 w-full text-sm min-w-[120px]"
+                              className="border border-gray-200 rounded-lg px-2 py-1 w-full text-sm min-w-[120px]"
                             />
                           </td>
+                          {/* C1: Select kategorii zależy od tx.typ */}
                           <td className="px-3 py-2">
                             <select
                               value={tx.kategoria}
                               onChange={(e) => handleEditTransaction(idx, 'kategoria', e.target.value)}
-                              className="border rounded px-2 py-1 w-full text-sm min-w-[110px]"
+                              className="border border-gray-200 rounded-lg px-2 py-1 w-full text-sm min-w-[110px]"
                             >
-                              {Object.keys(kategorie?.Wydatek || {}).map(k => (
+                              {Object.keys(kategorie?.[tx.typ] || {}).map(k => (
                                 <option key={k} value={k}>{k}</option>
                               ))}
                             </select>
@@ -645,28 +722,28 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                             <select
                               value={tx.podkategoria}
                               onChange={(e) => handleEditTransaction(idx, 'podkategoria', e.target.value)}
-                              className="border rounded px-2 py-1 w-full text-sm min-w-[120px]"
+                              className="border border-gray-200 rounded-lg px-2 py-1 w-full text-sm min-w-[120px]"
                             >
-                              {(kategorie?.Wydatek?.[tx.kategoria] || []).map(pk => (
+                              {(kategorie?.[tx.typ]?.[tx.kategoria] || []).map(pk => (
                                 <option key={pk} value={pk}>{pk}</option>
                               ))}
                             </select>
                           </td>
-                          {/* Feature 7: Details column - visible on desktop */}
+                          {/* Feature 7: Details column - visible on desktop, using txMeta */}
                           {showDetailsColumn && (
                             <td className="px-3 py-2 hidden md:table-cell">
                               <div className="text-xs text-gray-500 space-y-0.5 max-w-[200px]">
-                                {tx._originalOpis && tx._originalOpis !== tx.opis && (
-                                  <div><span className="font-medium text-gray-600">Oryginał:</span> {tx._originalOpis}</div>
+                                {txMeta[idx]?._originalOpis && txMeta[idx]._originalOpis !== tx.opis && (
+                                  <div><span className="font-medium text-gray-600">Oryginał:</span> {txMeta[idx]._originalOpis}</div>
                                 )}
-                                {tx._csvRaw && Object.entries(tx._csvRaw).map(([key, value]) => (
+                                {txMeta[idx]?._csvRaw && Object.entries(txMeta[idx]._csvRaw).map(([key, value]) => (
                                   value ? (
                                     <div key={key} className="truncate">
                                       <span className="font-medium text-gray-600">{key}:</span> {value}
                                     </div>
                                   ) : null
                                 ))}
-                                {(!tx._csvRaw || Object.keys(tx._csvRaw).length === 0) && !tx._originalOpis && (
+                                {(!txMeta[idx]?._csvRaw || Object.keys(txMeta[idx]._csvRaw).length === 0) && !txMeta[idx]?._originalOpis && (
                                   <div className="text-gray-400 italic">Brak dodatkowych danych</div>
                                 )}
                               </div>
@@ -693,25 +770,25 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                             </div>
                           </td>
                         </tr>
-                        {/* Feature 7: Expandable details row for mobile */}
+                        {/* Feature 7: Expandable details row for mobile, using txMeta */}
                         {showDetailsColumn && expandedRows.has(idx) && (
                           <tr className="md:hidden border-t bg-gray-50">
                             <td colSpan={7} className="px-4 py-2">
                               <div className="text-xs text-gray-500 space-y-1">
                                 <div className="font-medium text-gray-700 mb-1">Informacje dodatkowe:</div>
-                                {tx._originalOpis && tx._originalOpis !== tx.opis && (
-                                  <div><span className="font-medium text-gray-600">Oryginalny opis:</span> {tx._originalOpis}</div>
+                                {txMeta[idx]?._originalOpis && txMeta[idx]._originalOpis !== tx.opis && (
+                                  <div><span className="font-medium text-gray-600">Oryginalny opis:</span> {txMeta[idx]._originalOpis}</div>
                                 )}
                                 <div><span className="font-medium text-gray-600">Data:</span> {tx.data}</div>
                                 <div><span className="font-medium text-gray-600">Typ:</span> {tx.typ}</div>
-                                {tx._csvRaw && Object.entries(tx._csvRaw).map(([key, value]) => (
+                                {txMeta[idx]?._csvRaw && Object.entries(txMeta[idx]._csvRaw).map(([key, value]) => (
                                   value ? (
                                     <div key={key}>
                                       <span className="font-medium text-gray-600">{key}:</span> {value}
                                     </div>
                                   ) : null
                                 ))}
-                                {(!tx._csvRaw || Object.keys(tx._csvRaw).length === 0) && (
+                                {(!txMeta[idx]?._csvRaw || Object.keys(txMeta[idx]._csvRaw).length === 0) && (
                                   <div className="text-gray-400 italic">Brak dodatkowych pól z CSV</div>
                                 )}
                               </div>
@@ -746,14 +823,14 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                     {recognitionRules.length > 0 && (
                       <button
                         onClick={() => { setShowRulesList(!showRulesList); setShowRuleForm(false); }}
-                        className="text-xs px-3 py-1.5 rounded border border-indigo-300 text-indigo-700 hover:bg-indigo-100 transition-colors"
+                        className="text-xs px-3 py-1.5 rounded-lg border border-indigo-300 text-indigo-700 hover:bg-indigo-100 transition-colors"
                       >
                         {showRulesList ? 'Ukryj listę' : 'Lista reguł'}
                       </button>
                     )}
                     <button
                       onClick={() => { setShowRuleForm(!showRuleForm); setShowRulesList(false); }}
-                      className={`text-xs px-3 py-1.5 rounded transition-colors ${
+                      className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
                         showRuleForm
                           ? 'bg-indigo-600 text-white'
                           : 'bg-indigo-600 text-white hover:bg-indigo-700'
@@ -769,7 +846,7 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                   <div className="px-4 pb-3 border-t border-indigo-200 pt-3">
                     <div className="space-y-1.5 max-h-[120px] overflow-auto">
                       {recognitionRules.map((rule, i) => (
-                        <div key={i} className="flex items-center justify-between bg-white rounded px-3 py-1.5 text-xs">
+                        <div key={i} className="flex items-center justify-between bg-white rounded-lg px-3 py-1.5 text-xs">
                           <span>
                             Jeśli opis zawiera &quot;<strong>{rule.keyword}</strong>&quot; &rarr;{' '}
                             <span className="text-indigo-600 font-medium">{rule.kategoria}</span>
@@ -792,7 +869,7 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                 {/* Add rule form */}
                 {showRuleForm && (
                   <div className="px-4 pb-4 border-t border-indigo-200 pt-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">
                           Warunek (tekst w opisie)
@@ -802,8 +879,27 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                           value={ruleForm.keyword}
                           onChange={(e) => setRuleForm(prev => ({ ...prev, keyword: e.target.value }))}
                           placeholder="np. Biedronka, Allegro..."
-                          className="w-full border rounded px-2.5 py-1.5 text-sm"
+                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
                         />
+                      </div>
+                      {/* C1: Typ selector for rule form */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">
+                          Typ
+                        </label>
+                        <select
+                          value={ruleForm.typ}
+                          onChange={(e) => setRuleForm(prev => ({
+                            ...prev,
+                            typ: e.target.value,
+                            kategoria: '',
+                            podkategoria: '',
+                          }))}
+                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
+                        >
+                          <option value="Wydatek">Wydatek</option>
+                          <option value="Przychód">Przychód</option>
+                        </select>
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-1">
@@ -816,7 +912,7 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                             kategoria: e.target.value,
                             podkategoria: '',
                           }))}
-                          className="w-full border rounded px-2.5 py-1.5 text-sm"
+                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
                         >
                           <option value="">Wybierz...</option>
                           {ruleCategories.map(k => (
@@ -831,7 +927,7 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                         <select
                           value={ruleForm.podkategoria}
                           onChange={(e) => setRuleForm(prev => ({ ...prev, podkategoria: e.target.value }))}
-                          className="w-full border rounded px-2.5 py-1.5 text-sm"
+                          className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
                           disabled={!ruleForm.kategoria}
                         >
                           <option value="">Wybierz...</option>
@@ -843,7 +939,7 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
                       <div className="flex items-end">
                         <button
                           onClick={handleAddRule}
-                          className="w-full px-3 py-1.5 bg-green-600 text-white rounded text-sm font-medium hover:bg-green-700 transition-colors"
+                          className="w-full px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
                         >
                           Dodaj i zastosuj
                         </button>
@@ -859,14 +955,14 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
               <div className="flex gap-3">
                 <button
                   onClick={() => setStep(2)}
-                  className="flex-1 px-4 py-2 border rounded hover:bg-gray-100"
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
                 >
                   Wstecz
                 </button>
                 <button
                   onClick={handleImport}
                   disabled={isLoading}
-                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
                 >
                   {isLoading ? 'Importuję...' : 'Importuj transakcje'}
                 </button>
@@ -886,7 +982,7 @@ export default function CSVImport({ onClose, kategorie = {}, onSaved }) {
               </p>
               <button
                 onClick={handleClose}
-                className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
               >
                 Zamknij
               </button>
