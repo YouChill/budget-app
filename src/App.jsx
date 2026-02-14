@@ -1705,6 +1705,7 @@ export default function BudgetApp() {
         <CSVImport
           onClose={() => setShowCSVImport(false)}
           kategorie={kategorie}
+          osoby={osoby}
           onSaved={() => {
             setShowCSVImport(false);
             fetchData();
