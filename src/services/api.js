@@ -542,6 +542,60 @@ export async function deleteBudget(budget) {
 }
 
 // ═══════════════════════════════════════════
+// YEARLY SUMMARY FUNCTIONS
+// ═══════════════════════════════════════════
+
+export async function getTransakcjeForYear(rok) {
+  // Check sessionStorage cache first
+  const cacheKey = `yearly_transakcje_${rok}`;
+  const cached = sessionStorage.getItem(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  const householdId = await getHouseholdId();
+  const { data, error } = await supabase
+    .from('transakcje')
+    .select('id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz')
+    .eq('household_id', householdId)
+    .gte('data', `${rok}-01-01`)
+    .lt('data', `${rok + 1}-01-01`)
+    .order('data', { ascending: false });
+
+  if (error) handleAuthError(error);
+
+  // Cache in sessionStorage
+  try {
+    sessionStorage.setItem(cacheKey, JSON.stringify(data));
+  } catch {
+    // sessionStorage full — ignore
+  }
+
+  return data;
+}
+
+export async function getAvailableYears() {
+  const householdId = await getHouseholdId();
+  const { data, error } = await supabase
+    .from('transakcje')
+    .select('data')
+    .eq('household_id', householdId)
+    .order('data', { ascending: true })
+    .limit(1);
+
+  if (error) handleAuthError(error);
+  if (!data || data.length === 0) return [new Date().getFullYear()];
+
+  const firstYear = new Date(data[0].data).getFullYear();
+  const currentYear = new Date().getFullYear();
+  const years = [];
+  for (let y = currentYear; y >= firstYear; y--) {
+    years.push(y);
+  }
+  return years;
+}
+
+// ═══════════════════════════════════════════
 // COMBINED DATA FETCH
 // ═══════════════════════════════════════════
 

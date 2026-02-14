@@ -126,3 +126,95 @@ export const sortTransactionsByDate = (transakcje = []) => {
     return dateB - dateA;
   });
 };
+
+// ═══════════════════════════════════════════
+// YEARLY SUMMARY HELPERS
+// ═══════════════════════════════════════════
+
+export const MONTHS_PL_SHORT = [
+  'Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze',
+  'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru',
+];
+
+/**
+ * Agreguje transakcje wg miesiąca (przychody / wydatki)
+ * @param {Array} transakcje - Lista transakcji z danego roku
+ * @returns {Array} 12-elementowa tablica { month, przychody, wydatki }
+ */
+export const aggregateByMonth = (transakcje = []) => {
+  const months = Array.from({ length: 12 }, (_, i) => ({
+    month: MONTHS_PL_SHORT[i],
+    przychody: 0,
+    wydatki: 0,
+  }));
+
+  transakcje.forEach(t => {
+    const m = new Date(t.data).getMonth();
+    const kwota = parseFloat(t.kwota) || 0;
+    if (t.typ === 'Przychód') months[m].przychody += kwota;
+    else months[m].wydatki += kwota;
+  });
+
+  return months;
+};
+
+/**
+ * Agreguje transakcje wg kategorii
+ * @param {Array} transakcje - Lista transakcji
+ * @param {string} typ - 'Wydatek' lub 'Przychód'
+ * @returns {Array} Tablica { name, value } posortowana malejąco
+ */
+export const aggregateByCategory = (transakcje = [], typ = 'Wydatek') => {
+  const grouped = {};
+
+  transakcje
+    .filter(t => t.typ === typ)
+    .forEach(t => {
+      const kat = t.kategoria || 'Inne';
+      grouped[kat] = (grouped[kat] || 0) + (parseFloat(t.kwota) || 0);
+    });
+
+  return Object.entries(grouped)
+    .map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 }))
+    .sort((a, b) => b.value - a.value);
+};
+
+/**
+ * Agreguje transakcje wg osoby
+ * @param {Array} transakcje - Lista transakcji
+ * @returns {Array} Tablica { name, przychody, wydatki, bilans }
+ */
+export const aggregateByPerson = (transakcje = []) => {
+  const grouped = {};
+
+  transakcje.forEach(t => {
+    const osoba = t.osoba || 'Nieprzypisane';
+    if (!grouped[osoba]) grouped[osoba] = { przychody: 0, wydatki: 0 };
+    const kwota = parseFloat(t.kwota) || 0;
+    if (t.typ === 'Przychód') grouped[osoba].przychody += kwota;
+    else grouped[osoba].wydatki += kwota;
+  });
+
+  return Object.entries(grouped)
+    .map(([name, data]) => ({
+      name,
+      przychody: Math.round(data.przychody * 100) / 100,
+      wydatki: Math.round(data.wydatki * 100) / 100,
+      bilans: Math.round((data.przychody - data.wydatki) * 100) / 100,
+    }))
+    .sort((a, b) => b.wydatki - a.wydatki);
+};
+
+/**
+ * Oblicza zmianę rok do roku
+ * @param {number} currentValue - Wartość bieżącego roku
+ * @param {number} previousValue - Wartość poprzedniego roku
+ * @returns {{ change: number, percent: number|null }}
+ */
+export const calculateYoY = (currentValue, previousValue) => {
+  const change = currentValue - previousValue;
+  const percent = previousValue !== 0
+    ? ((change / Math.abs(previousValue)) * 100)
+    : null;
+  return { change, percent };
+};
