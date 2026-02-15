@@ -19,7 +19,7 @@ export async function getUserProfile() {
 
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('id, email, display_name, household_id')
+    .select('id, display_name, household_id')
     .eq('id', user.id)
     .single();
 
@@ -37,7 +37,6 @@ export async function getUserProfile() {
           .from('profiles')
           .insert({
             id: user.id,
-            email: user.email,
             display_name: user.user_metadata?.name || user.email,
             household_id: households[0].id,
           })
