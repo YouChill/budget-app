@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 
 const DEMO_EMAIL = 'demo@budget-app.pl';
-const DEMO_PASSWORD = 'Demo1234!';
+const DEMO_PASSWORD = 'qoqZyj-fepve2-qakcaf';
 
 export default function LoginPage() {
   const { error, setError, clientId, isLoading } = useAuth();
