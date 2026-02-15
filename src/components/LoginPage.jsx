@@ -2,18 +2,22 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 
+const DEMO_EMAIL = 'demo@budget-app.pl';
+const DEMO_PASSWORD = 'Demo1234!';
+
 export default function LoginPage() {
   const { error, setError, clientId, isLoading } = useAuth();
   const buttonRef = useRef(null);
   const [demoLoading, setDemoLoading] = useState(false);
+  const demoTriggered = useRef(false);
 
   const handleDemoLogin = async () => {
     setDemoLoading(true);
     setError(null);
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email: 'demo@budget-app.pl',
-        password: 'Demo1234!',
+        email: DEMO_EMAIL,
+        password: DEMO_PASSWORD,
       });
       if (error) {
         console.error('Demo login error:', error.message);
@@ -26,13 +30,22 @@ export default function LoginPage() {
     }
   };
 
+  // Auto-login when ?demo=true is in URL
+  useEffect(() => {
+    if (demoTriggered.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('demo') === 'true') {
+      demoTriggered.current = true;
+      handleDemoLogin();
+    }
+  }, []);
+
   useEffect(() => {
     if (!clientId) return;
 
     const renderButton = () => {
       if (!window.google?.accounts?.id || !buttonRef.current) return;
 
-      // Clear previous button content before re-rendering
       buttonRef.current.innerHTML = '';
       window.google.accounts.id.renderButton(buttonRef.current, {
         type: 'standard',
@@ -59,14 +72,14 @@ export default function LoginPage() {
     }
   }, [clientId]);
 
-  if (isLoading) {
+  if (isLoading || demoLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-100 to-indigo-50 flex items-center justify-center">
-        <div className="flex items-center gap-3 text-gray-500">
+        <div className="flex flex-col items-center gap-3 text-gray-500">
           <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
           </svg>
-          <span>Ładowanie...</span>
+          <span>{demoLoading ? 'Logowanie na konto demo...' : 'Ładowanie...'}</span>
         </div>
       </div>
     );
