@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
@@ -37,6 +37,10 @@ export function AuthProvider({ children }) {
   // Track auth source so logout works correctly
   const [authSource, setAuthSource] = useState(null); // 'google' | 'supabase'
 
+  // Ref to avoid stale closures in onAuthStateChange callback
+  // and to prevent unnecessary listener re-subscriptions
+  const authSourceRef = useRef(null);
+
   // === GOOGLE GIS HANDLER (existing flow) ===
   const handleCredentialResponse = useCallback((response) => {
     const credential = response.credential;
@@ -51,6 +55,7 @@ export function AuthProvider({ children }) {
       setUser(userData);
       setToken(credential);
       setAuthSource('google');
+      authSourceRef.current = 'google';
       setError(null);
       localStorage.setItem('budget_auth_token', credential);
       localStorage.setItem('budget_auth_user', JSON.stringify(userData));
@@ -72,6 +77,7 @@ export function AuthProvider({ children }) {
       setUser(userData);
       setToken(session.access_token);
       setAuthSource('supabase');
+      authSourceRef.current = 'supabase';
       setError(null);
       localStorage.setItem('budget_auth_token', session.access_token);
       localStorage.setItem('budget_auth_user', JSON.stringify(userData));
@@ -82,13 +88,14 @@ export function AuthProvider({ children }) {
   // === LOGOUT ===
   const logout = useCallback(async () => {
     // If logged in via Supabase, sign out from Supabase too
-    if (authSource === 'supabase') {
+    if (authSourceRef.current === 'supabase') {
       await supabase.auth.signOut();
     }
 
     setUser(null);
     setToken(null);
     setAuthSource(null);
+    authSourceRef.current = null;
     localStorage.removeItem('budget_auth_token');
     localStorage.removeItem('budget_auth_user');
     localStorage.removeItem('budget_auth_source');
@@ -103,62 +110,43 @@ export function AuthProvider({ children }) {
         auto_select: false,
       });
     }
-  }, [authSource, handleCredentialResponse]);
-
-  // === INIT: Restore session ===
-  useEffect(() => {
-    const storedSource = localStorage.getItem('budget_auth_source');
-
-    if (storedSource === 'supabase') {
-      // Restore Supabase session
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          handleSupabaseSession(session);
-        } else {
-          // Session expired — clean up
-          localStorage.removeItem('budget_auth_token');
-          localStorage.removeItem('budget_auth_user');
-          localStorage.removeItem('budget_auth_source');
-        }
-        setIsLoading(false);
-      });
-    } else {
-      // Restore Google GIS session (existing logic)
-      const storedToken = localStorage.getItem('budget_auth_token');
-      const storedUser = localStorage.getItem('budget_auth_user');
-
-      if (storedToken && storedUser && !isTokenExpired(storedToken)) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
-        setAuthSource('google');
-      } else {
-        localStorage.removeItem('budget_auth_token');
-        localStorage.removeItem('budget_auth_user');
-        localStorage.removeItem('budget_auth_source');
-      }
-      setIsLoading(false);
-    }
-  }, [handleSupabaseSession]);
+  }, [handleCredentialResponse]);
 
   // === SUPABASE AUTH LISTENER ===
+  // Single stable subscription — uses authSourceRef to avoid stale closures
+  // and unnecessary re-subscriptions when authSource state changes.
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        if (event === 'SIGNED_IN' && session) {
+        if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
           handleSupabaseSession(session);
+          setIsLoading(false);
+        } else if (event === 'INITIAL_SESSION' && !session) {
+          // No Supabase session — if we were expecting one, clean up
+          const storedSource = localStorage.getItem('budget_auth_source');
+          if (storedSource === 'supabase') {
+            localStorage.removeItem('budget_auth_token');
+            localStorage.removeItem('budget_auth_user');
+            localStorage.removeItem('budget_auth_source');
+          }
+          // Only set loading false if not waiting for Google auth
+          if (!storedSource || storedSource === 'supabase') {
+            setIsLoading(false);
+          }
         } else if (event === 'SIGNED_OUT') {
           // Only clear if we were using Supabase auth
-          if (authSource === 'supabase') {
+          if (authSourceRef.current === 'supabase') {
             setUser(null);
             setToken(null);
             setAuthSource(null);
+            authSourceRef.current = null;
             localStorage.removeItem('budget_auth_token');
             localStorage.removeItem('budget_auth_user');
             localStorage.removeItem('budget_auth_source');
           }
         } else if (event === 'TOKEN_REFRESHED' && session) {
           // Update token on refresh
-          if (authSource === 'supabase') {
+          if (authSourceRef.current === 'supabase') {
             setToken(session.access_token);
             localStorage.setItem('budget_auth_token', session.access_token);
           }
@@ -167,7 +155,32 @@ export function AuthProvider({ children }) {
     );
 
     return () => subscription.unsubscribe();
-  }, [authSource, handleSupabaseSession]);
+  }, [handleSupabaseSession]);
+
+  // === INIT: Restore Google session (Supabase handled by INITIAL_SESSION above) ===
+  useEffect(() => {
+    const storedSource = localStorage.getItem('budget_auth_source');
+
+    if (storedSource === 'google') {
+      // Restore Google GIS session
+      const storedToken = localStorage.getItem('budget_auth_token');
+      const storedUser = localStorage.getItem('budget_auth_user');
+
+      if (storedToken && storedUser && !isTokenExpired(storedToken)) {
+        setToken(storedToken);
+        setUser(JSON.parse(storedUser));
+        setAuthSource('google');
+        authSourceRef.current = 'google';
+      } else {
+        localStorage.removeItem('budget_auth_token');
+        localStorage.removeItem('budget_auth_user');
+        localStorage.removeItem('budget_auth_source');
+      }
+      setIsLoading(false);
+    }
+    // For 'supabase' source: onAuthStateChange INITIAL_SESSION handles restoration
+    // For no stored source: onAuthStateChange INITIAL_SESSION with null session sets loading false
+  }, []);
 
   // === GOOGLE GIS INITIALIZATION (existing logic) ===
   useEffect(() => {
