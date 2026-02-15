@@ -1054,12 +1054,24 @@ export default function BudgetApp() {
     if (showLoadingSpinner) {
       setIsLoading(true);
     }
-    
+
     setError(null);
 
     // If offline, just show cached data if available — don't attempt network fetch
     if (!navigator.onLine) {
       setError('Brak połączenia z internetem.');
+      setIsLoading(false);
+      return;
+    }
+
+    // Ensure Supabase session is valid before making API calls
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setIsLoading(false);
+        return;
+      }
+    } catch {
       setIsLoading(false);
       return;
     }
@@ -1076,7 +1088,7 @@ export default function BudgetApp() {
       setTransakcje(noweTransakcje);
       setKategorie(noweKategorie);
       setOsoby(noweOsoby);
-      
+
       // Pobierz budżety dla okresu
       try {
         const bData = await api.getBudgets(currentPeriod.month, currentPeriod.year);
@@ -1084,7 +1096,7 @@ export default function BudgetApp() {
       } catch (err) {
         console.warn('Nie udało się pobrać budżetów', err);
       }
-      
+
     } catch (err) {
       setError('Nie udało się pobrać danych. Sprawdź połączenie i odśwież stronę.');
       console.error(err);
