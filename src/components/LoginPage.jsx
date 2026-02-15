@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 
 const DEMO_EMAIL = 'demo@budget-app.pl';
-const DEMO_PASSWORD = 'qoqZyj-fepve2-qakcaf';
+const DEMO_PASSWORD = 'Demo1234!';
 
 export default function LoginPage() {
   const { error, setError, clientId, isLoading } = useAuth();
@@ -22,10 +22,11 @@ export default function LoginPage() {
       if (error) {
         console.error('Demo login error:', error.message);
         setError('Nie udało się zalogować na konto demo: ' + error.message);
+        setDemoLoading(false);
       }
+      // On success, onAuthStateChange in AuthContext will handle the rest
     } catch (err) {
       setError('Błąd logowania demo');
-    } finally {
       setDemoLoading(false);
     }
   };
