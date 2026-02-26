@@ -627,3 +627,69 @@ export async function processOfflineOperation(operation) {
       throw new Error(`Nieznana operacja offline: ${action}`);
   }
 }
+
+// ═══════════════════════════════════════════
+// NOTES / PAGES (BLOCK TREE)
+// ═══════════════════════════════════════════
+
+export async function getNotePages() {
+  const householdId = await getHouseholdId();
+  const { data, error } = await supabase
+    .from('blocks')
+    .select('id, household_id, title, type, parent_block_id, position, updated_at, created_at')
+    .eq('household_id', householdId)
+    .eq('type', 'page')
+    .order('position', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (error) handleAuthError(error);
+  return data || [];
+}
+
+export async function createNotePage({ title, parentBlockId = null, position = 0 }) {
+  const householdId = await getHouseholdId();
+  const { data, error } = await supabase
+    .from('blocks')
+    .insert({
+      household_id: householdId,
+      title,
+      type: 'page',
+      parent_block_id: parentBlockId,
+      position,
+    })
+    .select('id, household_id, title, type, parent_block_id, position, updated_at, created_at')
+    .single();
+
+  if (error) handleAuthError(error);
+  return data;
+}
+
+export async function updateNotePage(id, updates) {
+  const householdId = await getHouseholdId();
+  const { data, error } = await supabase
+    .from('blocks')
+    .update(updates)
+    .eq('household_id', householdId)
+    .eq('id', id)
+    .select('id, household_id, title, type, parent_block_id, position, updated_at, created_at')
+    .single();
+
+  if (error) handleAuthError(error);
+  return data;
+}
+
+export async function reorderNotePages(items) {
+  const updates = items.map((item) =>
+    supabase
+      .from('blocks')
+      .update({ parent_block_id: item.parentBlockId, position: item.position })
+      .eq('id', item.id)
+      .eq('type', 'page')
+  );
+
+  const results = await Promise.all(updates);
+  const firstError = results.find((result) => result.error)?.error;
+  if (firstError) handleAuthError(firstError);
+
+  return { success: true };
+}
