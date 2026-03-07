@@ -1,8 +1,9 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
 const AuthContext = createContext(null);
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const GIS_TIMEOUT_MS = 10000;
 
 // Decode JWT payload without external libraries
 function decodeJwtPayload(token) {
@@ -33,6 +34,10 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isGsiReady, setIsGsiReady] = useState(false);
+  const [gsiLoadFailed, setGsiLoadFailed] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const gsiInitialized = useRef(false);
 
   const handleCredentialResponse = useCallback((response) => {
     const credential = response.credential;
@@ -47,16 +52,20 @@ export function AuthProvider({ children }) {
       setUser(userData);
       setToken(credential);
       setError(null);
+      setSessionExpired(false);
       localStorage.setItem('budget_auth_token', credential);
       localStorage.setItem('budget_auth_user', JSON.stringify(userData));
     } else {
-      setError('Nie udało się zweryfikować danych logowania');
+      setError('Nie udało się zweryfikować danych logowania. Spróbuj ponownie.');
     }
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback((reason = null) => {
     setUser(null);
     setToken(null);
+    if (reason === 'expired') {
+      setSessionExpired(true);
+    }
     localStorage.removeItem('budget_auth_token');
     localStorage.removeItem('budget_auth_user');
     // Clear session storage cache as well
@@ -64,26 +73,38 @@ export function AuthProvider({ children }) {
     // Re-initialize GIS so the login button works again
     if (window.google?.accounts?.id) {
       window.google.accounts.id.disableAutoSelect();
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: handleCredentialResponse,
-        auto_select: false,
-      });
+      if (GOOGLE_CLIENT_ID) {
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleCredentialResponse,
+          auto_select: false,
+        });
+      }
     }
   }, [handleCredentialResponse]);
+
+  // Listen for session-expired events from API layer
+  useEffect(() => {
+    const handleSessionExpired = () => logout('expired');
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+    return () => window.removeEventListener('auth:session-expired', handleSessionExpired);
+  }, [logout]);
 
   // Initialize: check for stored token
   useEffect(() => {
     const storedToken = localStorage.getItem('budget_auth_token');
     const storedUser = localStorage.getItem('budget_auth_user');
 
-    if (storedToken && storedUser && !isTokenExpired(storedToken)) {
-      setToken(storedToken);
-      setUser(JSON.parse(storedUser));
-    } else {
-      // Clear expired data
-      localStorage.removeItem('budget_auth_token');
-      localStorage.removeItem('budget_auth_user');
+    if (storedToken && storedUser) {
+      if (!isTokenExpired(storedToken)) {
+        setToken(storedToken);
+        setUser(JSON.parse(storedUser));
+      } else {
+        // Token expired — show friendly message
+        localStorage.removeItem('budget_auth_token');
+        localStorage.removeItem('budget_auth_user');
+        setSessionExpired(true);
+      }
     }
 
     setIsLoading(false);
@@ -94,27 +115,106 @@ export function AuthProvider({ children }) {
     if (!GOOGLE_CLIENT_ID) return;
 
     const initGsi = () => {
-      if (!window.google?.accounts?.id) return;
+      if (!window.google?.accounts?.id || gsiInitialized.current) return;
+      gsiInitialized.current = true;
+
+      const hasStoredToken = !!localStorage.getItem('budget_auth_token');
 
       window.google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
         callback: handleCredentialResponse,
-        auto_select: !!localStorage.getItem('budget_auth_token'),
+        // Enable One Tap for returning users
+        auto_select: hasStoredToken,
+        cancel_on_tap_outside: false,
       });
+
+      setIsGsiReady(true);
+
+      // Prompt One Tap for returning users
+      if (hasStoredToken) {
+        window.google.accounts.id.prompt((notification) => {
+          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            // One Tap not shown — user will use button
+          }
+        });
+      }
     };
 
-    // GIS script might not be loaded yet
     if (window.google?.accounts?.id) {
       initGsi();
     } else {
       const interval = setInterval(() => {
         if (window.google?.accounts?.id) {
           clearInterval(interval);
+          clearTimeout(timeout);
           initGsi();
         }
       }, 100);
-      // Stop waiting after 10s
-      setTimeout(() => clearInterval(interval), 10000);
+
+      const timeout = setTimeout(() => {
+        clearInterval(interval);
+        if (!gsiInitialized.current) {
+          setGsiLoadFailed(true);
+          setIsLoading(false);
+        }
+      }, GIS_TIMEOUT_MS);
+
+      return () => {
+        clearInterval(interval);
+        clearTimeout(timeout);
+      };
+    }
+  }, [handleCredentialResponse]);
+
+  // Retry GIS initialization (after network error)
+  const retryGsiLoad = useCallback(() => {
+    setGsiLoadFailed(false);
+    gsiInitialized.current = false;
+
+    if (window.google?.accounts?.id) {
+      const initGsi = () => {
+        if (!window.google?.accounts?.id || gsiInitialized.current) return;
+        gsiInitialized.current = true;
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: handleCredentialResponse,
+          auto_select: false,
+          cancel_on_tap_outside: false,
+        });
+        setIsGsiReady(true);
+      };
+      initGsi();
+    } else {
+      // Reload the GIS script
+      const existing = document.querySelector('script[src*="accounts.google.com/gsi"]');
+      if (existing) existing.remove();
+
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        gsiInitialized.current = false;
+        const interval = setInterval(() => {
+          if (window.google?.accounts?.id) {
+            clearInterval(interval);
+            gsiInitialized.current = true;
+            window.google.accounts.id.initialize({
+              client_id: GOOGLE_CLIENT_ID,
+              callback: handleCredentialResponse,
+              auto_select: false,
+              cancel_on_tap_outside: false,
+            });
+            setIsGsiReady(true);
+          }
+        }, 100);
+        setTimeout(() => {
+          clearInterval(interval);
+          if (!gsiInitialized.current) setGsiLoadFailed(true);
+        }, GIS_TIMEOUT_MS);
+      };
+      script.onerror = () => setGsiLoadFailed(true);
+      document.head.appendChild(script);
     }
   }, [handleCredentialResponse]);
 
@@ -128,6 +228,10 @@ export function AuthProvider({ children }) {
     isAuthenticated: !!user && !!token && !isTokenExpired(token),
     clientId: GOOGLE_CLIENT_ID,
     handleCredentialResponse,
+    isGsiReady,
+    gsiLoadFailed,
+    sessionExpired,
+    retryGsiLoad,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
