@@ -93,10 +93,8 @@ async function getHouseholdId() {
  */
 function handleAuthError(error) {
   if (error?.status === 401 || error?.status === 403) {
-    // Trigger logout by clearing auth state
-    localStorage.removeItem('budget_auth_token');
-    localStorage.removeItem('budget_auth_user');
-    window.location.href = '/';
+    // Notify AuthContext to handle logout with session-expired reason
+    window.dispatchEvent(new CustomEvent('auth:session-expired'));
   }
   throw error;
 }
