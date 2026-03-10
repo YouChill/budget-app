@@ -36,7 +36,6 @@ function OfflineBanner() {
 export default function LoginPage() {
   const { error, setError, clientId, isLoading, isGsiReady, gsiLoadFailed, sessionExpired, retryGsiLoad } = useAuth();
   const buttonRef = useRef(null);
-  const [isButtonRendered, setIsButtonRendered] = useState(false);
 
   useEffect(() => {
     if (!clientId || !isGsiReady || !buttonRef.current) return;
@@ -54,7 +53,6 @@ export default function LoginPage() {
       logo_alignment: 'left',
       width: 300,
     });
-    setIsButtonRendered(true);
   }, [clientId, isGsiReady]);
 
   if (isLoading) {
@@ -154,12 +152,7 @@ export default function LoginPage() {
                 </div>
               ) : (
                 /* GIS ready — show button */
-                <>
-                  <div ref={buttonRef} style={{ minHeight: 44 }}></div>
-                  {!isButtonRendered && (
-                    <span className="text-xs text-gray-400">Przygotowywanie przycisku...</span>
-                  )}
-                </>
+                <div ref={buttonRef} style={{ minHeight: 44 }}></div>
               )}
 
               {isGsiReady && !gsiLoadFailed && (
