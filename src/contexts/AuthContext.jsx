@@ -60,6 +60,21 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // Shared GIS initialization helper — prevents double-init via gsiInitialized ref.
+  // Returns true if initialization was performed, false if skipped.
+  const doInitGsi = useCallback((autoSelect = false) => {
+    if (!window.google?.accounts?.id || gsiInitialized.current) return false;
+    gsiInitialized.current = true;
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleCredentialResponse,
+      auto_select: autoSelect,
+      cancel_on_tap_outside: false,
+    });
+    setIsGsiReady(true);
+    return true;
+  }, [handleCredentialResponse]);
+
   const logout = useCallback((reason = null) => {
     setUser(null);
     setToken(null);
@@ -74,14 +89,12 @@ export function AuthProvider({ children }) {
     if (window.google?.accounts?.id) {
       window.google.accounts.id.disableAutoSelect();
       if (GOOGLE_CLIENT_ID) {
-        window.google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: handleCredentialResponse,
-          auto_select: false,
-        });
+        // Reset the guard so doInitGsi will proceed
+        gsiInitialized.current = false;
+        doInitGsi(false);
       }
     }
-  }, [handleCredentialResponse]);
+  }, [doInitGsi]);
 
   // Listen for session-expired events from API layer
   useEffect(() => {
@@ -114,48 +127,46 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) return;
 
-    const initGsi = () => {
-      if (!window.google?.accounts?.id || gsiInitialized.current) return;
-      gsiInitialized.current = true;
+    const tryInit = () => {
+      // Only auto-select / trigger One Tap for users with a valid (non-expired) stored token.
+      // By this point the token-check effect has already cleared any expired token from
+      // localStorage, so checking for expiry here is a belt-and-suspenders safety measure.
+      const storedToken = localStorage.getItem('budget_auth_token');
+      const hasValidToken = !!storedToken && !isTokenExpired(storedToken);
 
-      const hasStoredToken = !!localStorage.getItem('budget_auth_token');
+      if (!doInitGsi(hasValidToken)) return;
 
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: handleCredentialResponse,
-        // Enable One Tap for returning users
-        auto_select: hasStoredToken,
-        cancel_on_tap_outside: false,
-      });
-
-      setIsGsiReady(true);
-
-      // Prompt One Tap for returning users
-      if (hasStoredToken) {
+      // Prompt One Tap for returning users with a valid token
+      if (hasValidToken) {
         window.google.accounts.id.prompt((notification) => {
           if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            // One Tap not shown — user will use button
+            if (import.meta.env.DEV) {
+              console.warn(
+                '[Auth] One Tap not shown:',
+                notification.getNotDisplayedReason?.() || notification.getSkippedReason?.()
+              );
+            }
           }
         });
       }
     };
 
     if (window.google?.accounts?.id) {
-      initGsi();
+      tryInit();
     } else {
       const interval = setInterval(() => {
         if (window.google?.accounts?.id) {
           clearInterval(interval);
           clearTimeout(timeout);
-          initGsi();
+          tryInit();
         }
       }, 100);
 
       const timeout = setTimeout(() => {
         clearInterval(interval);
+        // setIsLoading(false) is already called unconditionally by the token-check effect
         if (!gsiInitialized.current) {
           setGsiLoadFailed(true);
-          setIsLoading(false);
         }
       }, GIS_TIMEOUT_MS);
 
@@ -164,7 +175,7 @@ export function AuthProvider({ children }) {
         clearTimeout(timeout);
       };
     }
-  }, [handleCredentialResponse]);
+  }, [doInitGsi]);
 
   // Retry GIS initialization (after network error)
   const retryGsiLoad = useCallback(() => {
@@ -172,20 +183,11 @@ export function AuthProvider({ children }) {
     gsiInitialized.current = false;
 
     if (window.google?.accounts?.id) {
-      const initGsi = () => {
-        if (!window.google?.accounts?.id || gsiInitialized.current) return;
-        gsiInitialized.current = true;
-        window.google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: handleCredentialResponse,
-          auto_select: false,
-          cancel_on_tap_outside: false,
-        });
-        setIsGsiReady(true);
-      };
-      initGsi();
+      doInitGsi(false);
     } else {
-      // Reload the GIS script
+      // Reload the GIS script dynamically.
+      // gsiInitialized.current is already false (reset above); doInitGsi will set it
+      // back to true once the script loads and window.google.accounts.id is available.
       const existing = document.querySelector('script[src*="accounts.google.com/gsi"]');
       if (existing) existing.remove();
 
@@ -194,18 +196,10 @@ export function AuthProvider({ children }) {
       script.async = true;
       script.defer = true;
       script.onload = () => {
-        gsiInitialized.current = false;
         const interval = setInterval(() => {
           if (window.google?.accounts?.id) {
             clearInterval(interval);
-            gsiInitialized.current = true;
-            window.google.accounts.id.initialize({
-              client_id: GOOGLE_CLIENT_ID,
-              callback: handleCredentialResponse,
-              auto_select: false,
-              cancel_on_tap_outside: false,
-            });
-            setIsGsiReady(true);
+            doInitGsi(false);
           }
         }, 100);
         setTimeout(() => {
@@ -216,7 +210,7 @@ export function AuthProvider({ children }) {
       script.onerror = () => setGsiLoadFailed(true);
       document.head.appendChild(script);
     }
-  }, [handleCredentialResponse]);
+  }, [doInitGsi]);
 
   const value = {
     user,
