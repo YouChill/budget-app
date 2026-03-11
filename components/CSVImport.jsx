@@ -108,6 +108,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
   const [columnMapping, setColumnMapping] = useState({
     data: null,
     kwota: null,
+    uznania: null, // iPKO: osobna kolumna dla wpływów (Uznania)
     opis: null,
   });
   const [transactions, setTransactions] = useState([]);
@@ -242,8 +243,8 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
   };
 
   const prepareTransactions = () => {
-    if (!columnMapping.data || !columnMapping.kwota) {
-      setError('Musisz zmapować co najmniej kolumnę daty i kwoty');
+    if (!columnMapping.data || (!columnMapping.kwota && !columnMapping.uznania)) {
+      setError('Musisz zmapować co najmniej kolumnę daty i kwoty (lub Obciążenia + Uznania)');
       return false;
     }
 
@@ -254,11 +255,33 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
     }
 
     const meta = {};
+    const hasSplitColumns = columnMapping.uznania;
     const processed = csvData
-      .filter(row => row[columnMapping.data] && row[columnMapping.kwota])
+      .filter(row => {
+        if (!row[columnMapping.data]) return false;
+        if (hasSplitColumns) {
+          // iPKO: wiersz jest poprawny gdy ma wartość w Obciążenia LUB Uznania
+          const hasDebit = columnMapping.kwota && row[columnMapping.kwota]?.toString().trim();
+          const hasCredit = row[columnMapping.uznania]?.toString().trim();
+          return hasDebit || hasCredit;
+        }
+        return row[columnMapping.kwota];
+      })
       .map((row, idx) => {
         const opis = columnMapping.opis ? row[columnMapping.opis] : '';
-        const kwotaNum = parseKwota(row[columnMapping.kwota]);
+        let kwotaNum;
+        if (hasSplitColumns) {
+          // iPKO: Obciążenia (ujemne) i Uznania (dodatnie) - użyj tego, co jest niepuste
+          const debitStr = columnMapping.kwota ? row[columnMapping.kwota]?.toString().trim() : '';
+          const creditStr = row[columnMapping.uznania]?.toString().trim() || '';
+          if (creditStr) {
+            kwotaNum = Math.abs(parseKwota(creditStr)); // uznania zawsze dodatnie
+          } else {
+            kwotaNum = parseKwota(debitStr); // obciążenia - zwykle ujemne
+          }
+        } else {
+          kwotaNum = parseKwota(row[columnMapping.kwota]);
+        }
         const typ = kwotaNum < 0 ? 'Wydatek' : 'Przychód';
 
         // C2: Kategoryzacja z walidacją
@@ -512,7 +535,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
               <h3 className="font-semibold text-lg">Mapowanie kolumn</h3>
               <p className="text-gray-600">Wskaż które kolumny zawierają jakie dane</p>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Data operacji <span className="text-red-500">*</span></label>
                   <select
@@ -528,13 +551,30 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Kwota <span className="text-red-500">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Kwota / Obciążenia <span className="text-red-500">*</span></label>
                   <select
                     value={columnMapping.kwota || ''}
                     onChange={(e) => handleMappingChange('kwota', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   >
                     <option value="">Wybierz kolumnę</option>
+                    {headers.map(h => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Uznania (wpływy)
+                    <span className="text-gray-400 font-normal ml-1">- dla iPKO</span>
+                  </label>
+                  <select
+                    value={columnMapping.uznania || ''}
+                    onChange={(e) => handleMappingChange('uznania', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="">Brak (jedna kolumna kwoty)</option>
                     {headers.map(h => (
                       <option key={h} value={h}>{h}</option>
                     ))}
@@ -571,9 +611,12 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                 </select>
               </div>
 
-              <div className="bg-indigo-50/60 border border-indigo-100 rounded-lg p-3">
+              <div className="bg-indigo-50/60 border border-indigo-100 rounded-lg p-3 space-y-1">
                 <p className="text-sm text-indigo-800">
                   Format daty: YYYY-MM-DD. Kwota ujemna = wydatek, dodatnia = przychód
+                </p>
+                <p className="text-xs text-indigo-600">
+                  iPKO: Zmapuj &quot;Obciążenia&quot; jako Kwota i &quot;Uznania&quot; jako Uznania. Opis zmapuj na kolumnę &quot;Opis&quot; lub &quot;Odbiorca/Zleceniodawca&quot;.
                 </p>
               </div>
 
