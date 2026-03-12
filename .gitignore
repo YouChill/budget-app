@@ -17,6 +17,10 @@ dist-ssr
 .env.local
 .env.*.local
 
+# Bank statements / zestawienia bankowe
+*.numbers
+Zestawienie*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

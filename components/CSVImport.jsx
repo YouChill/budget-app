@@ -101,10 +101,98 @@ const STORAGE_KEY = 'csv_import_progress';
 const RULES_STORAGE_KEY = 'csv_recognition_rules';
 
 
+// Wykrywanie formatu PKO BP: pierwszy wiersz ma nagłówki "Data operacji", "Kwota", itp.
+// a kolumny 7-11 zawierają dane w formacie "Klucz: wartość" bez nagłówków
+const detectPkoBpFormat = (firstRow) => {
+  if (!firstRow || !Array.isArray(firstRow) || firstRow.length < 7) return false;
+  // Sprawdź czy pierwsze kolumny pasują do nagłówków PKO BP
+  return firstRow[0]?.trim() === 'Data operacji' &&
+    firstRow[3]?.trim() === 'Kwota' &&
+    firstRow[6]?.trim() === 'Opis transakcji';
+};
+
+// Ekstrakcja czytelnego opisu z formatu PKO BP
+// Kolumny 7-11 zawierają dane jak: "Tytuł: ...", "Lokalizacja: Adres: ... Miasto: ...", "Rachunek odbiorcy: ...", "Nazwa odbiorcy: ..."
+const extractPkoBpDescription = (row) => {
+  // Zbierz wszystkie kolumny od indeksu 6 (Opis transakcji) do końca
+  const extraCols = row.slice(6).filter(v => v && v.trim());
+
+  // Szukaj nazwy z "Lokalizacja: Adres:" - najczęściej zawiera nazwę sklepu
+  let locationName = null;
+  let locationCity = null;
+  for (const col of extraCols) {
+    const locMatch = col.match(/Lokalizacja:\s*Adres:\s*(.+?)(?:\s+Miasto:\s*(.+?))?(?:\s+Kraj:|$)/i);
+    if (locMatch) {
+      locationName = locMatch[1]?.trim();
+      locationCity = locMatch[2]?.trim();
+    }
+  }
+
+  // Szukaj tytułu z "Tytuł:" - w przelewach zawiera treść przelewu
+  let tytul = null;
+  for (const col of extraCols) {
+    const tytulMatch = col.match(/Tytuł:\s*(.+)/i);
+    if (tytulMatch) {
+      tytul = tytulMatch[1].trim();
+    }
+  }
+
+  // Szukaj nazwy odbiorcy/nadawcy
+  let nazwaOdbiorcy = null;
+  for (const col of extraCols) {
+    const nameMatch = col.match(/Nazwa (?:odbiorcy|nadawcy):\s*(.+)/i);
+    if (nameMatch) {
+      nazwaOdbiorcy = nameMatch[1].trim();
+    }
+  }
+
+  // Logika budowania opisu:
+  // 1. Dla płatności kartą - nazwa sklepu z lokalizacji jest najlepsza
+  // 2. Dla przelewów - tytuł przelewu + nazwa odbiorcy/nadawcy
+  // 3. Fallback - co jest dostępne
+
+  // Sprawdź czy tytuł to tylko numer (bezużyteczny dla opisu)
+  const tytulIsNumeric = tytul && /^[\d\s/]+$/.test(tytul);
+  // Tytuł z treścią użyteczną (nie sam numer)
+  const tytulUseful = tytul && !tytulIsNumeric;
+
+  // Oczyść tytuł przelewu na telefon z numerów
+  let cleanTytul = tytul;
+  if (tytulUseful && cleanTytul) {
+    // Usuń "OD: 48... DO: 48..." z końca tytułu przelewu na telefon
+    cleanTytul = cleanTytul.replace(/\s*OD:\s*\d+\s*DO:\s*[\d*]+\s*$/, '').trim();
+    // Usuń numery referencyjne z początku np. "000498849 74230786050185220377112"
+    cleanTytul = cleanTytul.replace(/^\d{6,}\s+\d{10,}\s*/, '').trim();
+  }
+
+  if (locationName) {
+    // Płatność kartą - użyj nazwy sklepu
+    const cityPart = locationCity ? `, ${locationCity}` : '';
+    return locationName + cityPart;
+  }
+
+  if (tytulUseful && nazwaOdbiorcy) {
+    // Przelew - tytuł + odbiorca
+    return `${cleanTytul} - ${nazwaOdbiorcy}`;
+  }
+
+  if (tytulUseful) {
+    return cleanTytul;
+  }
+
+  if (nazwaOdbiorcy) {
+    return nazwaOdbiorcy;
+  }
+
+  // Fallback - zwróć pierwszą niepustą kolumnę dodatkową
+  return extraCols[0] || '';
+};
+
 export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved }) {
   const [step, setStep] = useState(1); // 1: Upload, 2: Mapping, 3: Preview, 4: Success
   const [csvData, setCsvData] = useState(null);
   const [headers, setHeaders] = useState([]);
+  const [detectedFormat, setDetectedFormat] = useState(null); // 'pko_bp' | null
   const [columnMapping, setColumnMapping] = useState({
     data: null,
     kwota: null,
@@ -203,14 +291,83 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
     const file = e.target.files[0];
     if (!file) return;
 
+    // Parsuj najpierw bez nagłówków, aby wykryć format
     Papa.parse(file, {
-      header: true,
+      header: false,
       skipEmptyLines: true,
       complete: (results) => {
-        if (results.data && results.data.length > 0) {
-          setCsvData(results.data);
-          setHeaders(Object.keys(results.data[0]));
+        if (!results.data || results.data.length < 2) {
+          setError('Plik CSV jest pusty lub zawiera za mało danych');
+          return;
+        }
+
+        const firstRow = results.data[0];
+
+        if (detectPkoBpFormat(firstRow)) {
+          // Format PKO BP wykryty - przetwórz dane specjalnie
+          const dataRows = results.data.slice(1); // Pomiń wiersz nagłówkowy
+          // Przetwórz na obiekty z wygenerowanym opisem
+          const processed = dataRows.map(row => ({
+            'Data operacji': row[0] || '',
+            'Data waluty': row[1] || '',
+            'Typ transakcji': row[2] || '',
+            'Kwota': row[3] || '',
+            'Waluta': row[4] || '',
+            'Saldo po transakcji': row[5] || '',
+            'Opis (wyodrębniony)': extractPkoBpDescription(row),
+            'Opis oryginalny': row.slice(6).filter(v => v && v.trim()).join(' | '),
+          }));
+
+          setCsvData(processed);
+          setHeaders(['Data operacji', 'Data waluty', 'Typ transakcji', 'Kwota', 'Waluta', 'Saldo po transakcji', 'Opis (wyodrębniony)', 'Opis oryginalny']);
+          setDetectedFormat('pko_bp');
+          // Auto-mapowanie kolumn dla PKO BP
+          setColumnMapping({
+            data: 'Data operacji',
+            kwota: 'Kwota',
+            uznania: null,
+            opis: 'Opis (wyodrębniony)',
+          });
           setStep(2);
+        } else {
+          // Sprawdź czy pierwszy wiersz wygląda na nagłówki
+          // Heurystyka: nagłówki to zwykle tekst, a dane zawierają liczby/daty
+          const looksLikeHeaders = firstRow.some(cell =>
+            typeof cell === 'string' && cell.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(cell.trim()) && !/^[+-]?\d+([.,]\d+)?$/.test(cell.trim())
+          );
+
+          if (looksLikeHeaders) {
+            // Standardowe CSV z nagłówkami - ponowne parsowanie z header: true
+            const headerRow = firstRow;
+            const dataRows = results.data.slice(1);
+            const processed = dataRows.map(row => {
+              const obj = {};
+              headerRow.forEach((h, i) => {
+                const key = h?.trim() || `Kolumna ${i + 1}`;
+                obj[key] = row[i] || '';
+              });
+              return obj;
+            });
+            setCsvData(processed);
+            setHeaders(headerRow.map((h, i) => h?.trim() || `Kolumna ${i + 1}`));
+            setDetectedFormat(null);
+            setStep(2);
+          } else {
+            // CSV bez nagłówków - generuj nazwy kolumn
+            const colCount = firstRow.length;
+            const generatedHeaders = firstRow.map((_, i) => `Kolumna ${i + 1}`);
+            const processed = results.data.map(row => {
+              const obj = {};
+              generatedHeaders.forEach((h, i) => {
+                obj[h] = row[i] || '';
+              });
+              return obj;
+            });
+            setCsvData(processed);
+            setHeaders(generatedHeaders);
+            setDetectedFormat(null);
+            setStep(2);
+          }
         }
       },
       error: (err) => {
@@ -524,7 +681,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                 />
               </div>
               <p className="text-sm text-gray-600">
-                Obsługiwane formaty: CSV z nagłówkami kolumn
+                Obsługiwane formaty: CSV z nagłówkami kolumn, CSV bez nagłówków, zestawienia PKO BP
               </p>
             </div>
           )}
@@ -533,6 +690,11 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
           {step === 2 && (
             <div className="space-y-4">
               <h3 className="font-semibold text-lg">Mapowanie kolumn</h3>
+              {detectedFormat === 'pko_bp' && (
+                <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-sm text-green-800">
+                  Wykryto format <strong>PKO BP</strong> &mdash; kolumny zostały automatycznie zmapowane, a opisy transakcji wyodrębnione z danych bankowych.
+                </div>
+              )}
               <p className="text-gray-600">Wskaż które kolumny zawierają jakie dane</p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -611,6 +773,35 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                 </select>
               </div>
 
+              {/* Podgląd danych */}
+              {csvData && csvData.length > 0 && (
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="bg-gray-50 px-3 py-2 text-xs font-medium text-gray-600 border-b border-gray-200">
+                    Podgląd danych ({csvData.length} wierszy) &mdash; pierwsze 3:
+                  </div>
+                  <div className="overflow-auto max-h-[160px]">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          {headers.map(h => (
+                            <th key={h} className="px-2 py-1 text-left whitespace-nowrap font-medium text-gray-700 border-b border-gray-200">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {csvData.slice(0, 3).map((row, i) => (
+                          <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
+                            {headers.map(h => (
+                              <td key={h} className="px-2 py-1 whitespace-nowrap max-w-[200px] truncate text-gray-600">{row[h]}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-indigo-50/60 border border-indigo-100 rounded-lg p-3 space-y-1">
                 <p className="text-sm text-indigo-800">
                   Format daty: YYYY-MM-DD. Kwota ujemna = wydatek, dodatnia = przychód
@@ -622,7 +813,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => setStep(1)}
+                  onClick={() => { setStep(1); setDetectedFormat(null); }}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100"
                 >
                   Wstecz
