@@ -794,17 +794,16 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
               </div>
 
               {/* Supported formats */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="flex flex-col gap-1.5">
                 {[
-                  { icon: '🏦', title: 'PKO BP / iPKO', desc: 'Automatyczna detekcja' },
-                  { icon: '🏦', title: 'Bank Millennium', desc: 'Automatyczna detekcja' },
-                  { icon: '📊', title: 'CSV z nagłówkami', desc: 'Standardowy format' },
-                  { icon: '📋', title: 'CSV bez nagłówków', desc: 'Mapowanie ręczne' },
-                ].map(({ icon, title, desc }) => (
-                  <div key={title} className="bg-white border border-gray-200 rounded-xl p-4 text-center hover:border-indigo-200 hover:bg-indigo-50/20 transition-colors">
-                    <div className="text-2xl mb-1.5">{icon}</div>
-                    <div className="text-sm font-medium text-gray-700">{title}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">{desc}</div>
+                  { icon: '🏦', label: 'Rozpoznawanie automatyczne', desc: 'PKO BP / iPKO, Bank Millennium' },
+                  { icon: '📊', label: 'CSV z nagłówkami', desc: 'standardowy format' },
+                  { icon: '📋', label: 'CSV bez nagłówków', desc: 'mapowanie ręczne' },
+                ].map(({ icon, label, desc }) => (
+                  <div key={label} className="flex items-center gap-2 text-sm text-gray-500">
+                    <span className="text-base leading-none">{icon}</span>
+                    <span className="font-medium text-gray-700 whitespace-nowrap">{label}:</span>
+                    <span className="text-gray-400 whitespace-nowrap">{desc}</span>
                   </div>
                 ))}
               </div>
