@@ -135,6 +135,53 @@ const extractPkoBpDescription = (row) => {
   return extraCols[0] || '';
 };
 
+// ─── Bank Millennium format detection & parsing ───────────────────────────────
+// Headers: "Numer rachunku/karty","Data transakcji","Data rozliczenia",
+//          "Rodzaj transakcji","Na konto/Z konta","Odbiorca/Zleceniodawca",
+//          "Opis","Obciążenia","Uznania","Saldo","Waluta"
+const detectMillenniumFormat = (firstRow) => {
+  if (!firstRow || !Array.isArray(firstRow) || firstRow.length < 9) return false;
+  return (
+    firstRow[1]?.trim() === 'Data transakcji' &&
+    firstRow[3]?.trim() === 'Rodzaj transakcji' &&
+    firstRow[7]?.trim() === 'Obciążenia' &&
+    firstRow[8]?.trim() === 'Uznania'
+  );
+};
+
+const extractMillenniumDescription = (row) => {
+  // row is a raw array: [nrRachunku, dataTx, dataRozl, rodzaj, naKonto, odbiorca, opis, obciaz, uznania, saldo, waluta]
+  const rodzaj = (row[3] || '').toUpperCase();
+  const odbiorca = (row[5] || '').trim();
+  const opis = (row[6] || '').trim();
+
+  const isCardOrTerminal =
+    rodzaj.includes('ZAKUP') ||
+    rodzaj.includes('PŁATNOŚĆ') ||
+    rodzaj.includes('PLATNOSC') ||
+    rodzaj.includes('WYPŁATA BLIK') ||
+    rodzaj.includes('WYPLATA BLIK');
+
+  if (isCardOrTerminal && opis) {
+    // Opis format: "MERCHANT NAME  City CCC YYYY-MM-DD"
+    // where CCC = 3-letter country code (POL, USA, NLD, IRL…)
+    let cleaned = opis
+      .replace(/\s+\d{4}-\d{2}-\d{2}$/, '')   // remove trailing date
+      .replace(/\s+[A-Z]{2,3}$/, '')            // remove trailing country code
+      .replace(/\s{2,}/g, ' ')                  // collapse multiple spaces
+      .trim();
+    return cleaned || opis;
+  }
+
+  // Transfers: recipient + opis (if opis is more than just a reference number)
+  if (odbiorca) {
+    const opisIsJustRef = !opis || /^[\d\s/\-]+$/.test(opis);
+    return opisIsJustRef ? odbiorca : `${odbiorca} — ${opis}`;
+  }
+
+  return opis || rodzaj;
+};
+
 // ─── Step indicator component ─────────────────────────────────────────────────
 function StepIndicator({ current }) {
   const steps = [
@@ -355,6 +402,25 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
           setHeaders(['Data operacji', 'Data waluty', 'Typ transakcji', 'Kwota', 'Waluta', 'Saldo po transakcji', 'Opis (wyodrębniony)', 'Opis oryginalny']);
           setDetectedFormat('pko_bp');
           setColumnMapping({ data: 'Data operacji', kwota: 'Kwota', uznania: null, opis: 'Opis (wyodrębniony)' });
+          setStep(2);
+        } else if (detectMillenniumFormat(firstRow)) {
+          const dataRows = results.data.slice(1);
+          const processed = dataRows.map(row => ({
+            'Data transakcji': row[1] || '',
+            'Rodzaj transakcji': row[3] || '',
+            'Na konto/Z konta': row[4] || '',
+            'Odbiorca/Zleceniodawca': row[5] || '',
+            'Opis': row[6] || '',
+            'Obciążenia': row[7] || '',
+            'Uznania': row[8] || '',
+            'Saldo': row[9] || '',
+            'Waluta': row[10] || '',
+            'Opis (wyodrębniony)': extractMillenniumDescription(row),
+          }));
+          setCsvData(processed);
+          setHeaders(['Data transakcji', 'Rodzaj transakcji', 'Na konto/Z konta', 'Odbiorca/Zleceniodawca', 'Opis', 'Obciążenia', 'Uznania', 'Saldo', 'Waluta', 'Opis (wyodrębniony)']);
+          setDetectedFormat('millennium');
+          setColumnMapping({ data: 'Data transakcji', kwota: 'Obciążenia', uznania: 'Uznania', opis: 'Opis (wyodrębniony)' });
           setStep(2);
         } else {
           const looksLikeHeaders = firstRow.some(cell =>
@@ -731,6 +797,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { icon: '🏦', title: 'PKO BP / iPKO', desc: 'Automatyczna detekcja' },
+                  { icon: '🏦', title: 'Bank Millennium', desc: 'Automatyczna detekcja' },
                   { icon: '📊', title: 'CSV z nagłówkami', desc: 'Standardowy format' },
                   { icon: '📋', title: 'CSV bez nagłówków', desc: 'Mapowanie ręczne' },
                 ].map(({ icon, title, desc }) => (
@@ -766,6 +833,15 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                   <div>
                     <p className="text-sm font-semibold text-emerald-800">Wykryto format PKO BP</p>
                     <p className="text-xs text-emerald-600 mt-0.5">Kolumny zostały automatycznie zmapowane, a opisy wyodrębnione z danych bankowych.</p>
+                  </div>
+                </div>
+              )}
+              {detectedFormat === 'millennium' && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-start gap-3">
+                  <span className="text-emerald-500 text-xl mt-0.5">✓</span>
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-800">Wykryto format Bank Millennium</p>
+                    <p className="text-xs text-emerald-600 mt-0.5">Kolumny Obciążenia/Uznania zmapowane automatycznie. Opisy transakcji kartą oczyszczone z dat i kodów krajów.</p>
                   </div>
                 </div>
               )}
