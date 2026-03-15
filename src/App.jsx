@@ -3,7 +3,6 @@ import CategoryCharts from '/components/CategoryCharts';
 import Budgets from '/components/Budgets';
 import CSVImport from '/components/CSVImport';
 import LoginPage from './components/LoginPage';
-import FamilySetupPage from './components/FamilySetupPage';
 import OfflineBanner from './components/OfflineBanner';
 import YearlySummary from './components/YearlySummary';
 import { useAuth } from './contexts/AuthContext';
@@ -461,103 +460,9 @@ const TransactionItem = ({ transaction, onDelete, onEdit, isOffline, addToast })
 };
 
 // ============================================
-// ZAKŁADKA RODZINA W PANELU USTAWIEŃ
-// ============================================
-const FamilyTab = ({ household, profile }) => {
-  const [members, setMembers] = React.useState([]);
-  const [isLoadingMembers, setIsLoadingMembers] = React.useState(false);
-  const [copied, setCopied] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!household) return;
-    setIsLoadingMembers(true);
-    api.getHouseholdMembers().then(setMembers).catch(() => {}).finally(() => setIsLoadingMembers(false));
-  }, [household]);
-
-  const handleCopy = () => {
-    if (!household?.invite_code) return;
-    navigator.clipboard.writeText(household.invite_code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
-
-  if (!household) return <div className="text-sm text-gray-400 py-8 text-center">Ładowanie...</div>;
-
-  return (
-    <div className="space-y-5">
-      {/* Household name */}
-      <div className="rounded-2xl border border-gray-200 p-4 space-y-1">
-        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Nazwa rodziny</p>
-        <p className="text-base font-semibold text-gray-800">{household.name}</p>
-        <p className="text-xs text-gray-400">
-          Twoja rola: <span className="font-medium text-indigo-600">{profile?.role === 'owner' ? 'Właściciel' : 'Członek'}</span>
-        </p>
-      </div>
-
-      {/* Invite code */}
-      <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 space-y-2">
-        <p className="text-xs font-medium text-indigo-500 uppercase tracking-wide">Kod zaproszenia</p>
-        <div className="flex items-center gap-3">
-          <span className="text-2xl font-mono font-bold text-indigo-700 tracking-widest">
-            {household.invite_code || '—'}
-          </span>
-          {household.invite_code && (
-            <button
-              onClick={handleCopy}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs font-medium transition-colors"
-            >
-              {copied ? (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                  Skopiowano!
-                </>
-              ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                  Kopiuj
-                </>
-              )}
-            </button>
-          )}
-        </div>
-        <p className="text-xs text-indigo-500">Podziel się tym kodem z innymi członkami rodziny, aby mogli dołączyć.</p>
-      </div>
-
-      {/* Members */}
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Członkowie ({members.length})</p>
-        {isLoadingMembers ? (
-          <p className="text-sm text-gray-400">Ładowanie...</p>
-        ) : members.length === 0 ? (
-          <p className="text-sm text-gray-400">Brak członków.</p>
-        ) : (
-          <div className="space-y-2">
-            {members.map(m => (
-              <div key={m.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
-                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-sm font-semibold shrink-0">
-                  {(m.display_name || m.email).charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-gray-800 truncate">{m.display_name || m.email}</p>
-                  <p className="text-xs text-gray-400 truncate">{m.email}</p>
-                </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${m.role === 'owner' ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-600'}`}>
-                  {m.role === 'owner' ? 'Właściciel' : 'Członek'}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ============================================
 // PANEL USTAWIEŃ - Zarządzanie słownikami
 // ============================================
-const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChange, onOsobyChange, household, profile }) => {
+const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChange, onOsobyChange }) => {
   const [activeTab, setActiveTab] = useState('kategorie');
   const [isProcessing, setIsProcessing] = useState(false);
   const [settingsError, setSettingsError] = useState(null);
@@ -894,22 +799,6 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
             <Icons.User />
             Osoby
           </button>
-          <button
-            onClick={() => setActiveTab('rodzina')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              activeTab === 'rodzina'
-                ? 'bg-indigo-100 text-indigo-700'
-                : 'text-gray-500 hover:bg-gray-100'
-            }`}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-              <circle cx="9" cy="7" r="4"></circle>
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-            </svg>
-            Rodzina
-          </button>
         </div>
         
         {/* Komunikaty */}
@@ -928,9 +817,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
         
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
-          {activeTab === 'rodzina' ? (
-            <FamilyTab household={household} profile={profile} />
-          ) : activeTab === 'kategorie' ? (
+          {activeTab === 'kategorie' ? (
             <div className="space-y-6">
               {/* Formularz dodawania */}
               <div className="rounded-2xl border border-gray-200 p-4 space-y-3">
@@ -1109,33 +996,9 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
 // GŁÓWNA APLIKACJA
 // ============================================
 export default function BudgetApp() {
-  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const { user, token, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const { addToast } = useToast();
   const { isOffline } = useOffline();
-
-  // Profile & household state
-  const [profile, setProfile] = useState(undefined); // undefined=loading, null=no profile
-  const [household, setHousehold] = useState(null);
-
-  // Fetch profile + household when authenticated
-  useEffect(() => {
-    if (!isAuthenticated) {
-      setProfile(null);
-      setHousehold(null);
-      return;
-    }
-    api.getUserProfile().then(async (p) => {
-      setProfile(p);
-      if (p?.household_id) {
-        try {
-          const h = await api.getHouseholdInfo();
-          setHousehold(h);
-        } catch {
-          // household info non-critical
-        }
-      }
-    }).catch(() => setProfile(null));
-  }, [isAuthenticated]);
 
   const [currentPeriod, setCurrentPeriod] = useState(getCurrentMonth());
   const [transakcje, setTransakcje] = useState([]);
@@ -1267,12 +1130,12 @@ export default function BudgetApp() {
 
   // Real-time subscriptions — nasłuchuj zmian w Supabase
   useEffect(() => {
-    if (isOffline || !user || !profile?.household_id) return;
+    if (isOffline || !user) return; // Skip if offline or not authenticated
 
     const getHouseholdId = async () => {
       try {
-        const p = await api.getUserProfile();
-        return p?.household_id ?? null;
+        const profile = await api.getUserProfile();
+        return profile.household_id;
       } catch {
         return null;
       }
@@ -1349,7 +1212,7 @@ export default function BudgetApp() {
         supabase.removeChannel(channel);
       });
     };
-  }, [user, profile, isOffline, fetchData]);
+  }, [user, isOffline, fetchData]);
 
   // Dodawanie transakcji
   const handleAddTransaction = async (transakcja) => {
@@ -1517,7 +1380,7 @@ export default function BudgetApp() {
   );
   
   // Auth gate: show login page if not authenticated
-  if (authLoading || (isAuthenticated && profile === undefined)) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-100 to-indigo-50 flex items-center justify-center">
         <div className="flex items-center gap-3 text-gray-500">
@@ -1530,22 +1393,6 @@ export default function BudgetApp() {
 
   if (!isAuthenticated) {
     return <LoginPage />;
-  }
-
-  // Family gate: new user without household
-  if (!profile?.household_id) {
-    return (
-      <FamilySetupPage
-        onSetupComplete={async () => {
-          const p = await api.getUserProfile();
-          setProfile(p);
-          if (p?.household_id) {
-            const h = await api.getHouseholdInfo();
-            setHousehold(h);
-          }
-        }}
-      />
-    );
   }
 
   return (
@@ -1596,9 +1443,7 @@ export default function BudgetApp() {
               </div>
               <div className="min-w-0">
                 <h1 className="text-base sm:text-xl font-bold text-gray-800 truncate">Budżet Domowy</h1>
-                <p className="text-sm text-gray-500 hidden sm:block truncate max-w-[160px]">
-                  {household?.name || 'Kontroluj swoje finanse'}
-                </p>
+                <p className="text-sm text-gray-500 hidden sm:block">Kontroluj swoje finanse</p>
               </div>
             </div>
 
@@ -1834,8 +1679,6 @@ export default function BudgetApp() {
           transakcje={transakcje}
           onKategorieChange={handleKategorieChange}
           onOsobyChange={handleOsobyChange}
-          household={household}
-          profile={profile}
         />
       )}
 
