@@ -24,14 +24,35 @@ export async function getUserProfile() {
     .single();
 
   if (profileError) {
-    // Profil nie istnieje (trigger nie zadziałał) — stwórz go bez household
+    // Profil nie istnieje (trigger nie zadziałał) — stwórz go z auto-przypisaniem do istniejącego household
     if (profileError.code === 'PGRST116') {
+      // Szukaj istniejącego household (zakładamy jedną rodzinę — bez household_id == nowy użytkownik)
+      const { data: households } = await supabase
+        .from('households')
+        .select('id')
+        .order('created_at', { ascending: true })
+        .limit(1);
+
+      const existingHouseholdId = households?.[0]?.id ?? null;
+
+      // Sprawdź czy household ma już właściciela
+      let role = 'member';
+      if (existingHouseholdId) {
+        const { count } = await supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('household_id', existingHouseholdId);
+        if (count === 0) role = 'owner';
+      }
+
       const { data: created, error: insertError } = await supabase
         .from('profiles')
         .insert({
           id: user.id,
           email: user.email,
           display_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
+          household_id: existingHouseholdId,
+          role,
         })
         .select('id, email, display_name, household_id, role')
         .single();
