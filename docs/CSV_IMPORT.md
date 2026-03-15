@@ -1,190 +1,200 @@
-# Import Transakcji z CSV
+# Import transakcji z CSV
 
-## Opis funkcjonalności
-
-Funkcja umożliwia masowy import transakcji z pliku CSV, co eliminuje konieczność ręcznego wpisywania każdej operacji z wyciągu bankowego.
+Funkcja umożliwia masowy import transakcji z pliku CSV — eliminuje konieczność ręcznego wpisywania operacji z wyciągu bankowego. Obsługuje automatyczną kategoryzację opartą na słowach kluczowych oraz opcjonalnie na AI (pgvector + OpenAI).
 
 ## Jak używać
 
-### 1. Przygotowanie pliku CSV
+### 1. Otwórz okno importu
 
-Plik CSV powinien zawierać:
-- Nagłówki kolumn (np. "Data", "Kwota", "Opis")
-- Dane w formacie:
-  - **Data**: `YYYY-MM-DD` (np. `2024-01-15`)
-  - **Kwota**: liczba, gdzie ujemne = wydatek, dodatnie = przychód
-  - **Opis**: nazwa transakcji (opcjonalnie, ale zalecane do automatycznej kategoryzacji)
+Kliknij ikonę importu w nagłówku aplikacji.
 
-**Przykład CSV:**
+### 2. Prześlij plik (Krok 1)
+
+- **Przeciągnij plik CSV** na strefę drop
+- lub kliknij **„Wybierz plik z dysku"**
+
+Obsługiwane formaty są wykrywane automatycznie:
+
+| Format | Jak rozpoznać |
+|--------|--------------|
+| PKO BP | Nagłówki: `Data operacji`, `Kwota`, `Opis transakcji` |
+| CSV z nagłówkami | Pierwszy wiersz to tekst (nie liczby/daty) |
+| CSV bez nagłówków | Wszystkie wiersze to dane — kolumny numerowane automatycznie |
+
+### 3. Zmapuj kolumny (Krok 2)
+
+Wskaż które kolumny zawierają:
+- **Data operacji** *(wymagane)* — format `YYYY-MM-DD`
+- **Kwota / Obciążenia** *(wymagane)* — kwota transakcji; ujemna = wydatek
+- **Uznania** *(opcjonalne, iPKO)* — gdy bank rozbija wypływy i wpływy na dwie kolumny
+- **Opis / Notatka** *(opcjonalne)* — używany do automatycznej kategoryzacji
+- **Osoba** *(wymagane)* — kto wpisuje transakcje
+
+Format PKO BP: kolumny są zmapowane automatycznie, opisy transakcji wyodrębniane z pól bankowych (Lokalizacja, Tytuł, Nazwa odbiorcy).
+
+### 4. Przejrzyj i edytuj (Krok 3)
+
+- Każde pole jest edytowalne inline (data, kwota, opis, kategoria, podkategoria)
+- Transakcje bez przypisanej kategorii są wyróżnione żółtym tłem
+- Kliknij ✕ aby usunąć transakcję z importu
+- Przycisk „Szczegóły CSV" pokazuje oryginalne pola z pliku
+
+#### Kategoryzacja AI
+
+Jeśli ustawiony jest `VITE_OPENAI_API_KEY`, po przejściu do tego kroku aplikacja automatycznie:
+1. Generuje embeddingi dla wszystkich nieprzypisanych transakcji (jedno batch API call)
+2. Wyszukuje podobne opisy w bazie wektorowej `category_rules`
+3. Przypisuje kategorie z wynikiem podobieństwa ≥ 0,78
+
+Wynik widoczny w banerem „AI automatycznie przypisało X transakcji".
+
+### 5. Importuj (Krok 3 → 4)
+
+Kliknij **„Importuj N transakcji"** — batch insert do Supabase.
+
+Po udanym imporcie:
+- Kategorie wszystkich transakcji są zapisywane w bazie wektorowej jako wzorce do przyszłych importów
+- Dane natychmiast pojawiają się w głównym widoku aplikacji
+
+---
+
+## Reguły rozpoznawania
+
+Panel w Kroku 3 pozwala zarządzać regułami słów kluczowych:
+
+### Dodawanie reguły
+
+1. Kliknij **„+ Dodaj regułę"**
+2. Wpisz fragment tekstu który pojawia się w opisach transakcji (np. `Allegro`, `PKO Leasing`)
+3. Wybierz typ, kategorię i podkategorię
+4. Kliknij **„Dodaj i zastosuj"**
+
+Reguła jest:
+- Natychmiast stosowana do wszystkich nieprzypisanych transakcji w bieżącym imporcie
+- Zapisywana do `localStorage` — aktywna w kolejnych importach
+- Przy włączonym AI — zapisywana również jako embedding w Supabase `category_rules`
+
+### Przeglądanie reguł
+
+Kliknij **„Lista reguł"** aby zobaczyć i usunąć zapisane reguły.
+
+---
+
+## Warstwy kategoryzacji (kolejność)
+
 ```
-Data,Kwota,Opis
-2024-01-15,-100,Biedronka
-2024-01-16,-50,Starbucks
-2024-01-17,3000,Wynagrodzenie Mąż
-```
-
-### 2. Otwarcie dialogu importu
-
-1. Kliknij przycisk **↓** (upload) w nagłówku aplikacji
-2. Lub użyj menu ustawień i wybierz opcję importu CSV
-
-### 3. Mapowanie kolumn
-
-Po wybraniu pliku, wskaż które kolumny zawierają:
-- **Data operacji** * (wymagana) - w formacie YYYY-MM-DD
-- **Kwota** * (wymagana) - kwota transakcji
-- **Opis/Notatka** (opcjonalna) - używana do automatycznej kategoryzacji
-
-### 4. Podgląd i edycja
-
-Przed importem widać podgląd wszystkich transakcji:
-- ✅ Możesz edytować każde pole
-- ✅ Możesz zmienić kategorię i podkategorię
-- ✅ Możesz usunąć transakcje z importu (kliknij ✕)
-- ✅ Kategorie są automatycznie przypisywane na podstawie opisu
-
-### 5. Potwierdzenie importu
-
-Kliknij **Importuj transakcje** - wszystkie transakcje zostaną dodane do arkusza w jednej operacji (batch).
-
-## Automatyczna kategoryzacja
-
-Aplikacja automatycznie przypisuje kategorie na podstawie słów kluczowych w opisie:
-
-### Jedzenie
-- "biedronka", "tesco", "carrefour", "makro", "żabka", "lidl", "auchan" → **Jedzenie / Zakupy domowe**
-- "mc donald", "restauracja", "pizza" → **Jedzenie / Restauracje/miasto**
-- "kawa", "starbucks" → **Jedzenie / Kawa/przekąski**
-
-### Transport
-- "paliwo", "bp", "orlen" → **Transport / Paliwo**
-- "pkp", "metro", "uber" → **Transport / Komunikacja miejska**
-
-### Mieszkanie
-- "energa", "pge" → **Mieszkanie / Prąd**
-- "gaz" → **Mieszkanie / Gaz**
-- "internet" → **Mieszkanie / Internet**
-- "woda" → **Mieszkanie / Woda**
-
-### Zdrowie
-- "apteka" → **Zdrowie / Leki**
-- "lekarz", "szpital", "dentyst" → **Zdrowie / Lekarz**
-
-### Rozrywka
-- "kino" → **Rozrywka / Kino/koncerty**
-- "spotify", "netflix", "hbo", "amazon" → **Rozrywka / Subskrypcje**
-
-### Ubrania
-- "h&m", "zara", "c&a", "odzież" → **Ubrania / Dorośli**
-
-### Dom
-- "leroy merlin", "jysk", "ceneo" → **Dom / Wyposażenie**
-
-### Inne
-- "fryzjer", "salon", "kosmetyk" → **Inne / Fryzjer/kosmetyki**
-- "prezent" → **Inne / Prezenty**
-
-## Architektura rozwiązania
-
-### Frontend - komponenty React
-
-**`CSVImport.jsx`** - główny komponent importu
-- Krok 1: Upload pliku CSV
-- Krok 2: Mapowanie kolumn
-- Krok 3: Podgląd i edycja transakcji
-- Krok 4: Potwierdzenie sukcesu
-
-Funkcje pomocnicze:
-- `categorizeDescription()` - przypisuje kategorię na podstawie opisu
-- `Papa.parse()` - parsowanie CSV (biblioteka Papaparse)
-
-### Backend - Google Apps Script
-
-**Nowy endpoint: `addTransakcjeBatch`**
-
-Zarządza batch importem:
-```javascript
-addTransakcjeBatch(transakcje: Array<Transakcja>) 
-  → { success: bool, count: number, ids: Array, message: string }
+Opis transakcji
+    │
+    ▼
+1. Reguły użytkownika (localStorage) — najwyższy priorytet
+    │
+    ▼
+2. Wbudowane słowa kluczowe (~70 reguł)
+    │
+    ▼
+3. AI — pgvector similarity search (jeśli VITE_OPENAI_API_KEY ustawiony)
+    │
+    ▼
+Inne / Nieprzewidziane (brak dopasowania)
 ```
 
-Cechy:
-- ✅ Walidacja każdej transakcji
-- ✅ Operacja atomowa - albo wszystkie się dodają, albo żadna
-- ✅ Obsługa błędów z szczegółami
-- ✅ Generowanie UUID dla każdej transakcji
-- ✅ Efektywne dodawanie (batch insert zamiast append loop)
+### Wbudowane słowa kluczowe
 
-## Obsługiwane formaty dat
+| Kategoria | Słowa kluczowe |
+|-----------|---------------|
+| Jedzenie / Zakupy domowe | biedronka, tesco, carrefour, makro, żabka, lidl, auchan |
+| Jedzenie / Restauracje | mc donald, restauracja, pizza |
+| Jedzenie / Kawa | kawa, starbucks |
+| Transport / Paliwo | paliwo, bp, orlen |
+| Transport / Komunikacja | pkp, metro, uber |
+| Mieszkanie / Czynsz | mieszkanie, czynsz |
+| Mieszkanie / Media | energa, pge, gaz, woda, internet, telefon |
+| Zdrowie / Leki | apteka |
+| Zdrowie / Lekarz | lekarz, szpital, dentyst |
+| Rozrywka / Kino | kino |
+| Rozrywka / Subskrypcje | spotify, netflix, hbo, amazon |
+| Ubrania | h&m, zara, c&a, odzież |
+| Dom / Wyposażenie | leroy merlin, jysk, ceneo |
+| Inne / Fryzjer | fryzjer, salon, kosmetyk |
+| Inne / Prezenty | prezent |
 
-- ISO format: `2024-01-15`
-- Format z myślnikami: `2024-01-15`
+---
 
-> Format czasu UTC bez strefy czasowej - aplikacja automatycznie konwertuje do strefy Europe/Warsaw
+## Kategoryzacja AI — szczegóły techniczne
 
-## Walidacja danych
+### Wymagania
 
-Podczas importu sprawdzane są:
-1. ✅ Typ transakcji (Wydatek/Przychód)
-2. ✅ Data w poprawnym formacie i prawidłowa (np. 31 lutego nie istnieje)
-3. ✅ Kwota > 0 i numeryczna
-4. ✅ Kategoria nie pusta
+- Rozszerzenie `pgvector` włączone w Supabase (Database → Extensions)
+- Migracja `004_category_embeddings.sql` uruchomiona
+- Zmienna `VITE_OPENAI_API_KEY` ustawiona w `.env`
 
-Transakcje które nie przejdą walidacji są omijane z komunikatem błędu.
+### Architektura
 
-## Przykładowe exporty z banków
-
-### PKO BP
-Eksportuj wyciąg → wybierz format CSV → kolumny: Data, Opis, Kwota
-
-### ING Bank
-Wyciąg → Pobierz → CSV
-
-### mBank
-Historia operacji → Pobierz raport → CSV
-
-## Ograniczenia i uwagi
-
-- Maksymalnie rekomendowany rozmiar pliku: 10 MB (~10 000 transakcji)
-- Format daty musi być: **YYYY-MM-DD**
-- Kwota ujemna = wydatek, dodatnia = przychód
-- Po imporcie dane pojawiają się natychmiast w aplikacji
-- Każda transakcja otrzymuje unikalny ID (UUID)
-
-## Rozwijanie funkcjonalności
-
-### Dodawanie nowych reguł kategoryzacji
-
-Edytuj obiekt `categoryMapping` w `CSVImport.jsx`:
-```javascript
-const categoryMapping = {
-  'słowo_kluczowe': { kategoria: 'Nazwa Kategorii', podkategoria: 'Podkategoria' },
-  // ...
-};
+```
+CSVImport.jsx
+    │  wywołuje
+    ▼
+src/services/categoryAI.js
+    ├── generateEmbeddingsBatch()  →  POST api.openai.com/v1/embeddings
+    │                                 model: text-embedding-3-small
+    │                                 dims: 1536
+    │
+    ├── categorizeWithAI()         →  supabase.rpc('match_category_rules')
+    │                                 cosine similarity > 0.78
+    │
+    ├── saveCategoryRule()         →  INSERT category_rules
+    │   (przy dodaniu reguły)
+    │
+    └── saveCategoryRulesBatch()   →  INSERT category_rules (chunki po 20)
+        (po udanym imporcie)
 ```
 
-### Obsługa dodatkowych formatów dat
+### Tabela `category_rules`
 
-Rozszerz funkcję `prepareTransactions()` w `CSVImport.jsx`.
+```sql
+CREATE TABLE category_rules (
+  id           UUID PRIMARY KEY,
+  household_id UUID REFERENCES households,
+  description  TEXT,
+  embedding    vector(1536),  -- OpenAI text-embedding-3-small
+  kategoria    TEXT,
+  podkategoria TEXT,
+  source       TEXT  -- 'manual' | 'import' | 'keyword'
+);
+```
+
+Każde gospodarstwo (`household_id`) ma własne, izolowane reguły — chronione przez RLS.
+
+### Jak rośnie baza wiedzy
+
+| Zdarzenie | Co jest zapisywane |
+|-----------|-------------------|
+| Użytkownik dodaje regułę | 1 embedding dla wpisanego słowa kluczowego |
+| Udany import | Embeddingi dla wszystkich skategoryzowanych transakcji |
+
+Im więcej importów, tym trafniejsze dopasowania w kolejnych sesjach.
+
+---
+
+## Auto-zapis postępu
+
+Podczas edycji (Krok 3) postęp jest automatycznie zapisywany do `localStorage`. Przy ponownym otwarciu importu pojawi się pytanie czy przywrócić poprzednią sesję (ważna przez 24 h).
+
+---
 
 ## Troubleshooting
 
-### Błąd: "Musisz zmapować kolumnę daty i kwoty"
-→ Wybierz kolumny zawierające datę i kwotę w sekcji mapowania
+**„Musisz zmapować kolumnę daty i kwoty"**
+→ Wybierz odpowiednie kolumny w Kroku 2.
 
-### Błąd: "Data nie jest w formacie YYYY-MM-DD"
-→ Upewnij się że data jest w formacie `2024-01-15`
+**Brak automatycznej kategoryzacji**
+→ Dodaj regułę słowem kluczowym lub włącz AI ustawiając `VITE_OPENAI_API_KEY`.
 
-### Błąd: "Kwota musi być liczbą"
-→ Sprawdź czy kwota nie zawiera liter lub specjalnych znaków (oprócz . lub ,)
+**AI nie kategoryzuje transakcji**
+→ Sprawdź czy `VITE_OPENAI_API_KEY` jest poprawny. Baza wektorowa musi zawierać wcześniej zapisane reguły — pierwsze importy kategoryzuje tylko system słów kluczowych.
 
-### Brak automatycznej kategoryzacji
-→ Dodaj słowo kluczowe do obiektu `categoryMapping`
-→ Lub ręcznie wybierz kategorię w podglądzie przed importem
+**Błąd przy imporcie (pgvector)**
+→ Upewnij się że rozszerzenie `vector` jest włączone w Supabase i że migracja `004_category_embeddings.sql` została uruchomiona.
 
-## Bezpieczeństwo
-
-- Plik CSV jest przetwarzany lokalnie w przeglądarce (Papaparse)
-- Walidacja danych odbywa się zarówno na frontend jak i backend
-- Każdy import loguje transakcje z UUID dla audytu
-- Brak przechowywania oryginalnych plików CSV
+**Format daty nieprawidłowy**
+→ Data musi być w formacie `YYYY-MM-DD`. Aplikacja obsługuje format bankowy PKO BP automatycznie.
