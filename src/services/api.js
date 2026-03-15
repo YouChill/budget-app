@@ -8,84 +8,170 @@ const FALLBACK_HOUSEHOLD_ID = import.meta.env.VITE_HOUSEHOLD_ID;
 // ═══════════════════════════════════════════
 
 /**
- * Pobiera profil zalogowanego użytkownika wraz z household_id
+ * Pobiera profil zalogowanego użytkownika wraz z household_id.
+ * Zwraca null jeśli użytkownik nie jest zalogowany.
+ * Zwraca profil z household_id = null jeśli nie ma przypisanej rodziny.
  */
 export async function getUserProfile() {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
-  
-  if (authError || !user) {
-    throw new Error('Użytkownik nie zalogowany');
-  }
+
+  if (authError || !user) return null;
 
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('id, email, display_name, household_id')
+    .select('id, email, display_name, household_id, role')
     .eq('id', user.id)
     .single();
 
   if (profileError) {
-    // Profil nie istnieje — twórz go
+    // Profil nie istnieje (trigger nie zadziałał) — stwórz go z auto-przypisaniem do istniejącego household
     if (profileError.code === 'PGRST116') {
-      // Spróbuj automatycznie stworzyć profil z ostatnim household
+      // Szukaj istniejącego household (zakładamy jedną rodzinę — bez household_id == nowy użytkownik)
       const { data: households } = await supabase
         .from('households')
         .select('id')
+        .order('created_at', { ascending: true })
         .limit(1);
 
-      if (households && households.length > 0) {
-        const { data: created } = await supabase
-          .from('profiles')
-          .insert({
-            id: user.id,
-            email: user.email,
-            display_name: user.user_metadata?.name || user.email,
-            household_id: households[0].id,
-          })
-          .select('id, email, display_name, household_id')
-          .single();
+      const existingHouseholdId = households?.[0]?.id ?? null;
 
-        return created;
+      // Sprawdź czy household ma już właściciela
+      let role = 'member';
+      if (existingHouseholdId) {
+        const { count } = await supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('household_id', existingHouseholdId);
+        if (count === 0) role = 'owner';
       }
+
+      const { data: created, error: insertError } = await supabase
+        .from('profiles')
+        .insert({
+          id: user.id,
+          email: user.email,
+          display_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email,
+          household_id: existingHouseholdId,
+          role,
+        })
+        .select('id, email, display_name, household_id, role')
+        .single();
+
+      if (insertError) throw insertError;
+      return created;
     }
     throw profileError;
-  }
-
-  if (!profile.household_id) {
-    throw new Error('Profil użytkownika nie ma przypisanego gospodarstwa (household)');
   }
 
   return profile;
 }
 
 /**
- * Przydziel użytkownika do gospodarstwa (household) — admin operation
+ * Tworzy nowe gospodarstwo (rodzinę) i przypisuje do niego aktualnego użytkownika jako właściciela.
  */
-export async function assignUserToHousehold(userId, householdId) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .update({ household_id: householdId })
-    .eq('id', userId)
-    .select();
+export async function createHousehold(name) {
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) throw new Error('Użytkownik nie zalogowany');
 
-  if (error) throw error;
-  return data[0];
+  // Generate unique invite code
+  const inviteCode = Math.random().toString(36).substring(2, 6).toUpperCase()
+    + Math.random().toString(36).substring(2, 6).toUpperCase();
+
+  const { data: household, error: householdError } = await supabase
+    .from('households')
+    .insert({ name, invite_code: inviteCode })
+    .select('id, name, invite_code')
+    .single();
+
+  if (householdError) throw householdError;
+
+  // Assign user to new household as owner
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({ household_id: household.id, role: 'owner' })
+    .eq('id', user.id);
+
+  if (profileError) throw profileError;
+
+  return household;
 }
 
 /**
- * Pobiera household_id zalogowanego użytkownika
- * Falls back do VITE_HOUSEHOLD_ID dla backward compatibility
+ * Dołącza aktualnego użytkownika do rodziny za pomocą kodu zaproszenia.
+ */
+export async function joinHousehold(inviteCode) {
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) throw new Error('Użytkownik nie zalogowany');
+
+  const { data: households, error: lookupError } = await supabase
+    .from('households')
+    .select('id, name, invite_code')
+    .eq('invite_code', inviteCode.toUpperCase())
+    .limit(1);
+
+  if (lookupError) throw lookupError;
+  if (!households || households.length === 0) {
+    throw new Error('Nie znaleziono rodziny z tym kodem zaproszenia.');
+  }
+
+  const household = households[0];
+
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({ household_id: household.id, role: 'member' })
+    .eq('id', user.id);
+
+  if (profileError) throw profileError;
+
+  return household;
+}
+
+/**
+ * Pobiera informacje o rodzinie zalogowanego użytkownika (nazwa, kod zaproszenia).
+ */
+export async function getHouseholdInfo() {
+  const householdId = await getHouseholdId();
+
+  const { data, error } = await supabase
+    .from('households')
+    .select('id, name, invite_code')
+    .eq('id', householdId)
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Pobiera listę członków rodziny.
+ */
+export async function getHouseholdMembers() {
+  const householdId = await getHouseholdId();
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, email, display_name, role')
+    .eq('household_id', householdId)
+    .order('role')
+    .order('display_name');
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Pobiera household_id zalogowanego użytkownika.
+ * Falls back do VITE_HOUSEHOLD_ID dla backward compatibility.
  */
 async function getHouseholdId() {
   try {
     const profile = await getUserProfile();
-    return profile.household_id;
+    if (profile?.household_id) return profile.household_id;
   } catch (err) {
     console.warn('Nie udało się pobrać household_id z profilu, używam fallback', err);
-    if (FALLBACK_HOUSEHOLD_ID) {
-      return FALLBACK_HOUSEHOLD_ID;
-    }
-    throw new Error('Brak household_id — zaloguj się lub ustaw VITE_HOUSEHOLD_ID');
   }
+  if (FALLBACK_HOUSEHOLD_ID) return FALLBACK_HOUSEHOLD_ID;
+  throw new Error('Brak household_id — zaloguj się i skonfiguruj rodzinę.');
 }
 
 /**
