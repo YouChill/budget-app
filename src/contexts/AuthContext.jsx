@@ -110,8 +110,18 @@ export function AuthProvider({ children }) {
 
     if (storedToken && storedUser) {
       if (!isTokenExpired(storedToken)) {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+        try {
+          const parsed = JSON.parse(storedUser);
+          if (parsed && typeof parsed === 'object' && typeof parsed.email === 'string') {
+            setToken(storedToken);
+            setUser(parsed);
+          } else {
+            throw new Error('Nieprawidłowa struktura danych użytkownika');
+          }
+        } catch {
+          localStorage.removeItem('budget_auth_token');
+          localStorage.removeItem('budget_auth_user');
+        }
       } else {
         // Token expired — show friendly message
         localStorage.removeItem('budget_auth_token');

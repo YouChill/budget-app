@@ -61,7 +61,7 @@ const categoryMapping = {
   'prezent': { kategoria: 'Inne', podkategoria: 'Prezenty' },
 };
 
-const categorizeDescription = (description, userRules = []) => {
+export const categorizeDescription = (description, userRules = []) => {
   if (!description) return null;
   const lowerDesc = description.toLowerCase();
   for (const rule of userRules) {
@@ -75,7 +75,7 @@ const categorizeDescription = (description, userRules = []) => {
   return null;
 };
 
-const validateCategoryExists = (kategoria, podkategoria, kategorieProp, typ) => {
+export const validateCategoryExists = (kategoria, podkategoria, kategorieProp, typ) => {
   const catExists = kategorieProp?.[typ]?.[kategoria];
   if (!catExists) return { kategoria: 'Inne', podkategoria: 'Nieprzewidziane' };
   const subExists = catExists.includes(podkategoria);
@@ -84,6 +84,23 @@ const validateCategoryExists = (kategoria, podkategoria, kategorieProp, typ) => 
 
 const STORAGE_KEY = 'csv_import_progress';
 const RULES_STORAGE_KEY = 'csv_recognition_rules';
+
+// ─── Date normalization ───────────────────────────────────────────────────────
+// Accepts: "YYYY-MM-DD", "DD.MM.YYYY", "DD-MM-YYYY"
+// Returns ISO string "YYYY-MM-DD" or null for invalid input
+export const normalizeDateToISO = (dateStr) => {
+  if (!dateStr) return null;
+  const str = dateStr.toString().trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    return isNaN(new Date(str).getTime()) ? null : str;
+  }
+  const match = str.match(/^(\d{2})[.\-](\d{2})[.\-](\d{4})$/);
+  if (match) {
+    const iso = `${match[3]}-${match[2]}-${match[1]}`;
+    return isNaN(new Date(iso).getTime()) ? null : iso;
+  }
+  return null;
+};
 
 // ─── PKO BP format detection & parsing ───────────────────────────────────────
 const detectPkoBpFormat = (firstRow) => {
@@ -556,8 +573,12 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
         }
         meta[idx] = { _originalOpis: opis, _csvRaw: csvRawFields };
 
-        return { data: row[columnMapping.data], kwota: kwotaNum, opis, kategoria: validated.kategoria, podkategoria: validated.podkategoria, typ };
-      });
+        const isoDate = normalizeDateToISO(row[columnMapping.data]);
+        if (!isoDate) return null;
+
+        return { data: isoDate, kwota: kwotaNum, opis, kategoria: validated.kategoria, podkategoria: validated.podkategoria, typ };
+      })
+      .filter(Boolean);
 
     setTransactions(processed);
     setTxMeta(meta);

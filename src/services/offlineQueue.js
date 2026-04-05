@@ -1,6 +1,7 @@
 import { processOfflineOperation } from './api';
 
 const QUEUE_KEY = 'budget_offline_queue';
+const VALID_ACTIONS = ['addTransakcja', 'updateTransakcja', 'deleteTransakcja'];
 
 function getQueue() {
   try {
@@ -11,10 +12,23 @@ function getQueue() {
 }
 
 function saveQueue(queue) {
-  localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+  try {
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+  } catch (err) {
+    if (err?.name === 'QuotaExceededError' || err?.code === 22) {
+      console.error('[OfflineQueue] localStorage pełne — nie można zapisać kolejki offline', err);
+    }
+    throw err;
+  }
 }
 
 export function addToQueue(operation) {
+  if (!operation?.action || !VALID_ACTIONS.includes(operation.action)) {
+    throw new Error(`Nieznana operacja offline: ${operation?.action}`);
+  }
+  if (!operation.payload) {
+    throw new Error('Operacja offline bez danych (payload)');
+  }
   const queue = getQueue();
   queue.push({
     ...operation,
