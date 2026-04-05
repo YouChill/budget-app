@@ -996,7 +996,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
 // GŁÓWNA APLIKACJA
 // ============================================
 export default function BudgetApp() {
-  const { user, token, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const { addToast } = useToast();
   const { isOffline } = useOffline();
 
