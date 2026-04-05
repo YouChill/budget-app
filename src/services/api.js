@@ -611,6 +611,132 @@ export async function getAllData(miesiac, rok) {
 // OFFLINE QUEUE OPERATION PROCESSOR
 // ═══════════════════════════════════════════
 
+// ═══════════════════════════════════════════
+// HOUSEHOLD & INVITATIONS
+// ═══════════════════════════════════════════
+
+/**
+ * Pobiera informacje o bieżącym household oraz listę jego członków.
+ */
+export async function getHouseholdInfo() {
+  const householdId = await getHouseholdId();
+
+  const { data: household, error: hhError } = await supabase
+    .from('households')
+    .select('id, name')
+    .eq('id', householdId)
+    .single();
+
+  if (hhError) throw hhError;
+
+  const { data: members, error: membersError } = await supabase
+    .from('profiles')
+    .select('id, email, display_name')
+    .eq('household_id', householdId)
+    .order('display_name');
+
+  if (membersError) throw membersError;
+
+  return { household, members };
+}
+
+/**
+ * Tworzy zaproszenie do bieżącego household.
+ * Zwraca token do wygenerowania linku zaproszenia.
+ */
+export async function createInvitation() {
+  const householdId = await getHouseholdId();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) throw new Error('Użytkownik nie zalogowany');
+
+  const { data, error } = await supabase
+    .from('invitations')
+    .insert({ household_id: householdId, created_by: user.id })
+    .select('token, expires_at')
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Zwraca aktywne (niewykorzystane, ważne) zaproszenia bieżącego household.
+ */
+export async function getActiveInvitations() {
+  const householdId = await getHouseholdId();
+
+  const { data, error } = await supabase
+    .from('invitations')
+    .select('id, token, expires_at, created_at')
+    .eq('household_id', householdId)
+    .is('used_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Odwołuje (usuwa) zaproszenie po ID.
+ */
+export async function revokeInvitation(invitationId) {
+  const { error } = await supabase
+    .from('invitations')
+    .delete()
+    .eq('id', invitationId);
+
+  if (error) throw error;
+  return { success: true };
+}
+
+/**
+ * Pobiera dane household z zaproszenia (przed dołączeniem).
+ * Działa bez przynależności do household — wymagane do wyświetlenia
+ * "Dołącz do rodziny X?" przed akceptacją.
+ */
+export async function getInvitationPreview(token) {
+  const { data: invitation, error: invError } = await supabase
+    .from('invitations')
+    .select('household_id, expires_at')
+    .eq('token', token)
+    .is('used_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .single();
+
+  if (invError || !invitation) return null;
+
+  const { data: household, error: hhError } = await supabase
+    .from('households')
+    .select('id, name')
+    .eq('id', invitation.household_id)
+    .single();
+
+  if (hhError || !household) return null;
+
+  return { household, expiresAt: invitation.expires_at };
+}
+
+/**
+ * Akceptuje zaproszenie — zmienia household_id usera (wywołuje RPC).
+ * Zwraca { success, error? }
+ */
+export async function acceptInvitation(token) {
+  const { data, error } = await supabase.rpc('accept_invitation', { p_token: token });
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Opuszcza bieżący household — tworzy nowy, izolowany household dla usera.
+ */
+export async function leaveHousehold() {
+  const { data, error } = await supabase.rpc('leave_household');
+  if (error) throw error;
+  return data;
+}
+
 export async function processOfflineOperation(operation) {
   const { action, payload } = operation;
 

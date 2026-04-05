@@ -1,8 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { supabase } from '../../lib/supabase';
 
-// Mock vi.fn będzie dostępny po importzie supabase
-// bo supabase jest mockowany w setup.js
+vi.mock('../../lib/supabase', () => ({
+  supabase: {
+    from: vi.fn(),
+    auth: { getUser: vi.fn() },
+    rpc: vi.fn(),
+  },
+}));
+
+import { supabase } from '../../lib/supabase';
 
 describe('API Service - Transakcje', () => {
   beforeEach(() => {

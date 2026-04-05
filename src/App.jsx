@@ -11,6 +11,7 @@ import { useOffline } from './hooks/useOffline';
 import { addToQueue, getQueuedOperations, processQueue } from './services/offlineQueue';
 import { supabase } from './lib/supabase';
 import * as api from './services/api';
+import HouseholdSettings, { getPendingInviteToken, clearPendingInviteToken } from './components/HouseholdSettings';
 
 // Pomocnicze funkcje
 const formatCurrency = (amount) => {
@@ -142,6 +143,14 @@ const Icons = {
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M19 5c-1.5 0-2.8 1.4-3 2-3.5-1.5-11-.3-11 5 0 1.8 0 3 2 4.5V20h4v-2h3v2h4v-4c1-.5 1.7-1 2-2h2v-4h-2c0-1-.5-1.5-1-2"/>
       <path d="M2 9.5a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0"/>
+    </svg>
+  ),
+  Users: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+      <circle cx="9" cy="7" r="4"></circle>
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+      <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
     </svg>
   )
 };
@@ -799,6 +808,17 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
             <Icons.User />
             Osoby
           </button>
+          <button
+            onClick={() => setActiveTab('rodzina')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              activeTab === 'rodzina'
+                ? 'bg-indigo-100 text-indigo-700'
+                : 'text-gray-500 hover:bg-gray-100'
+            }`}
+          >
+            <Icons.Users />
+            Rodzina
+          </button>
         </div>
         
         {/* Komunikaty */}
@@ -951,9 +971,12 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
               </div>
             </div>
           )}
+          {activeTab === 'rodzina' && (
+            <HouseholdSettings showError={showError} showSuccess={showSuccess} />
+          )}
         </div>
       </div>
-      
+
       {/* Dialog potwierdzenia */}
       {confirmDialog && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -1016,6 +1039,8 @@ export default function BudgetApp() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [pendingCount, setPendingCount] = useState(() => getQueuedOperations().length);
   const wasOfflineRef = useRef(isOffline);
+  const [pendingInvite, setPendingInvite] = useState(null); // { token, householdName }
+  const [inviteAccepting, setInviteAccepting] = useState(false);
 
   // Yearly summary view state
   const [activeView, setActiveView] = useState('monthly');
@@ -1038,6 +1063,43 @@ export default function BudgetApp() {
     const timer = setTimeout(() => setPulseActive(false), 5000);
     return () => clearTimeout(timer);
   }, [pulseActive]);
+
+  // Check for pending invitation token on mount (after auth resolves)
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const token = getPendingInviteToken();
+    if (!token) return;
+
+    api.getInvitationPreview(token)
+      .then(({ household }) => {
+        setPendingInvite({ token, householdName: household?.name ?? 'nieznaną rodzinę' });
+      })
+      .catch(() => {
+        // Token invalid or expired — silently clear it
+        clearPendingInviteToken();
+      });
+  }, [isAuthenticated]);
+
+  const handleAcceptInvite = async () => {
+    if (!pendingInvite) return;
+    setInviteAccepting(true);
+    try {
+      await api.acceptInvitation(pendingInvite.token);
+      clearPendingInviteToken();
+      setPendingInvite(null);
+      addToast(`Dołączono do rodziny "${pendingInvite.householdName}"!`);
+      await fetchData(false);
+    } catch (err) {
+      addToast('Nie udało się dołączyć do rodziny: ' + err.message, 'error');
+    } finally {
+      setInviteAccepting(false);
+    }
+  };
+
+  const handleDeclineInvite = () => {
+    clearPendingInviteToken();
+    setPendingInvite(null);
+  };
 
   // Handle yearly view toggle
   const handleToggleView = () => {
@@ -1713,6 +1775,41 @@ export default function BudgetApp() {
         />
       )}
       
+      {/* Modal dołączania do rodziny */}
+      {pendingInvite && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-indigo-100 p-2.5 text-indigo-600">
+                <Icons.Users />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800">Zaproszenie do rodziny</h3>
+            </div>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Zostałeś zaproszony do dołączenia do rodziny{' '}
+              <span className="font-semibold text-gray-800">„{pendingInvite.householdName}"</span>.
+              Po akceptacji będziesz współdzielić budżet z jej członkami.
+            </p>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={handleDeclineInvite}
+                disabled={inviteAccepting}
+                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Odrzuć
+              </button>
+              <button
+                onClick={handleAcceptInvite}
+                disabled={inviteAccepting}
+                className="flex-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-sm font-medium py-2.5 transition-colors"
+              >
+                {inviteAccepting ? 'Dołączanie...' : 'Dołącz'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* FAB dla mobile */}
       {!showForm && !isLoading && !isOffline && activeView === 'monthly' && (
         <button
