@@ -124,7 +124,7 @@ export async function getTransakcje(miesiac, rok) {
     }
     return data;
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
@@ -151,7 +151,7 @@ export async function addTransakcja(transakcja) {
     }
     return { success: true, id: data.id };
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
@@ -177,7 +177,7 @@ export async function updateTransakcja(id, transakcja) {
     }
     return { success: true };
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
@@ -195,14 +195,15 @@ export async function deleteTransakcja(id) {
     }
     return { success: true };
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
 export async function addTransakcjeBatch(transakcje) {
   const householdId = await getHouseholdId();
   const records = transakcje.map(t => {
-    const kwota = typeof t.kwota === 'number' ? t.kwota : parseFloat(t.kwota);
+    const rawKwota = typeof t.kwota === 'number' ? t.kwota : parseFloat(t.kwota);
+    const kwota = isNaN(rawKwota) ? 0 : rawKwota;
     return {
       household_id: householdId,
       data: t.data,
@@ -226,7 +227,7 @@ export async function addTransakcjeBatch(transakcje) {
     }
     return { success: true, count: data.length, ids: data.map(d => d.id) };
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
@@ -260,11 +261,13 @@ export async function getKategorie() {
     }
     return result;
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
 export async function addKategoria(typ, kategoria, podkategoria) {
+  if (!typ || typeof typ !== 'string' || !typ.trim()) throw new Error('Nieprawidłowy typ kategorii');
+  if (!kategoria || typeof kategoria !== 'string' || !kategoria.trim()) throw new Error('Nieprawidłowa nazwa kategorii');
   const householdId = await getHouseholdId();
   try {
     const { error } = await supabase
@@ -281,7 +284,7 @@ export async function addKategoria(typ, kategoria, podkategoria) {
     }
     return { success: true };
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
@@ -305,7 +308,7 @@ export async function deleteKategoria(typ, kategoria, podkategoria) {
     }
     return { success: true };
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
@@ -327,7 +330,7 @@ export async function getOsoby() {
     }
     return data.map(o => o.nazwa);
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
@@ -346,7 +349,7 @@ export async function addOsoba(osoba) {
     }
     return { success: true };
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
@@ -364,7 +367,7 @@ export async function deleteOsoba(osoba) {
     }
     return { success: true };
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
@@ -443,7 +446,7 @@ export async function getBudgets(miesiac, rok) {
 
     return resolved;
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
@@ -473,7 +476,7 @@ export async function getAllBudgetsForYear(rok) {
       notatki: b.notatki || '',
     }));
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
@@ -502,7 +505,7 @@ export async function setBudget(budget) {
     }
     return { success: true };
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
@@ -535,7 +538,7 @@ export async function deleteBudget(budget) {
     }
     return { success: true };
   } catch (err) {
-    handleAuthError(err);
+    throw err;
   }
 }
 
@@ -543,11 +546,15 @@ export async function deleteBudget(budget) {
 // YEARLY SUMMARY FUNCTIONS
 // ═══════════════════════════════════════════
 
+const YEARLY_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
 export async function getTransakcjeForYear(rok) {
-  // Check sessionStorage cache first
+  // Check sessionStorage cache first (with TTL)
   const cacheKey = `yearly_transakcje_${rok}`;
+  const cacheTimestampKey = `${cacheKey}_ts`;
   const cached = sessionStorage.getItem(cacheKey);
-  if (cached) {
+  const cachedTs = sessionStorage.getItem(cacheTimestampKey);
+  if (cached && cachedTs && Date.now() - parseInt(cachedTs, 10) < YEARLY_CACHE_TTL_MS) {
     return JSON.parse(cached);
   }
 
@@ -565,6 +572,7 @@ export async function getTransakcjeForYear(rok) {
   // Cache in sessionStorage
   try {
     sessionStorage.setItem(cacheKey, JSON.stringify(data));
+    sessionStorage.setItem(cacheTimestampKey, String(Date.now()));
   } catch {
     // sessionStorage full — ignore
   }
@@ -598,11 +606,17 @@ export async function getAvailableYears() {
 // ═══════════════════════════════════════════
 
 export async function getAllData(miesiac, rok) {
-  const [transakcje, kategorie, osoby] = await Promise.all([
+  const [txResult, katResult, osobyResult] = await Promise.allSettled([
     getTransakcje(miesiac, rok),
     getKategorie(),
     getOsoby(),
   ]);
+
+  if (txResult.status === 'rejected') throw txResult.reason;
+
+  const transakcje = txResult.value;
+  const kategorie = katResult.status === 'fulfilled' ? katResult.value : { Wydatek: {}, Przychód: {} };
+  const osoby = osobyResult.status === 'fulfilled' ? osobyResult.value : [];
 
   return { transakcje, kategorie, osoby };
 }
