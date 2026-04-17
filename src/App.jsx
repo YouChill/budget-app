@@ -8,6 +8,7 @@ import YearlySummary from './components/YearlySummary';
 import { useAuth } from './contexts/AuthContext';
 import { useToast } from './contexts/ToastContext';
 import { useOffline } from './hooks/useOffline';
+import { useBudgets } from './hooks/useBudgets';
 import { addToQueue, getQueuedOperations, processQueue } from './services/offlineQueue';
 import { supabase } from './lib/supabase';
 import * as api from './services/api';
@@ -1001,7 +1002,6 @@ export default function BudgetApp() {
   const [osoby, setOsoby] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [budgets, setBudgets] = useState([]);
   const [showBudgets, setShowBudgets] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -1018,7 +1018,14 @@ export default function BudgetApp() {
   const [availableYears, setAvailableYears] = useState([new Date().getFullYear()]);
   const [showHint, setShowHint] = useState(() => !localStorage.getItem('yearlyViewHintSeen'));
   const [pulseActive, setPulseActive] = useState(() => !localStorage.getItem('yearlyViewHintSeen'));
-  
+
+  // Budżety dla bieżącego okresu — własny hook, niezależny od fetchData
+  const { budgets, refresh: refreshBudgets } = useBudgets({
+    month: currentPeriod.month,
+    year: currentPeriod.year,
+    enabled: isAuthenticated && !isOffline,
+  });
+
   // Fetch available years for yearly view
   useEffect(() => {
     if (!isAuthenticated || isOffline) return;
@@ -1071,15 +1078,7 @@ export default function BudgetApp() {
       setTransakcje(noweTransakcje);
       setKategorie(noweKategorie);
       setOsoby(noweOsoby);
-      
-      // Pobierz budżety dla okresu
-      try {
-        const bData = await api.getBudgets(currentPeriod.month, currentPeriod.year);
-        setBudgets(Array.isArray(bData) ? bData : []);
-      } catch (err) {
-        logger.warn('App', 'Nie udało się pobrać budżetów', err);
-      }
-      
+
     } catch (err) {
       setError('Nie udało się pobrać danych. Sprawdź połączenie i odśwież stronę.');
       logger.error('App', err);
@@ -1663,14 +1662,7 @@ export default function BudgetApp() {
           year={currentPeriod.year}
           budgets={budgets}
           osoby={osoby}
-          onSaved={async () => {
-            try {
-              const bData = await api.getBudgets(currentPeriod.month, currentPeriod.year);
-              setBudgets(Array.isArray(bData) ? bData : []);
-            } catch (err) {
-              logger.warn('App', 'Nie udało się odświeżyć budżetów', err);
-            }
-          }}
+          onSaved={refreshBudgets}
         />
       )}
 
