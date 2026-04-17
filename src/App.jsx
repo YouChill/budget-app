@@ -9,6 +9,7 @@ import { useAuth } from './contexts/AuthContext';
 import { useToast } from './contexts/ToastContext';
 import { useOffline } from './hooks/useOffline';
 import { useBudgets } from './hooks/useBudgets';
+import { useAvailableYears } from './hooks/useAvailableYears';
 import { addToQueue, getQueuedOperations, processQueue } from './services/offlineQueue';
 import { supabase } from './lib/supabase';
 import * as api from './services/api';
@@ -1015,7 +1016,6 @@ export default function BudgetApp() {
   // Yearly summary view state
   const [activeView, setActiveView] = useState('monthly');
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
-  const [availableYears, setAvailableYears] = useState([new Date().getFullYear()]);
   const [showHint, setShowHint] = useState(() => !localStorage.getItem('yearlyViewHintSeen'));
   const [pulseActive, setPulseActive] = useState(() => !localStorage.getItem('yearlyViewHintSeen'));
 
@@ -1026,13 +1026,7 @@ export default function BudgetApp() {
     enabled: isAuthenticated && !isOffline,
   });
 
-  // Fetch available years for yearly view
-  useEffect(() => {
-    if (!isAuthenticated || isOffline) return;
-    api.getAvailableYears().then(years => {
-      setAvailableYears(years);
-    }).catch(() => {});
-  }, [isAuthenticated, isOffline]);
+  const availableYears = useAvailableYears({ enabled: isAuthenticated && !isOffline });
 
   // Auto-stop pulse animation after 5 seconds
   useEffect(() => {
