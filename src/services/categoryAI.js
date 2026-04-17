@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { getUserProfile } from './api';
+import { logger } from '../utils/logger';
 
 // VITE_AI_ENABLED to tylko flaga (true/false) — klucz OpenAI pozostaje
 // wyłącznie po stronie serwera w zmiennej OPENAI_API_KEY (bez prefiksu VITE_).
@@ -52,12 +53,12 @@ export async function saveCategoryRule(description, kategoria, podkategoria, sou
     });
 
     if (error) {
-      console.error('saveCategoryRule insert error:', error);
+      logger.error('categoryAI', 'saveCategoryRule insert error:', error);
       return null;
     }
     return true;
   } catch (err) {
-    console.error('saveCategoryRule failed:', err);
+    logger.error('categoryAI', 'saveCategoryRule failed:', err);
     return null;
   }
 }
@@ -91,10 +92,10 @@ export async function saveCategoryRulesBatch(transactions) {
       }));
 
       const { error } = await supabase.from('category_rules').insert(records);
-      if (error) console.error('saveCategoryRulesBatch chunk error:', error);
+      if (error) logger.error('categoryAI', 'saveCategoryRulesBatch chunk error:', error);
     }
   } catch (err) {
-    console.error('saveCategoryRulesBatch failed:', err);
+    logger.error('categoryAI', 'saveCategoryRulesBatch failed:', err);
   }
 }
 
@@ -137,7 +138,7 @@ export async function categorizeWithAI(descriptions) {
     indexed.forEach(({ i }, j) => { output[i] = matchResults[j]; });
     return output;
   } catch (err) {
-    console.error('categorizeWithAI failed:', err);
+    logger.error('categoryAI', 'categorizeWithAI failed:', err);
     return descriptions.map(() => null);
   }
 }

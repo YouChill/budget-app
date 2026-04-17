@@ -1,11 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { logger } from '../utils/logger';
 
 const AuthContext = createContext(null);
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const GIS_TIMEOUT_MS = 10000;
 
-// Decode JWT payload without external libraries
+// Decode JWT payload without external libraries.
+// Trust boundary: we do NOT verify the signature here. This is safe because the
+// token is only used client-side for UI state (display name, expiry check). Any
+// server-side call that relies on identity must re-verify the token with Google.
 function decodeJwtPayload(token) {
   try {
     const base64Url = token.split('.')[1];
@@ -150,12 +154,11 @@ export function AuthProvider({ children }) {
       if (hasValidToken) {
         window.google.accounts.id.prompt((notification) => {
           if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            if (import.meta.env.DEV) {
-              console.warn(
-                '[Auth] One Tap not shown:',
-                notification.getNotDisplayedReason?.() || notification.getSkippedReason?.()
-              );
-            }
+            logger.debug(
+              'Auth',
+              'One Tap not shown:',
+              notification.getNotDisplayedReason?.() || notification.getSkippedReason?.()
+            );
           }
         });
       }

@@ -42,8 +42,7 @@ export default function LoginPage() {
 
     if (!window.google?.accounts?.id) return;
 
-    // Clear previous button content before re-rendering
-    buttonRef.current.innerHTML = '';
+    buttonRef.current.replaceChildren();
     window.google.accounts.id.renderButton(buttonRef.current, {
       type: 'standard',
       theme: 'outline',
