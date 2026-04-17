@@ -11,7 +11,8 @@ import { useOffline } from './hooks/useOffline';
 import { useBudgets } from './hooks/useBudgets';
 import { useAvailableYears } from './hooks/useAvailableYears';
 import { useYearlyViewHint } from './hooks/useYearlyViewHint';
-import { addToQueue, getQueuedOperations, processQueue } from './services/offlineQueue';
+import { usePendingOperations } from './hooks/usePendingOperations';
+import { addToQueue } from './services/offlineQueue';
 import { supabase } from './lib/supabase';
 import * as api from './services/api';
 import { logger } from './utils/logger';
@@ -1010,9 +1011,6 @@ export default function BudgetApp() {
   const [showCSVImport, setShowCSVImport] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [error, setError] = useState(null);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [pendingCount, setPendingCount] = useState(() => getQueuedOperations().length);
-  const wasOfflineRef = useRef(isOffline);
 
   // Yearly summary view state
   const [activeView, setActiveView] = useState('monthly');
@@ -1076,35 +1074,12 @@ export default function BudgetApp() {
     fetchData();
   }, [fetchData]);
 
-  // Sync queued operations when coming back online
-  useEffect(() => {
-    if (wasOfflineRef.current && !isOffline) {
-      const syncQueue = async () => {
-        const queue = getQueuedOperations();
-        if (queue.length === 0) {
-          wasOfflineRef.current = false;
-          return;
-        }
-        setIsSyncing(true);
-        try {
-          const result = await processQueue();
-          if (result.succeeded > 0) {
-            addToast(`Zsynchronizowano ${result.succeeded} ${result.succeeded === 1 ? 'operację' : 'operacji'}`);
-          }
-          if (result.failed > 0) {
-            addToast(`Nie udało się zsynchronizować ${result.failed} operacji`, 'error');
-          }
-          setPendingCount(0);
-          // Refresh data from server after sync
-          await fetchData(false);
-        } finally {
-          setIsSyncing(false);
-        }
-      };
-      syncQueue();
-    }
-    wasOfflineRef.current = isOffline;
-  }, [isOffline, fetchData, addToast]);
+  // Offline queue: licznik + auto-sync przy powrocie online
+  const { pendingCount, isSyncing, refreshPendingCount } = usePendingOperations({
+    isOffline,
+    onSynced: () => fetchData(false),
+    addToast,
+  });
 
   // Real-time subscriptions — nasłuchuj zmian w Supabase
   useEffect(() => {
@@ -1202,7 +1177,7 @@ export default function BudgetApp() {
       setTransakcje(noweTransakcje);
 
       addToQueue({ action: 'addTransakcja', payload: { action: 'addTransakcja', transakcja } });
-      setPendingCount(getQueuedOperations().length);
+      refreshPendingCount();
 
       setShowForm(false);
       addToast('Transakcja zapisana offline — zsynchronizuje się po połączeniu');
@@ -1241,7 +1216,7 @@ export default function BudgetApp() {
         action: 'updateTransakcja',
         payload: { action: 'updateTransakcja', id: editingTransaction.id, transakcja },
       });
-      setPendingCount(getQueuedOperations().length);
+      refreshPendingCount();
 
       setEditingTransaction(null);
       setShowForm(false);
@@ -1293,7 +1268,7 @@ export default function BudgetApp() {
       // Don't queue delete for temp (not-yet-synced) transactions
       if (!String(id).startsWith('temp_')) {
         addToQueue({ action: 'deleteTransakcja', payload: { action: 'deleteTransakcja', id } });
-        setPendingCount(getQueuedOperations().length);
+        refreshPendingCount();
       }
 
       addToast('Usunięcie zapisane offline — zsynchronizuje się po połączeniu');
