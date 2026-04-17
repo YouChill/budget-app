@@ -10,6 +10,7 @@ import { useToast } from './contexts/ToastContext';
 import { useOffline } from './hooks/useOffline';
 import { useBudgets } from './hooks/useBudgets';
 import { useAvailableYears } from './hooks/useAvailableYears';
+import { useYearlyViewHint } from './hooks/useYearlyViewHint';
 import { addToQueue, getQueuedOperations, processQueue } from './services/offlineQueue';
 import { supabase } from './lib/supabase';
 import * as api from './services/api';
@@ -1016,8 +1017,7 @@ export default function BudgetApp() {
   // Yearly summary view state
   const [activeView, setActiveView] = useState('monthly');
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
-  const [showHint, setShowHint] = useState(() => !localStorage.getItem('yearlyViewHintSeen'));
-  const [pulseActive, setPulseActive] = useState(() => !localStorage.getItem('yearlyViewHintSeen'));
+  const { showHint, pulseActive, dismissHint } = useYearlyViewHint();
 
   // Budżety dla bieżącego okresu — własny hook, niezależny od fetchData
   const { budgets, refresh: refreshBudgets } = useBudgets({
@@ -1029,20 +1029,10 @@ export default function BudgetApp() {
   const availableYears = useAvailableYears({ enabled: isAuthenticated && !isOffline });
 
   // Auto-stop pulse animation after 5 seconds
-  useEffect(() => {
-    if (!pulseActive) return;
-    const timer = setTimeout(() => setPulseActive(false), 5000);
-    return () => clearTimeout(timer);
-  }, [pulseActive]);
-
   // Handle yearly view toggle
   const handleToggleView = () => {
     setActiveView(v => v === 'monthly' ? 'yearly' : 'monthly');
-    if (showHint) {
-      setShowHint(false);
-      setPulseActive(false);
-      localStorage.setItem('yearlyViewHintSeen', 'true');
-    }
+    if (showHint) dismissHint();
   };
 
   // Pobierz wszystkie dane
