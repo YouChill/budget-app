@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { logger } from '../utils/logger';
 
 // Fallback dla backward compatibility (dla development bez auth)
 const FALLBACK_HOUSEHOLD_ID = import.meta.env.VITE_HOUSEHOLD_ID;
@@ -80,7 +81,7 @@ async function getHouseholdId() {
     const profile = await getUserProfile();
     return profile.household_id;
   } catch (err) {
-    console.warn('Nie udało się pobrać household_id z profilu, używam fallback', err);
+    logger.warn('api', 'Nie udało się pobrać household_id z profilu, używam fallback', err);
     if (FALLBACK_HOUSEHOLD_ID) {
       return FALLBACK_HOUSEHOLD_ID;
     }

@@ -1,4 +1,5 @@
 import { processOfflineOperation } from './api';
+import { logger } from '../utils/logger';
 
 const QUEUE_KEY = 'budget_offline_queue';
 const VALID_ACTIONS = ['addTransakcja', 'updateTransakcja', 'deleteTransakcja'];
@@ -16,7 +17,7 @@ function saveQueue(queue) {
     localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
   } catch (err) {
     if (err?.name === 'QuotaExceededError' || err?.code === 22) {
-      console.error('[OfflineQueue] localStorage pełne — nie można zapisać kolejki offline', err);
+      logger.error('OfflineQueue', 'localStorage pełne — nie można zapisać kolejki offline', err);
     }
     throw err;
   }

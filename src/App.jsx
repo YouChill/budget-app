@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import CategoryCharts from '/components/CategoryCharts';
 import Budgets from '/components/Budgets';
 import CSVImport from '/components/CSVImport';
@@ -11,6 +11,7 @@ import { useOffline } from './hooks/useOffline';
 import { addToQueue, getQueuedOperations, processQueue } from './services/offlineQueue';
 import { supabase } from './lib/supabase';
 import * as api from './services/api';
+import { logger } from './utils/logger';
 
 // Pomocnicze funkcje
 const formatCurrency = (amount) => {
@@ -553,7 +554,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
       }
     } catch (err) {
       showError('Błąd połączenia z serwerem');
-      console.error(err);
+      logger.error('App', err);
     } finally {
       setIsProcessing(false);
     }
@@ -601,7 +602,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
       }
     } catch (err) {
       showError('Błąd połączenia z serwerem');
-      console.error(err);
+      logger.error('App', err);
     } finally {
       setIsProcessing(false);
     }
@@ -633,7 +634,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
       }
     } catch (err) {
       showError('Błąd połączenia z serwerem');
-      console.error(err);
+      logger.error('App', err);
     } finally {
       setIsProcessing(false);
     }
@@ -674,7 +675,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
       }
     } catch (err) {
       showError('Błąd połączenia z serwerem');
-      console.error(err);
+      logger.error('App', err);
     } finally {
       setIsProcessing(false);
     }
@@ -1082,12 +1083,12 @@ export default function BudgetApp() {
         const bData = await api.getBudgets(currentPeriod.month, currentPeriod.year);
         setBudgets(Array.isArray(bData) ? bData : []);
       } catch (err) {
-        console.warn('Nie udało się pobrać budżetów', err);
+        logger.warn('App', 'Nie udało się pobrać budżetów', err);
       }
       
     } catch (err) {
       setError('Nie udało się pobrać danych. Sprawdź połączenie i odśwież stronę.');
-      console.error(err);
+      logger.error('App', err);
     } finally {
       setIsLoading(false);
     }
@@ -1244,7 +1245,7 @@ export default function BudgetApp() {
       }
     } catch (err) {
       addToast('Błąd podczas zapisywania', 'error');
-      console.error(err);
+      logger.error('App', err);
     } finally {
       setIsSaving(false);
     }
@@ -1285,7 +1286,7 @@ export default function BudgetApp() {
       }
     } catch (err) {
       addToast('Błąd podczas aktualizacji', 'error');
-      console.error(err);
+      logger.error('App', err);
     } finally {
       setIsSaving(false);
     }
@@ -1332,7 +1333,7 @@ export default function BudgetApp() {
       }
     } catch (err) {
       addToast('Błąd podczas usuwania', 'error');
-      console.error(err);
+      logger.error('App', err);
     }
   };
   
@@ -1363,20 +1364,22 @@ export default function BudgetApp() {
     setOsoby(noweOsoby);
   };
   
-  // Obliczenia
-  const przychody = transakcje
-    .filter(t => t.typ === 'Przychód')
-    .reduce((sum, t) => sum + Number(t.kwota), 0);
-  
-  const wydatki = transakcje
-    .filter(t => t.typ === 'Wydatek')
-    .reduce((sum, t) => sum + Number(t.kwota), 0);
-  
-  const bilans = przychody - wydatki;
-  
+  // Obliczenia — memoizowane aby uniknąć przeliczania na każdym renderze.
+  const { przychody, wydatki, bilans } = useMemo(() => {
+    let p = 0;
+    let w = 0;
+    for (const t of transakcje) {
+      const kwota = Number(t.kwota);
+      if (t.typ === 'Przychód') p += kwota;
+      else if (t.typ === 'Wydatek') w += kwota;
+    }
+    return { przychody: p, wydatki: w, bilans: p - w };
+  }, [transakcje]);
+
   // Sortowanie transakcji (najnowsze pierwsze)
-  const sortedTransakcje = [...transakcje].sort((a, b) => 
-    new Date(b.data) - new Date(a.data)
+  const sortedTransakcje = useMemo(
+    () => [...transakcje].sort((a, b) => new Date(b.data) - new Date(a.data)),
+    [transakcje]
   );
   
   // Auth gate: show login page if not authenticated
@@ -1695,7 +1698,7 @@ export default function BudgetApp() {
               const bData = await api.getBudgets(currentPeriod.month, currentPeriod.year);
               setBudgets(Array.isArray(bData) ? bData : []);
             } catch (err) {
-              console.warn('Nie udało się odświeżyć budżetów', err);
+              logger.warn('App', 'Nie udało się odświeżyć budżetów', err);
             }
           }}
         />
