@@ -1,4 +1,15 @@
 import React from 'react';
+import { formatCurrency } from '../utils/calculations';
+
+// Format daty specyficzny dla UI (kropki pl-PL, np. "13.02.2026").
+const formatDate = (dateString) => {
+  const date = new Date(dateString);
+  return date.toLocaleDateString('pl-PL', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+};
 
 /**
  * Komponent wyświetlający pojedynczą transakcję
@@ -23,22 +34,6 @@ export default function TransactionItem({
   
   const isExpense = typ === 'Wydatek';
   const isIncome = typ === 'Przychód';
-
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('pl-PL', {
-      style: 'currency',
-      currency: 'PLN'
-    }).format(amount);
-  };
-
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('pl-PL', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-  };
 
   const colorClass = isExpense ? 'text-rose-600' : 'text-emerald-600';
   const signSymbol = isExpense ? '-' : '+';

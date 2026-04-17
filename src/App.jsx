@@ -12,28 +12,22 @@ import { addToQueue, getQueuedOperations, processQueue } from './services/offlin
 import { supabase } from './lib/supabase';
 import * as api from './services/api';
 import { logger } from './utils/logger';
+import {
+  formatCurrency,
+  getMonthName,
+  getCurrentMonth,
+  calculateIncome,
+  calculateExpenses,
+  sortTransactionsByDate,
+  changeMonth as computeMonthChange,
+} from './utils/calculations';
 
-// Pomocnicze funkcje
-const formatCurrency = (amount) => {
-  return new Intl.NumberFormat('pl-PL', {
-    style: 'currency',
-    currency: 'PLN'
-  }).format(amount);
-};
-
+// Data format specyficzny dla UI (notacja kropkowa pl-PL, np. "13.02.2026").
+// Różni się od utils/calculations.formatDate (slashes) używanego w testach
+// i kontekstach nie-UI — dlatego celowo nie konsolidujemy.
 const formatDate = (dateString) => {
   const date = new Date(dateString);
   return date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
-};
-
-const getCurrentMonth = () => {
-  const now = new Date();
-  return { month: now.getMonth() + 1, year: now.getFullYear() };
-};
-
-const getMonthName = (month, year) => {
-  const date = new Date(year, month - 1);
-  return date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
 };
 
 // Ikony SVG
@@ -1339,20 +1333,7 @@ export default function BudgetApp() {
   
   // Nawigacja miesięcy
   const changeMonth = (delta) => {
-    setCurrentPeriod(prev => {
-      let newMonth = prev.month + delta;
-      let newYear = prev.year;
-      
-      if (newMonth > 12) {
-        newMonth = 1;
-        newYear++;
-      } else if (newMonth < 1) {
-        newMonth = 12;
-        newYear--;
-      }
-      
-      return { month: newMonth, year: newYear };
-    });
+    setCurrentPeriod(prev => computeMonthChange(prev.month, prev.year, delta));
   };
   
   // Callbacki dla ustawień — aktualizują stan
@@ -1364,23 +1345,12 @@ export default function BudgetApp() {
     setOsoby(noweOsoby);
   };
   
-  // Obliczenia — memoizowane aby uniknąć przeliczania na każdym renderze.
-  const { przychody, wydatki, bilans } = useMemo(() => {
-    let p = 0;
-    let w = 0;
-    for (const t of transakcje) {
-      const kwota = Number(t.kwota);
-      if (t.typ === 'Przychód') p += kwota;
-      else if (t.typ === 'Wydatek') w += kwota;
-    }
-    return { przychody: p, wydatki: w, bilans: p - w };
-  }, [transakcje]);
+  // Obliczenia — memoizowane, korzystają z pure helperów z utils/calculations.
+  const przychody = useMemo(() => calculateIncome(transakcje), [transakcje]);
+  const wydatki = useMemo(() => calculateExpenses(transakcje), [transakcje]);
+  const bilans = przychody - wydatki;
 
-  // Sortowanie transakcji (najnowsze pierwsze)
-  const sortedTransakcje = useMemo(
-    () => [...transakcje].sort((a, b) => new Date(b.data) - new Date(a.data)),
-    [transakcje]
-  );
+  const sortedTransakcje = useMemo(() => sortTransactionsByDate(transakcje), [transakcje]);
   
   // Auth gate: show login page if not authenticated
   if (authLoading) {
