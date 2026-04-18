@@ -8,32 +8,31 @@ import YearlySummary from './components/YearlySummary';
 import { useAuth } from './contexts/AuthContext';
 import { useToast } from './contexts/ToastContext';
 import { useOffline } from './hooks/useOffline';
-import { addToQueue, getQueuedOperations, processQueue } from './services/offlineQueue';
+import { useBudgets } from './hooks/useBudgets';
+import { useAvailableYears } from './hooks/useAvailableYears';
+import { useYearlyViewHint } from './hooks/useYearlyViewHint';
+import { usePendingOperations } from './hooks/usePendingOperations';
+import { useMonthlyData } from './hooks/useMonthlyData';
+import { addToQueue } from './services/offlineQueue';
 import { supabase } from './lib/supabase';
 import * as api from './services/api';
 import { logger } from './utils/logger';
+import {
+  formatCurrency,
+  getMonthName,
+  getCurrentMonth,
+  calculateIncome,
+  calculateExpenses,
+  sortTransactionsByDate,
+  changeMonth as computeMonthChange,
+} from './utils/calculations';
 
-// Pomocnicze funkcje
-const formatCurrency = (amount) => {
-  return new Intl.NumberFormat('pl-PL', {
-    style: 'currency',
-    currency: 'PLN'
-  }).format(amount);
-};
-
+// Data format specyficzny dla UI (notacja kropkowa pl-PL, np. "13.02.2026").
+// Różni się od utils/calculations.formatDate (slashes) używanego w testach
+// i kontekstach nie-UI — dlatego celowo nie konsolidujemy.
 const formatDate = (dateString) => {
   const date = new Date(dateString);
   return date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
-};
-
-const getCurrentMonth = () => {
-  const now = new Date();
-  return { month: now.getMonth() + 1, year: now.getFullYear() };
-};
-
-const getMonthName = (month, year) => {
-  const date = new Date(year, month - 1);
-  return date.toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
 };
 
 // Ikony SVG
@@ -1002,132 +1001,58 @@ export default function BudgetApp() {
   const { isOffline } = useOffline();
 
   const [currentPeriod, setCurrentPeriod] = useState(getCurrentMonth());
-  const [transakcje, setTransakcje] = useState([]);
-  const [kategorie, setKategorie] = useState({ Wydatek: {}, Przychód: {} });
-  const [osoby, setOsoby] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [budgets, setBudgets] = useState([]);
   const [showBudgets, setShowBudgets] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showCSVImport, setShowCSVImport] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
-  const [error, setError] = useState(null);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [pendingCount, setPendingCount] = useState(() => getQueuedOperations().length);
-  const wasOfflineRef = useRef(isOffline);
+
+  // Dane miesiąca — transakcje, kategorie, osoby + fetch z isLoading/error.
+  // Setery zwracane do optymistycznych aktualizacji i callbacków ustawień.
+  const {
+    transakcje,
+    kategorie,
+    osoby,
+    isLoading,
+    error,
+    setTransakcje,
+    setKategorie,
+    setOsoby,
+    setError,
+    refresh: fetchData,
+  } = useMonthlyData({
+    month: currentPeriod.month,
+    year: currentPeriod.year,
+  });
 
   // Yearly summary view state
   const [activeView, setActiveView] = useState('monthly');
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
-  const [availableYears, setAvailableYears] = useState([new Date().getFullYear()]);
-  const [showHint, setShowHint] = useState(() => !localStorage.getItem('yearlyViewHintSeen'));
-  const [pulseActive, setPulseActive] = useState(() => !localStorage.getItem('yearlyViewHintSeen'));
-  
-  // Fetch available years for yearly view
-  useEffect(() => {
-    if (!isAuthenticated || isOffline) return;
-    api.getAvailableYears().then(years => {
-      setAvailableYears(years);
-    }).catch(() => {});
-  }, [isAuthenticated, isOffline]);
+  const { showHint, pulseActive, dismissHint } = useYearlyViewHint();
+
+  // Budżety dla bieżącego okresu — własny hook, niezależny od fetchData
+  const { budgets, refresh: refreshBudgets } = useBudgets({
+    month: currentPeriod.month,
+    year: currentPeriod.year,
+    enabled: isAuthenticated && !isOffline,
+  });
+
+  const availableYears = useAvailableYears({ enabled: isAuthenticated && !isOffline });
 
   // Auto-stop pulse animation after 5 seconds
-  useEffect(() => {
-    if (!pulseActive) return;
-    const timer = setTimeout(() => setPulseActive(false), 5000);
-    return () => clearTimeout(timer);
-  }, [pulseActive]);
-
   // Handle yearly view toggle
   const handleToggleView = () => {
     setActiveView(v => v === 'monthly' ? 'yearly' : 'monthly');
-    if (showHint) {
-      setShowHint(false);
-      setPulseActive(false);
-      localStorage.setItem('yearlyViewHintSeen', 'true');
-    }
+    if (showHint) dismissHint();
   };
 
-  // Pobierz wszystkie dane
-  const fetchData = useCallback(async (showLoadingSpinner = true) => {
-    if (showLoadingSpinner) {
-      setIsLoading(true);
-    }
-    
-    setError(null);
-
-    // If offline, just show cached data if available — don't attempt network fetch
-    if (!navigator.onLine) {
-      setError('Brak połączenia z internetem.');
-      setIsLoading(false);
-      return;
-    }
-
-    // Pobierz świeże dane
-    try {
-      const data = await api.getAllData(currentPeriod.month, currentPeriod.year);
-
-      // Aktualizuj stan
-      const noweTransakcje = Array.isArray(data.transakcje) ? data.transakcje : [];
-      const noweKategorie = data.kategorie || { Wydatek: {}, Przychód: {} };
-      const noweOsoby = Array.isArray(data.osoby) ? data.osoby : [];
-
-      setTransakcje(noweTransakcje);
-      setKategorie(noweKategorie);
-      setOsoby(noweOsoby);
-      
-      // Pobierz budżety dla okresu
-      try {
-        const bData = await api.getBudgets(currentPeriod.month, currentPeriod.year);
-        setBudgets(Array.isArray(bData) ? bData : []);
-      } catch (err) {
-        logger.warn('App', 'Nie udało się pobrać budżetów', err);
-      }
-      
-    } catch (err) {
-      setError('Nie udało się pobrać danych. Sprawdź połączenie i odśwież stronę.');
-      logger.error('App', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentPeriod]);
-
-  // Ładuj dane przy starcie i zmianie miesiąca
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  // Sync queued operations when coming back online
-  useEffect(() => {
-    if (wasOfflineRef.current && !isOffline) {
-      const syncQueue = async () => {
-        const queue = getQueuedOperations();
-        if (queue.length === 0) {
-          wasOfflineRef.current = false;
-          return;
-        }
-        setIsSyncing(true);
-        try {
-          const result = await processQueue();
-          if (result.succeeded > 0) {
-            addToast(`Zsynchronizowano ${result.succeeded} ${result.succeeded === 1 ? 'operację' : 'operacji'}`);
-          }
-          if (result.failed > 0) {
-            addToast(`Nie udało się zsynchronizować ${result.failed} operacji`, 'error');
-          }
-          setPendingCount(0);
-          // Refresh data from server after sync
-          await fetchData(false);
-        } finally {
-          setIsSyncing(false);
-        }
-      };
-      syncQueue();
-    }
-    wasOfflineRef.current = isOffline;
-  }, [isOffline, fetchData, addToast]);
+  // Offline queue: licznik + auto-sync przy powrocie online
+  const { pendingCount, isSyncing, refreshPendingCount } = usePendingOperations({
+    isOffline,
+    onSynced: () => fetchData(false),
+    addToast,
+  });
 
   // Real-time subscriptions — nasłuchuj zmian w Supabase
   useEffect(() => {
@@ -1225,7 +1150,7 @@ export default function BudgetApp() {
       setTransakcje(noweTransakcje);
 
       addToQueue({ action: 'addTransakcja', payload: { action: 'addTransakcja', transakcja } });
-      setPendingCount(getQueuedOperations().length);
+      refreshPendingCount();
 
       setShowForm(false);
       addToast('Transakcja zapisana offline — zsynchronizuje się po połączeniu');
@@ -1264,7 +1189,7 @@ export default function BudgetApp() {
         action: 'updateTransakcja',
         payload: { action: 'updateTransakcja', id: editingTransaction.id, transakcja },
       });
-      setPendingCount(getQueuedOperations().length);
+      refreshPendingCount();
 
       setEditingTransaction(null);
       setShowForm(false);
@@ -1316,7 +1241,7 @@ export default function BudgetApp() {
       // Don't queue delete for temp (not-yet-synced) transactions
       if (!String(id).startsWith('temp_')) {
         addToQueue({ action: 'deleteTransakcja', payload: { action: 'deleteTransakcja', id } });
-        setPendingCount(getQueuedOperations().length);
+        refreshPendingCount();
       }
 
       addToast('Usunięcie zapisane offline — zsynchronizuje się po połączeniu');
@@ -1339,20 +1264,7 @@ export default function BudgetApp() {
   
   // Nawigacja miesięcy
   const changeMonth = (delta) => {
-    setCurrentPeriod(prev => {
-      let newMonth = prev.month + delta;
-      let newYear = prev.year;
-      
-      if (newMonth > 12) {
-        newMonth = 1;
-        newYear++;
-      } else if (newMonth < 1) {
-        newMonth = 12;
-        newYear--;
-      }
-      
-      return { month: newMonth, year: newYear };
-    });
+    setCurrentPeriod(prev => computeMonthChange(prev.month, prev.year, delta));
   };
   
   // Callbacki dla ustawień — aktualizują stan
@@ -1364,23 +1276,12 @@ export default function BudgetApp() {
     setOsoby(noweOsoby);
   };
   
-  // Obliczenia — memoizowane aby uniknąć przeliczania na każdym renderze.
-  const { przychody, wydatki, bilans } = useMemo(() => {
-    let p = 0;
-    let w = 0;
-    for (const t of transakcje) {
-      const kwota = Number(t.kwota);
-      if (t.typ === 'Przychód') p += kwota;
-      else if (t.typ === 'Wydatek') w += kwota;
-    }
-    return { przychody: p, wydatki: w, bilans: p - w };
-  }, [transakcje]);
+  // Obliczenia — memoizowane, korzystają z pure helperów z utils/calculations.
+  const przychody = useMemo(() => calculateIncome(transakcje), [transakcje]);
+  const wydatki = useMemo(() => calculateExpenses(transakcje), [transakcje]);
+  const bilans = przychody - wydatki;
 
-  // Sortowanie transakcji (najnowsze pierwsze)
-  const sortedTransakcje = useMemo(
-    () => [...transakcje].sort((a, b) => new Date(b.data) - new Date(a.data)),
-    [transakcje]
-  );
+  const sortedTransakcje = useMemo(() => sortTransactionsByDate(transakcje), [transakcje]);
   
   // Auth gate: show login page if not authenticated
   if (authLoading) {
@@ -1693,14 +1594,7 @@ export default function BudgetApp() {
           year={currentPeriod.year}
           budgets={budgets}
           osoby={osoby}
-          onSaved={async () => {
-            try {
-              const bData = await api.getBudgets(currentPeriod.month, currentPeriod.year);
-              setBudgets(Array.isArray(bData) ? bData : []);
-            } catch (err) {
-              logger.warn('App', 'Nie udało się odświeżyć budżetów', err);
-            }
-          }}
+          onSaved={refreshBudgets}
         />
       )}
 
