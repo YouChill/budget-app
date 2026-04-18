@@ -12,6 +12,7 @@ import { useBudgets } from './hooks/useBudgets';
 import { useAvailableYears } from './hooks/useAvailableYears';
 import { useYearlyViewHint } from './hooks/useYearlyViewHint';
 import { usePendingOperations } from './hooks/usePendingOperations';
+import { useMonthlyData } from './hooks/useMonthlyData';
 import { addToQueue } from './services/offlineQueue';
 import { supabase } from './lib/supabase';
 import * as api from './services/api';
@@ -1000,17 +1001,30 @@ export default function BudgetApp() {
   const { isOffline } = useOffline();
 
   const [currentPeriod, setCurrentPeriod] = useState(getCurrentMonth());
-  const [transakcje, setTransakcje] = useState([]);
-  const [kategorie, setKategorie] = useState({ Wydatek: {}, Przychód: {} });
-  const [osoby, setOsoby] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [showBudgets, setShowBudgets] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showCSVImport, setShowCSVImport] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
-  const [error, setError] = useState(null);
+
+  // Dane miesiąca — transakcje, kategorie, osoby + fetch z isLoading/error.
+  // Setery zwracane do optymistycznych aktualizacji i callbacków ustawień.
+  const {
+    transakcje,
+    kategorie,
+    osoby,
+    isLoading,
+    error,
+    setTransakcje,
+    setKategorie,
+    setOsoby,
+    setError,
+    refresh: fetchData,
+  } = useMonthlyData({
+    month: currentPeriod.month,
+    year: currentPeriod.year,
+  });
 
   // Yearly summary view state
   const [activeView, setActiveView] = useState('monthly');
@@ -1032,47 +1046,6 @@ export default function BudgetApp() {
     setActiveView(v => v === 'monthly' ? 'yearly' : 'monthly');
     if (showHint) dismissHint();
   };
-
-  // Pobierz wszystkie dane
-  const fetchData = useCallback(async (showLoadingSpinner = true) => {
-    if (showLoadingSpinner) {
-      setIsLoading(true);
-    }
-    
-    setError(null);
-
-    // If offline, just show cached data if available — don't attempt network fetch
-    if (!navigator.onLine) {
-      setError('Brak połączenia z internetem.');
-      setIsLoading(false);
-      return;
-    }
-
-    // Pobierz świeże dane
-    try {
-      const data = await api.getAllData(currentPeriod.month, currentPeriod.year);
-
-      // Aktualizuj stan
-      const noweTransakcje = Array.isArray(data.transakcje) ? data.transakcje : [];
-      const noweKategorie = data.kategorie || { Wydatek: {}, Przychód: {} };
-      const noweOsoby = Array.isArray(data.osoby) ? data.osoby : [];
-
-      setTransakcje(noweTransakcje);
-      setKategorie(noweKategorie);
-      setOsoby(noweOsoby);
-
-    } catch (err) {
-      setError('Nie udało się pobrać danych. Sprawdź połączenie i odśwież stronę.');
-      logger.error('App', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentPeriod]);
-
-  // Ładuj dane przy starcie i zmianie miesiąca
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   // Offline queue: licznik + auto-sync przy powrocie online
   const { pendingCount, isSyncing, refreshPendingCount } = usePendingOperations({
