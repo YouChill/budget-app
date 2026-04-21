@@ -130,10 +130,9 @@ Po konfiguracji `.env` powinien wyglądać tak:
 VITE_SUPABASE_URL=https://xxxxxxxxxxxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 VITE_HOUSEHOLD_ID=f47ac10b-58cc-4372-a567-0e02b2c3d479
-
-# Google OAuth (do logowania)
-VITE_GOOGLE_CLIENT_ID=123456789-xxx.apps.googleusercontent.com
 ```
+
+Logowanie działa przez Supabase Auth (email + hasło) — nie wymaga dodatkowych zmiennych w `.env`. Konfiguracja providera odbywa się w Supabase Dashboard (patrz `docs/SETUP_AUTH_PHASE3.md`).
 
 ---
 
@@ -164,7 +163,6 @@ Zawsze używaj HTTPS w produkcji (Vercel/Netlify automatycznie)
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
    - `VITE_HOUSEHOLD_ID`
-   - `VITE_GOOGLE_CLIENT_ID`
 
 2. W Supabase **Project Settings** → **API** → **Authorization** dodaj domenę hostingu do **Allowed origins**:
    ```
@@ -185,8 +183,8 @@ Zawsze używaj HTTPS w produkcji (Vercel/Netlify automatycznie)
 ### "Unauthorized" (401)
 
 - Upewnij się że jesteś zalogowany (przycisk Login)
-- Sprawdź czy `VITE_GOOGLE_CLIENT_ID` jest poprawny
-- Sprawdzunlockedł czy Supabase RLS policies pozwalają na akcję
+- Sprawdź czy Email provider jest włączony w Supabase (Authentication → Providers → Email)
+- Sprawdź czy Supabase RLS policies pozwalają na akcję
 
 ### Migracje nie uruchomiły się
 

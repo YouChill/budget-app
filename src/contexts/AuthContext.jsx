@@ -1,244 +1,125 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { logger } from '../utils/logger';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-const GIS_TIMEOUT_MS = 10000;
-
-// Decode JWT payload without external libraries.
-// Trust boundary: we do NOT verify the signature here. This is safe because the
-// token is only used client-side for UI state (display name, expiry check). Any
-// server-side call that relies on identity must re-verify the token with Google.
-function decodeJwtPayload(token) {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    );
-    return JSON.parse(jsonPayload);
-  } catch {
-    return null;
-  }
+function translateAuthError(err) {
+  if (!err) return null;
+  const msg = err.message || '';
+  if (/invalid login credentials/i.test(msg)) return 'Nieprawidłowy email lub hasło.';
+  if (/email not confirmed/i.test(msg)) return 'Email nie został potwierdzony. Sprawdź skrzynkę.';
+  if (/user already registered/i.test(msg)) return 'Użytkownik z tym emailem już istnieje.';
+  if (/password should be at least/i.test(msg)) return 'Hasło musi mieć co najmniej 8 znaków.';
+  if (/rate limit/i.test(msg)) return 'Zbyt wiele prób. Spróbuj ponownie za chwilę.';
+  return msg || 'Wystąpił błąd logowania.';
 }
 
-function isTokenExpired(token) {
-  const payload = decodeJwtPayload(token);
-  if (!payload || !payload.exp) return true;
-  // Add 60s buffer before actual expiration
-  return Date.now() >= (payload.exp - 60) * 1000;
+function normalizeUser(supabaseUser) {
+  if (!supabaseUser) return null;
+  const meta = supabaseUser.user_metadata || {};
+  return {
+    id: supabaseUser.id,
+    email: supabaseUser.email,
+    name: meta.display_name || meta.name || supabaseUser.email,
+  };
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
+  const [session, setSession] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isGsiReady, setIsGsiReady] = useState(false);
-  const [gsiLoadFailed, setGsiLoadFailed] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const gsiInitialized = useRef(false);
+  const [infoMessage, setInfoMessage] = useState(null);
 
-  const handleCredentialResponse = useCallback((response) => {
-    const credential = response.credential;
-    const payload = decodeJwtPayload(credential);
-
-    if (payload) {
-      const userData = {
-        email: payload.email,
-        name: payload.name,
-        picture: payload.picture,
-      };
-      setUser(userData);
-      setToken(credential);
-      setError(null);
-      setSessionExpired(false);
-      localStorage.setItem('budget_auth_token', credential);
-      localStorage.setItem('budget_auth_user', JSON.stringify(userData));
-    } else {
-      setError('Nie udało się zweryfikować danych logowania. Spróbuj ponownie.');
-    }
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setIsLoading(false);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((event, newSession) => {
+      setSession(newSession);
+      if (event === 'SIGNED_IN') {
+        setError(null);
+        setSessionExpired(false);
+      }
+    });
+    return () => sub.subscription.unsubscribe();
   }, []);
 
-  // Shared GIS initialization helper — prevents double-init via gsiInitialized ref.
-  // Returns true if initialization was performed, false if skipped.
-  const doInitGsi = useCallback((autoSelect = false) => {
-    if (!window.google?.accounts?.id || gsiInitialized.current) return false;
-    gsiInitialized.current = true;
-    window.google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: handleCredentialResponse,
-      auto_select: autoSelect,
-      cancel_on_tap_outside: false,
-    });
-    setIsGsiReady(true);
+  const signIn = useCallback(async (email, password) => {
+    setError(null);
+    setInfoMessage(null);
+    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+    if (err) {
+      setError(translateAuthError(err));
+      return false;
+    }
     return true;
-  }, [handleCredentialResponse]);
+  }, []);
 
-  const logout = useCallback((reason = null) => {
-    setUser(null);
-    setToken(null);
-    if (reason === 'expired') {
-      setSessionExpired(true);
+  const signUp = useCallback(async (email, password, displayName) => {
+    setError(null);
+    setInfoMessage(null);
+    const { data, error: err } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { display_name: displayName || email.split('@')[0] },
+        emailRedirectTo: window.location.origin,
+      },
+    });
+    if (err) {
+      setError(translateAuthError(err));
+      return false;
     }
-    localStorage.removeItem('budget_auth_token');
-    localStorage.removeItem('budget_auth_user');
-    // Clear session storage cache as well
+    // Jeśli email confirmation jest włączony, session będzie null — user musi kliknąć link.
+    if (!data.session) {
+      setInfoMessage('Sprawdź swoją skrzynkę email, aby potwierdzić rejestrację.');
+    }
+    return true;
+  }, []);
+
+  const resetPassword = useCallback(async (email) => {
+    setError(null);
+    setInfoMessage(null);
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}`,
+    });
+    if (err) {
+      setError(translateAuthError(err));
+      return false;
+    }
+    setInfoMessage('Jeśli konto istnieje, wysłaliśmy link do resetu hasła.');
+    return true;
+  }, []);
+
+  const logout = useCallback(async (reason = null) => {
+    if (reason === 'expired') setSessionExpired(true);
+    await supabase.auth.signOut();
     sessionStorage.clear();
-    // Re-initialize GIS so the login button works again
-    if (window.google?.accounts?.id) {
-      window.google.accounts.id.disableAutoSelect();
-      if (GOOGLE_CLIENT_ID) {
-        // Reset the guard so doInitGsi will proceed
-        gsiInitialized.current = false;
-        doInitGsi(false);
-      }
-    }
-  }, [doInitGsi]);
+  }, []);
 
-  // Listen for session-expired events from API layer
   useEffect(() => {
-    const handleSessionExpired = () => logout('expired');
-    window.addEventListener('auth:session-expired', handleSessionExpired);
-    return () => window.removeEventListener('auth:session-expired', handleSessionExpired);
+    const handler = () => logout('expired');
+    window.addEventListener('auth:session-expired', handler);
+    return () => window.removeEventListener('auth:session-expired', handler);
   }, [logout]);
 
-  // Initialize: check for stored token
-  useEffect(() => {
-    const storedToken = localStorage.getItem('budget_auth_token');
-    const storedUser = localStorage.getItem('budget_auth_user');
-
-    if (storedToken && storedUser) {
-      if (!isTokenExpired(storedToken)) {
-        try {
-          const parsed = JSON.parse(storedUser);
-          if (parsed && typeof parsed === 'object' && typeof parsed.email === 'string') {
-            setToken(storedToken);
-            setUser(parsed);
-          } else {
-            throw new Error('Nieprawidłowa struktura danych użytkownika');
-          }
-        } catch {
-          localStorage.removeItem('budget_auth_token');
-          localStorage.removeItem('budget_auth_user');
-        }
-      } else {
-        // Token expired — show friendly message
-        localStorage.removeItem('budget_auth_token');
-        localStorage.removeItem('budget_auth_user');
-        setSessionExpired(true);
-      }
-    }
-
-    setIsLoading(false);
-  }, []);
-
-  // Initialize Google Identity Services
-  useEffect(() => {
-    if (!GOOGLE_CLIENT_ID) return;
-
-    const tryInit = () => {
-      // Only auto-select / trigger One Tap for users with a valid (non-expired) stored token.
-      // By this point the token-check effect has already cleared any expired token from
-      // localStorage, so checking for expiry here is a belt-and-suspenders safety measure.
-      const storedToken = localStorage.getItem('budget_auth_token');
-      const hasValidToken = !!storedToken && !isTokenExpired(storedToken);
-
-      if (!doInitGsi(hasValidToken)) return;
-
-      // Prompt One Tap for returning users with a valid token
-      if (hasValidToken) {
-        window.google.accounts.id.prompt((notification) => {
-          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            logger.debug(
-              'Auth',
-              'One Tap not shown:',
-              notification.getNotDisplayedReason?.() || notification.getSkippedReason?.()
-            );
-          }
-        });
-      }
-    };
-
-    if (window.google?.accounts?.id) {
-      tryInit();
-    } else {
-      const interval = setInterval(() => {
-        if (window.google?.accounts?.id) {
-          clearInterval(interval);
-          clearTimeout(timeout);
-          tryInit();
-        }
-      }, 100);
-
-      const timeout = setTimeout(() => {
-        clearInterval(interval);
-        // setIsLoading(false) is already called unconditionally by the token-check effect
-        if (!gsiInitialized.current) {
-          setGsiLoadFailed(true);
-        }
-      }, GIS_TIMEOUT_MS);
-
-      return () => {
-        clearInterval(interval);
-        clearTimeout(timeout);
-      };
-    }
-  }, [doInitGsi]);
-
-  // Retry GIS initialization (after network error)
-  const retryGsiLoad = useCallback(() => {
-    setGsiLoadFailed(false);
-    gsiInitialized.current = false;
-
-    if (window.google?.accounts?.id) {
-      doInitGsi(false);
-    } else {
-      // Reload the GIS script dynamically.
-      // gsiInitialized.current is already false (reset above); doInitGsi will set it
-      // back to true once the script loads and window.google.accounts.id is available.
-      const existing = document.querySelector('script[src*="accounts.google.com/gsi"]');
-      if (existing) existing.remove();
-
-      const script = document.createElement('script');
-      script.src = 'https://accounts.google.com/gsi/client';
-      script.async = true;
-      script.defer = true;
-      script.onload = () => {
-        const interval = setInterval(() => {
-          if (window.google?.accounts?.id) {
-            clearInterval(interval);
-            doInitGsi(false);
-          }
-        }, 100);
-        setTimeout(() => {
-          clearInterval(interval);
-          if (!gsiInitialized.current) setGsiLoadFailed(true);
-        }, GIS_TIMEOUT_MS);
-      };
-      script.onerror = () => setGsiLoadFailed(true);
-      document.head.appendChild(script);
-    }
-  }, [doInitGsi]);
+  const user = useMemo(() => normalizeUser(session?.user), [session]);
 
   const value = {
     user,
-    token,
+    isAuthenticated: !!session,
     isLoading,
     error,
     setError,
-    logout,
-    isAuthenticated: !!user && !!token && !isTokenExpired(token),
-    clientId: GOOGLE_CLIENT_ID,
-    handleCredentialResponse,
-    isGsiReady,
-    gsiLoadFailed,
+    infoMessage,
+    setInfoMessage,
     sessionExpired,
-    retryGsiLoad,
+    signIn,
+    signUp,
+    resetPassword,
+    logout,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
