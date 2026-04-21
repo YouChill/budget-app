@@ -996,7 +996,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
 // GŁÓWNA APLIKACJA
 // ============================================
 export default function BudgetApp() {
-  const { user, token, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const { addToast } = useToast();
   const { isOffline } = useOffline();
 
@@ -1384,18 +1384,9 @@ export default function BudgetApp() {
 
               {/* User info & logout */}
               <div className="flex items-center gap-1.5 sm:gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 px-2 py-1 sm:px-3 sm:py-1.5">
-                {user?.picture ? (
-                  <img
-                    src={user.picture}
-                    alt={user.name}
-                    className="w-6 h-6 sm:w-7 sm:h-7 rounded-full"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
-                    <Icons.User />
-                  </div>
-                )}
+                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+                  <Icons.User />
+                </div>
                 <span className="text-sm text-gray-600 hidden sm:inline max-w-[120px] truncate" title={user?.email}>
                   {user?.name || user?.email}
                 </span>

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
 function OfflineBanner() {
@@ -33,26 +33,62 @@ function OfflineBanner() {
   );
 }
 
+const MODES = {
+  SIGNIN: 'signin',
+  SIGNUP: 'signup',
+  RESET: 'reset',
+};
+
 export default function LoginPage() {
-  const { error, setError, clientId, isLoading, isGsiReady, gsiLoadFailed, sessionExpired, retryGsiLoad } = useAuth();
-  const buttonRef = useRef(null);
+  const {
+    isLoading, error, setError, infoMessage, setInfoMessage, sessionExpired,
+    signIn, signUp, resetPassword,
+  } = useAuth();
 
-  useEffect(() => {
-    if (!clientId || !isGsiReady || !buttonRef.current) return;
+  const [mode, setMode] = useState(MODES.SIGNIN);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-    if (!window.google?.accounts?.id) return;
+  const switchMode = (newMode) => {
+    setMode(newMode);
+    setError(null);
+    setInfoMessage(null);
+    setPassword('');
+    setPasswordConfirm('');
+  };
 
-    buttonRef.current.replaceChildren();
-    window.google.accounts.id.renderButton(buttonRef.current, {
-      type: 'standard',
-      theme: 'outline',
-      size: 'large',
-      text: 'signin_with',
-      shape: 'pill',
-      logo_alignment: 'left',
-      width: 300,
-    });
-  }, [clientId, isGsiReady]);
+  const validate = () => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Nieprawidłowy adres email.');
+      return false;
+    }
+    if (mode === MODES.RESET) return true;
+    if (password.length < 8) {
+      setError('Hasło musi mieć co najmniej 8 znaków.');
+      return false;
+    }
+    if (mode === MODES.SIGNUP && password !== passwordConfirm) {
+      setError('Hasła nie są identyczne.');
+      return false;
+    }
+    return true;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validate()) return;
+    setSubmitting(true);
+    try {
+      if (mode === MODES.SIGNIN) await signIn(email, password);
+      else if (mode === MODES.SIGNUP) await signUp(email, password, displayName);
+      else if (mode === MODES.RESET) await resetPassword(email);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -67,11 +103,22 @@ export default function LoginPage() {
     );
   }
 
+  const submitLabel = {
+    [MODES.SIGNIN]: 'Zaloguj się',
+    [MODES.SIGNUP]: 'Zarejestruj się',
+    [MODES.RESET]: 'Wyślij link do resetu',
+  }[mode];
+
+  const title = {
+    [MODES.SIGNIN]: 'Zaloguj się, aby zarządzać finansami',
+    [MODES.SIGNUP]: 'Utwórz konto',
+    [MODES.RESET]: 'Zresetuj hasło',
+  }[mode];
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-100 to-indigo-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="rounded-3xl bg-white shadow-2xl p-8 space-y-6">
-          {/* Logo and title */}
           <div className="text-center space-y-4">
             <div className="mx-auto w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
               <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -82,14 +129,12 @@ export default function LoginPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-800">Budżet Domowy</h1>
-              <p className="text-gray-500 mt-1">Zaloguj się, aby zarządzać finansami</p>
+              <p className="text-gray-500 mt-1">{title}</p>
             </div>
           </div>
 
-          {/* Offline banner */}
           <OfflineBanner />
 
-          {/* Session expired message */}
           {sessionExpired && !error && (
             <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 flex items-start gap-2">
               <svg className="mt-0.5 shrink-0" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -100,7 +145,15 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Error message */}
+          {infoMessage && (
+            <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700 flex items-start gap-2">
+              <svg className="mt-0.5 shrink-0" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>{infoMessage}</span>
+            </div>
+          )}
+
           {error && (
             <div className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700 flex items-start gap-2">
               <svg className="mt-0.5 shrink-0" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -120,56 +173,99 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Login area */}
-          {clientId ? (
-            <div className="flex flex-col items-center gap-4">
-              {gsiLoadFailed ? (
-                /* GIS failed to load */
-                <div className="flex flex-col items-center gap-3 w-full">
-                  <div className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700 text-center w-full">
-                    <p className="font-medium mb-1">Nie można załadować logowania Google</p>
-                    <p className="text-rose-600">Sprawdź połączenie z internetem lub odblokuj google.com w ustawieniach sieci.</p>
-                  </div>
-                  <button
-                    onClick={retryGsiLoad}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="23 4 23 10 17 10"></polyline>
-                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                    </svg>
-                    Spróbuj ponownie
-                  </button>
-                </div>
-              ) : !isGsiReady ? (
-                /* GIS still loading */
-                <div className="flex flex-col items-center gap-2 py-2">
-                  <svg className="animate-spin text-indigo-400" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
-                  </svg>
-                  <span className="text-xs text-gray-400">Ładowanie logowania Google...</span>
-                </div>
-              ) : (
-                /* GIS ready — show button */
-                <div ref={buttonRef} style={{ minHeight: 44 }}></div>
-              )}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === MODES.SIGNUP && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nazwa użytkownika <span className="text-gray-400 font-normal">(opcjonalnie)</span>
+                </label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Jan Kowalski"
+                  autoComplete="name"
+                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
+                />
+              </div>
+            )}
 
-              {isGsiReady && !gsiLoadFailed && (
-                <p className="text-xs text-gray-400 text-center">
-                  Logowanie za pomocą konta Google
-                </p>
-              )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="ty@example.com"
+                autoComplete="email"
+                required
+                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
+              />
             </div>
-          ) : (
-            <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700">
-              <p className="font-medium mb-1">Brak konfiguracji Google OAuth</p>
-              <p>
-                Ustaw zmienną <code className="bg-amber-100 px-1 rounded">VITE_GOOGLE_CLIENT_ID</code> w pliku <code className="bg-amber-100 px-1 rounded">.env</code>
-              </p>
-            </div>
-          )}
 
-          {/* Footer info */}
+            {mode !== MODES.RESET && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Hasło</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Minimum 8 znaków"
+                  autoComplete={mode === MODES.SIGNUP ? 'new-password' : 'current-password'}
+                  required
+                  minLength={8}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
+                />
+              </div>
+            )}
+
+            {mode === MODES.SIGNUP && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Powtórz hasło</label>
+                <input
+                  type="password"
+                  value={passwordConfirm}
+                  onChange={(e) => setPasswordConfirm(e.target.value)}
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
+                />
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium py-2.5 shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {submitting ? 'Przetwarzanie...' : submitLabel}
+            </button>
+          </form>
+
+          <div className="flex items-center justify-between text-xs text-gray-500 pt-2">
+            {mode === MODES.SIGNIN && (
+              <>
+                <button onClick={() => switchMode(MODES.SIGNUP)} className="hover:text-indigo-600 hover:underline">
+                  Nie masz konta? Zarejestruj się
+                </button>
+                <button onClick={() => switchMode(MODES.RESET)} className="hover:text-indigo-600 hover:underline">
+                  Zapomniałeś hasła?
+                </button>
+              </>
+            )}
+            {mode === MODES.SIGNUP && (
+              <button onClick={() => switchMode(MODES.SIGNIN)} className="hover:text-indigo-600 hover:underline">
+                ← Masz już konto? Zaloguj się
+              </button>
+            )}
+            {mode === MODES.RESET && (
+              <button onClick={() => switchMode(MODES.SIGNIN)} className="hover:text-indigo-600 hover:underline">
+                ← Powrót do logowania
+              </button>
+            )}
+          </div>
+
           <div className="border-t border-gray-100 pt-4">
             <p className="text-xs text-gray-400 text-center">
               Dostęp tylko dla autoryzowanych użytkowników.

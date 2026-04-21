@@ -70,7 +70,6 @@ Uzupełnij plik `.env`:
 VITE_SUPABASE_URL=https://twoj-projekt.supabase.co
 VITE_SUPABASE_ANON_KEY=twoj-anon-key
 VITE_HOUSEHOLD_ID=twoj-household-uuid
-VITE_GOOGLE_CLIENT_ID=TWOJ_CLIENT_ID.apps.googleusercontent.com
 
 # Opcjonalnie — włącza kategoryzację AI podczas importu CSV
 VITE_OPENAI_API_KEY=sk-...
@@ -87,11 +86,16 @@ migration/001_create_budzety.sql
 migration/002_rls_policies_phase2.sql
 migration/003_authentication_phase3.sql
 migration/004_category_embeddings.sql   ← pgvector + AI kategoryzacja
+migration/005_email_password_auth.sql   ← Supabase Auth email+hasło
 ```
 
 > Przed uruchomieniem migracji 004 włącz rozszerzenie **pgvector** w Supabase Dashboard → Database → Extensions.
 
-### 5. Skonfiguruj autoryzację Google OAuth
+### 5. Skonfiguruj autoryzację (Supabase Auth — email + hasło)
+
+W Supabase Dashboard:
+- **Authentication → Providers → Email**: *Enable email signup: ON*, *Confirm email: ON*.
+- **Authentication → Providers → Google**: *OFF* (nie używamy).
 
 Szczegółowa instrukcja: [docs/SETUP_AUTH_PHASE3.md](./docs/SETUP_AUTH_PHASE3.md)
 
@@ -262,7 +266,6 @@ budget-app/
 | `VITE_SUPABASE_URL` | ✅ | URL projektu Supabase |
 | `VITE_SUPABASE_ANON_KEY` | ✅ | Klucz anonimowy Supabase |
 | `VITE_HOUSEHOLD_ID` | ⚠️ | UUID gospodarstwa (fallback bez auth) |
-| `VITE_GOOGLE_CLIENT_ID` | ✅ | Client ID Google OAuth 2.0 |
 | `VITE_OPENAI_API_KEY` | ➕ | Klucz OpenAI — włącza kategoryzację AI |
 
 ## Deployment

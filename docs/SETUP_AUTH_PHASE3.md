@@ -1,154 +1,118 @@
-# Faza 3: Autentykacja — Setup Guide
+# Autentykacja — Setup Guide
 
 ## Przegląd
 
-Faza 3 zabezpiecza aplikację poprzez Supabase Auth (Google OAuth) i Row Level Security (RLS). Użytkownicy będą się logować przez Google, a dane będą dostępne tylko dla członków ich gospodarstwa (household).
+Aplikacja używa **Supabase Auth** z logowaniem przez **email + hasło**. Row Level Security (RLS) ogranicza dostęp do danych wyłącznie do członków tego samego gospodarstwa (`household`).
 
-## Kroki Setup'u
+> Historyczna uwaga: wcześniejsza wersja (Phase 3) używała Google OAuth przez Google Identity Services. Migracja na Supabase Auth została wykonana w `migration/005_email_password_auth.sql`.
 
-### 1. Włączenie Google OAuth w Supabase Dashboard
+## Kroki Setupu
 
-1. Wejdź do [Supabase Dashboard](https://supabase.com/dashboard)
-2. Wybierz projekt
-3. **Authentication → Providers → Google**
-4. Zmień status na **Enabled**
-5. Skopiuj **Client ID** i **Client Secret** (zdobędziesz je w kroku 2)
+### 1. Włączenie Email provider w Supabase Dashboard
 
-### 2. Konfiguracja Google Cloud Console
+1. Wejdź do [Supabase Dashboard](https://supabase.com/dashboard) → wybierz projekt.
+2. **Authentication → Providers → Email**:
+   - **Enable email signup:** ON
+   - **Confirm email:** ON (wymagane — patrz sekcja bezpieczeństwo)
+3. **Authentication → Providers → Google:** OFF (nie używamy).
 
-1. Wejdź do [Google Cloud Console](https://console.cloud.google.com)
-2. Utwórz nowy projekt lub wybierz istniejący
-3. **API & Services → Credentials**
-4. **Create Credentials → OAuth 2.0 Client ID**
-5. Typ: **Web application**
-6. **Authorized JavaScript origins** (dodaj):
-   - `http://localhost:5173` (development)
-   - `http://localhost:3000` (development alt)
-7. **Authorized redirect URIs** (dodaj):
-   - `https://YOUR_SUPABASE_PROJECT.supabase.co/auth/v1/callback` (production)
-   - `http://localhost:5173/auth/v1/callback` (development)
-8. Skopiuj wygenerowany **Client ID** i **Client Secret**
-
-### 3. Wklejanie credentials do Supabase
-
-W Supabase Dashboard → **Authentication → Providers → Google**:
-- Wklej **Client ID** z Google Cloud
-- Wklej **Client Secret** z Google Cloud
-- Kliknij **Save**
-
-### 4. Konfiguracja Redirect URLs w Supabase
+### 2. Konfiguracja URL Configuration
 
 **Authentication → URL Configuration:**
-- **Site URL:** `https://YOUR_DOMAIN.vercel.app` (production) lub `http://localhost:5173` (dev)
-- **Redirect URLs:** Dodaj obie:
-  - `http://localhost:5173/` (development)
-  - `https://YOUR_DOMAIN.vercel.app/` (production)
+- **Site URL:** `http://localhost:5173` (dev) lub `https://YOUR_DOMAIN.vercel.app` (prod).
+- **Redirect URLs:** dodaj oba warianty z i bez końcowego slasha.
 
-### 5. Zmienne środowiskowe (.env.local)
+### 3. Szablony email (opcjonalnie, po polsku)
 
-Zaktualizuj `.env.local` z:
+**Authentication → Email Templates** — przetłumacz:
+- **Confirm signup** — link potwierdzający rejestrację.
+- **Reset password** — link do resetu hasła.
+
+### 4. Zmienne środowiskowe (.env.local)
 
 ```env
-# Supabase
 VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 VITE_SUPABASE_ANON_KEY=your_anon_key
-VITE_GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
 
-# Optional: fallback dla development (używane tylko jeśli profil nie ma household_id)
+# Fallback dla dev (używany tylko jeśli profil nie ma household_id)
 VITE_HOUSEHOLD_ID=your_fallback_household_uuid
 ```
 
-### 6. Zastosowanie migracji SQL (Phase 3)
+### 5. Migracje SQL
 
-Otwórz SQL Editor w Supabase Dashboard i uruchom plik:
-`migration/003_authentication_phase3.sql`
+Uruchom w Supabase SQL Editor w kolejności:
 
-Ta migracja:
-- ✅ Tworzy tabelę `profiles` 
-- ✅ Ustawia proper RLS polityki (zabezpiecza dane do household)
-- ✅ Tworzy trigger auto-tworczący profil przy rejestracji
-- ✅ Usuwa permissive polityki z fazy 2
+```
+migration/001_create_budzety.sql
+migration/002_rls_policies_phase2.sql
+migration/003_authentication_phase3.sql
+migration/004_category_embeddings.sql
+migration/005_email_password_auth.sql   ← email+hasło + zachowanie household_id po emailu
+```
 
-### 7. Whitelisting użytkowników (opcjonalnie)
+Migracja 005 podmienia trigger `handle_new_user` tak, żeby przy rejestracji nową metodą zachować `household_id` istniejącego profilu o tym samym emailu (z ery Google).
 
-Jeśli chcesz zezwolić tylko określonym emailom:
+### 6. Dodawanie członka gospodarstwa
 
-1. **Authentication → User Management**
-2. Ręcznie utwórz użytkowników lub
-3. Zapraszaj użytkowników przez URL zaproszenia
-4. W production — ustaw `Email Confirmations` na **ENABLED** aby kontrolować dostęp
-
-## Workflow: Dodawanie nowego członka rodziny
-
-### Scenariusz: Żona chce się zalogować
-
-1. **Admin (inicjalny użytkownik) loguje się** do aplikacji
-2. W Supabase Dashboard:
-   - **Authentication → Users**
-   - **Add User** → wpisz email żony
-   - Wygeneruj hasło tymczasowe
-3. **Żona loguje się za pomocą Google** (używając tego samego emaila)
-4. **Profil żony automatycznie powstaje** (trigger `handle_new_user`)
-5. **Admin przydzielą żonę do household:**
+1. Admin w Supabase Dashboard → **Authentication → Users → Add User**, wpisuje email żony i tymczasowe hasło (albo wysyła invite).
+2. Żona loguje się przez formularz w aplikacji (lub klika invite link i ustawia hasło).
+3. Trigger `handle_new_user` tworzy pusty profil.
+4. Admin przypisuje żonę do household:
    ```sql
    UPDATE public.profiles
-   SET household_id = 'uuid-household'
-   WHERE email = 'zona@example.com';
+      SET household_id = 'uuid-household'
+    WHERE email = 'zona@example.com';
    ```
-6. **Żona będzie widzieć wszystkie dane** z tego household (RLS)
+5. Żona widzi wszystkie dane household (RLS).
+
+## Bezpieczeństwo — dlaczego "Confirm email = ON"
+
+Trigger `handle_new_user` w migracji 005 identyfikuje "stary" profil po emailu i przepina do niego nowy `auth.users.id`, żeby zachować `household_id`. Bez potwierdzenia emaila ktoś obcy mógłby zarejestrować się z cudzym adresem i przejąć cudze finanse. **Confirm email = ON** gwarantuje, że konto powstaje dopiero gdy właściciel adresu kliknie w link potwierdzający.
 
 ## Testowanie
 
-### Test 1: Logowanie przez Google
-- [ ] Klikam przycisk "Zaloguj się przez Google"
-- [ ] Pojawia się popup Google
-- [ ] Po zalogowaniu wracam do aplikacji
-- [ ] Widzę swoje dane (transakcje, budżety, etc.)
+### Test 1: Rejestracja
+- [ ] Na ekranie logowania klikam "Nie masz konta? Zarejestruj się"
+- [ ] Wypełniam email, hasło (≥ 8 znaków), potwierdzenie
+- [ ] Pojawia się komunikat "Sprawdź skrzynkę email…"
+- [ ] Klikam link w emailu → wracam do aplikacji jako zalogowany
 
-### Test 2: Wylogowanie
-- [ ] Klikam przycisk Wyloguj (w profilu)
-- [ ] Sesja czyści się
-- [ ] Powraca mnie na LoginPage
+### Test 2: Logowanie
+- [ ] Wpisuję email + hasło
+- [ ] Zostaję zalogowany, widzę swoje dane
 
-### Test 3: RLS — dostęp do obcych danych
-- [ ] W Supabase SQL Editor, klonem to jako inny użytkownik:
+### Test 3: Reset hasła
+- [ ] Klikam "Zapomniałeś hasła?"
+- [ ] Wpisuję email
+- [ ] Pojawia się komunikat informacyjny
+- [ ] Klikam link w emailu, ustawiam nowe hasło
+
+### Test 4: RLS — dostęp do obcych danych
+- [ ] Po zalogowaniu wykonaj w SQL Editor (jako ten user):
   ```sql
-  SELECT * FROM public.transakcje 
-  WHERE household_id != auth.uid()::uuid;
+  SELECT COUNT(*) FROM public.transakcje
+   WHERE household_id NOT IN (
+     SELECT household_id FROM public.profiles WHERE id = auth.uid()
+   );
   ```
-- [ ] **Powinno zwrócić 0 wierszy** (RLS blokuje dostęp)
-
-### Test 4: Multi-household
-- [ ] Utwórz 2 households (Rodzina A, Rodzina B)
-- [ ] Zaloguj 2 różnych użytkowników z różnych households
-- [ ] Każdy widzi tylko swoje dane
+- [ ] Powinno zwrócić **0** (RLS blokuje dostęp do cudzych household).
 
 ## Troubleshooting
 
 | Problem | Rozwiązanie |
 |---------|-------------|
-| "OAuth credentials error" | Sprawdź Client ID w `.env.local` |
-| Profil nie tworzył się | Sprawdź trigger `handle_new_user` w SQL Editor |
-| RLS: nie widać danych | Sprawdź czy `household_id` jest null w profilu |
-| Google login pusty | Sprawdź redirect URL w Google Cloud Console |
+| "Invalid login credentials" | Zły email/hasło albo email nie został potwierdzony |
+| "Email not confirmed" | Klient nie kliknął linku z emaila — sprawdź skrzynkę, spam |
+| Profil nie utworzony | Sprawdź trigger `handle_new_user` (migracja 005) |
+| Brak widocznych danych | Sprawdź `profiles.household_id` — może być NULL (admin musi przypisać) |
 | 403 Forbidden | Użytkownik nie należy do tego household (RLS) |
-
-## Następne kroki (Phase 4)
-
-- ✅ Phase 3: Autentykacja (DONE)
-- 📋 Phase 4: Optymalizacja
-  - Dodanie offline support z sync
-  - Performance improvements
-  - Error handling
-  - Notification system
 
 ---
 
-**Dokumentacja SQL:**
-- [003_authentication_phase3.sql](../migration/003_authentication_phase3.sql) — migracja RLS i profiles
-- [Supabase RLS Docs](https://supabase.com/docs/guides/auth/row-level-security)
-
-**Czytelna lista komponentów:**
-- [src/contexts/AuthContext.jsx](../src/contexts/AuthContext.jsx) — zarządzanie stanem auth
-- [src/components/LoginPage.jsx](../src/components/LoginPage.jsx) — ekran logowania
-- [src/services/api.js](../src/services/api.js) — API z dynamic household_id
+**Powiązane pliki:**
+- [migration/003_authentication_phase3.sql](../migration/003_authentication_phase3.sql) — RLS + profiles (bez zmian)
+- [migration/005_email_password_auth.sql](../migration/005_email_password_auth.sql) — migracja triggera
+- [src/contexts/AuthContext.jsx](../src/contexts/AuthContext.jsx) — stan auth, signIn/signUp/resetPassword
+- [src/components/LoginPage.jsx](../src/components/LoginPage.jsx) — formularz logowania
+- [src/services/api.js](../src/services/api.js) — API ze wspieraniem RLS
+- [Supabase Auth Docs](https://supabase.com/docs/guides/auth)
