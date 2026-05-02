@@ -37,20 +37,30 @@ const MODES = {
   SIGNIN: 'signin',
   SIGNUP: 'signup',
   RESET: 'reset',
+  NEW_PASSWORD: 'new_password',
 };
 
 export default function LoginPage() {
   const {
     isLoading, error, setError, infoMessage, setInfoMessage, sessionExpired,
-    signIn, signUp, resetPassword,
+    isRecoveringPassword,
+    signIn, signUp, resetPassword, updatePassword, cancelPasswordRecovery,
   } = useAuth();
 
-  const [mode, setMode] = useState(MODES.SIGNIN);
+  const [mode, setMode] = useState(isRecoveringPassword ? MODES.NEW_PASSWORD : MODES.SIGNIN);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isRecoveringPassword) {
+      setMode(MODES.NEW_PASSWORD);
+      setPassword('');
+      setPasswordConfirm('');
+    }
+  }, [isRecoveringPassword]);
 
   const switchMode = (newMode) => {
     setMode(newMode);
@@ -61,6 +71,17 @@ export default function LoginPage() {
   };
 
   const validate = () => {
+    if (mode === MODES.NEW_PASSWORD) {
+      if (password.length < 8) {
+        setError('Hasło musi mieć co najmniej 8 znaków.');
+        return false;
+      }
+      if (password !== passwordConfirm) {
+        setError('Hasła nie są identyczne.');
+        return false;
+      }
+      return true;
+    }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setError('Nieprawidłowy adres email.');
       return false;
@@ -85,6 +106,7 @@ export default function LoginPage() {
       if (mode === MODES.SIGNIN) await signIn(email, password);
       else if (mode === MODES.SIGNUP) await signUp(email, password, displayName);
       else if (mode === MODES.RESET) await resetPassword(email);
+      else if (mode === MODES.NEW_PASSWORD) await updatePassword(password);
     } finally {
       setSubmitting(false);
     }
@@ -107,12 +129,14 @@ export default function LoginPage() {
     [MODES.SIGNIN]: 'Zaloguj się',
     [MODES.SIGNUP]: 'Zarejestruj się',
     [MODES.RESET]: 'Wyślij link do resetu',
+    [MODES.NEW_PASSWORD]: 'Ustaw nowe hasło',
   }[mode];
 
   const title = {
     [MODES.SIGNIN]: 'Zaloguj się, aby zarządzać finansami',
     [MODES.SIGNUP]: 'Utwórz konto',
     [MODES.RESET]: 'Zresetuj hasło',
+    [MODES.NEW_PASSWORD]: 'Ustaw nowe hasło',
   }[mode];
 
   return (
@@ -190,28 +214,32 @@ export default function LoginPage() {
               </div>
             )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="ty@example.com"
-                autoComplete="email"
-                required
-                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
-              />
-            </div>
+            {mode !== MODES.NEW_PASSWORD && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="ty@example.com"
+                  autoComplete="email"
+                  required
+                  className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
+                />
+              </div>
+            )}
 
             {mode !== MODES.RESET && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Hasło</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {mode === MODES.NEW_PASSWORD ? 'Nowe hasło' : 'Hasło'}
+                </label>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Minimum 8 znaków"
-                  autoComplete={mode === MODES.SIGNUP ? 'new-password' : 'current-password'}
+                  autoComplete={mode === MODES.SIGNIN ? 'current-password' : 'new-password'}
                   required
                   minLength={8}
                   className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent"
@@ -219,7 +247,7 @@ export default function LoginPage() {
               </div>
             )}
 
-            {mode === MODES.SIGNUP && (
+            {(mode === MODES.SIGNUP || mode === MODES.NEW_PASSWORD) && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Powtórz hasło</label>
                 <input
@@ -262,6 +290,11 @@ export default function LoginPage() {
             {mode === MODES.RESET && (
               <button onClick={() => switchMode(MODES.SIGNIN)} className="hover:text-indigo-600 hover:underline">
                 ← Powrót do logowania
+              </button>
+            )}
+            {mode === MODES.NEW_PASSWORD && (
+              <button onClick={cancelPasswordRecovery} className="hover:text-indigo-600 hover:underline">
+                Anuluj
               </button>
             )}
           </div>
