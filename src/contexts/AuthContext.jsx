@@ -30,15 +30,27 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [infoMessage, setInfoMessage] = useState(null);
+  const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
 
   useEffect(() => {
+    // Supabase puts the recovery token in the URL hash; detect it before the
+    // initial getSession() so we can gate the UI on a "set new password" form
+    // instead of dropping the user straight into the app.
+    if (typeof window !== 'undefined' && window.location.hash.includes('type=recovery')) {
+      setIsRecoveringPassword(true);
+    }
+
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setIsLoading(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
-      if (event === 'SIGNED_IN') {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveringPassword(true);
+        setError(null);
+        setSessionExpired(false);
+      } else if (event === 'SIGNED_IN') {
         setError(null);
         setSessionExpired(false);
       }
@@ -93,6 +105,32 @@ export function AuthProvider({ children }) {
     return true;
   }, []);
 
+  const updatePassword = useCallback(async (newPassword) => {
+    setError(null);
+    setInfoMessage(null);
+    const { error: err } = await supabase.auth.updateUser({ password: newPassword });
+    if (err) {
+      setError(translateAuthError(err));
+      return false;
+    }
+    setIsRecoveringPassword(false);
+    if (typeof window !== 'undefined' && window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    setInfoMessage('Hasło zostało zmienione.');
+    return true;
+  }, []);
+
+  const cancelPasswordRecovery = useCallback(async () => {
+    setIsRecoveringPassword(false);
+    setError(null);
+    setInfoMessage(null);
+    if (typeof window !== 'undefined' && window.location.hash) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    await supabase.auth.signOut();
+  }, []);
+
   const logout = useCallback(async (reason = null) => {
     if (reason === 'expired') setSessionExpired(true);
     await supabase.auth.signOut();
@@ -116,9 +154,12 @@ export function AuthProvider({ children }) {
     infoMessage,
     setInfoMessage,
     sessionExpired,
+    isRecoveringPassword,
     signIn,
     signUp,
     resetPassword,
+    updatePassword,
+    cancelPasswordRecovery,
     logout,
   };
 

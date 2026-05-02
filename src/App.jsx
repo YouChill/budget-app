@@ -996,7 +996,7 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
 // GŁÓWNA APLIKACJA
 // ============================================
 export default function BudgetApp() {
-  const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading, isRecoveringPassword, logout } = useAuth();
   const { addToast } = useToast();
   const { isOffline } = useOffline();
 
@@ -1035,10 +1035,10 @@ export default function BudgetApp() {
   const { budgets, refresh: refreshBudgets } = useBudgets({
     month: currentPeriod.month,
     year: currentPeriod.year,
-    enabled: isAuthenticated && !isOffline,
+    enabled: isAuthenticated && !isRecoveringPassword && !isOffline,
   });
 
-  const availableYears = useAvailableYears({ enabled: isAuthenticated && !isOffline });
+  const availableYears = useAvailableYears({ enabled: isAuthenticated && !isRecoveringPassword && !isOffline });
 
   // Auto-stop pulse animation after 5 seconds
   // Handle yearly view toggle
@@ -1295,7 +1295,7 @@ export default function BudgetApp() {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || isRecoveringPassword) {
     return <LoginPage />;
   }
 
