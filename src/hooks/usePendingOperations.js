@@ -33,11 +33,14 @@ export function usePendingOperations({ isOffline, onSynced, addToast }) {
           }
           if (result.failed > 0) {
             addToastRef.current?.(
-              `Nie udało się zsynchronizować ${result.failed} operacji`,
+              `Nie udało się zsynchronizować ${result.failed} operacji — spróbujemy ponownie`,
               'error'
             );
           }
-          setPendingCount(0);
+          // Operacje, które się nie powiodły (i nie zostały porzucone), zostają
+          // w kolejce do ponowienia — odzwierciedlamy to w liczniku.
+          const stillPending = Math.max(0, (result.failed || 0) - (result.dropped || 0));
+          setPendingCount(stillPending);
           await onSyncedRef.current?.();
         } finally {
           setIsSyncing(false);

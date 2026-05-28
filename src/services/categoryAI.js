@@ -13,9 +13,17 @@ export const isAIEnabled = () => import.meta.env.VITE_AI_ENABLED === 'true';
  * Klucz OpenAI nigdy nie opuszcza serwera.
  */
 async function generateEmbeddingsBatch(texts) {
+  // Dołącz token sesji — endpoint /api/embeddings wymaga uwierzytelnienia,
+  // aby nie był otwartym proxy do płatnego API OpenAI.
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers = { 'Content-Type': 'application/json' };
+  if (session?.access_token) {
+    headers.Authorization = `Bearer ${session.access_token}`;
+  }
+
   const response = await fetch('/api/embeddings', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ texts }),
   });
 

@@ -54,17 +54,31 @@ export function removeFromQueue(operationId) {
   return queue;
 }
 
+// Maksymalna liczba prób synchronizacji jednej operacji. Po jej przekroczeniu
+// operacja jest porzucana, aby trwale błędny wpis nie blokował kolejki w
+// nieskończoność.
+const MAX_ATTEMPTS = 3;
+
 /**
  * Process all queued operations sequentially via Supabase API.
- * Returns { succeeded: number, failed: number, errors: string[] }
+ *
+ * Operacje zakończone sukcesem są usuwane z kolejki. Operacje, które się nie
+ * powiodły (np. chwilowy błąd sieci), pozostają w kolejce z inkrementowanym
+ * licznikiem prób i zostaną ponowione przy następnej synchronizacji — dzięki
+ * temu nie tracimy danych użytkownika po nieudanym flushu. Dopiero po
+ * MAX_ATTEMPTS nieudanych prób wpis jest porzucany.
+ *
+ * Returns { succeeded: number, failed: number, dropped: number, errors: string[] }
  */
 export async function processQueue() {
   const queue = getQueue();
-  if (queue.length === 0) return { succeeded: 0, failed: 0, errors: [] };
+  if (queue.length === 0) return { succeeded: 0, failed: 0, dropped: 0, errors: [] };
 
   let succeeded = 0;
   let failed = 0;
+  let dropped = 0;
   const errors = [];
+  const remaining = [];
 
   for (const op of queue) {
     try {
@@ -73,12 +87,23 @@ export async function processQueue() {
     } catch (err) {
       failed++;
       errors.push(err.message || `Operacja ${op.action} nie powiodla sie`);
+      const attempts = (op.attempts || 0) + 1;
+      if (attempts < MAX_ATTEMPTS) {
+        remaining.push({ ...op, attempts });
+      } else {
+        dropped++;
+      }
     }
   }
 
-  // Clear the queue regardless — failed items should not retry indefinitely.
-  // The data will be refreshed from the server after sync.
-  clearQueue();
+  // Zachowaj nieudane (jeszcze ponowialne) operacje; jeśli zapis się nie uda
+  // (np. quota), w ostateczności wyczyść, by nie zablokować aplikacji.
+  try {
+    if (remaining.length > 0) saveQueue(remaining);
+    else clearQueue();
+  } catch {
+    clearQueue();
+  }
 
-  return { succeeded, failed, errors };
+  return { succeeded, failed, dropped, errors };
 }

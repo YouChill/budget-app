@@ -159,7 +159,9 @@ export default function CategoryCharts({ transakcje = [], budgets = [], currentP
 
     wydatki.forEach((t) => {
       const kat = t.kategoria || 'Inne';
-      grouped[kat] = (grouped[kat] || 0) + Number(t.kwota);
+      const v = Math.abs(Number(t.kwota));
+      if (!Number.isFinite(v)) return; // pomiń puste/niepoprawne kwoty
+      grouped[kat] = (grouped[kat] || 0) + v;
     });
 
     const total = Object.values(grouped).reduce((s, v) => s + v, 0);
@@ -184,6 +186,23 @@ export default function CategoryCharts({ transakcje = [], budgets = [], currentP
   }, [pieData]);
 
   const totalWydatki = pieData.reduce((s, d) => s + d.value, 0);
+
+  // Mapa budżetów per kategoria (zbudowana raz) — unika skanowania O(N·M)
+  // przy każdym renderze listy. Budżety z hooka useBudgets są już zawężone do
+  // bieżącego okresu, więc dopuszczamy też roczne (miesiac = null).
+  const budgetByCategory = useMemo(() => {
+    const map = new Map();
+    (budgets || []).forEach((b) => {
+      if (currentPeriod && b.zakres !== 'yearly' && b.miesiac != null) {
+        if (Number(b.miesiac) !== Number(currentPeriod.month) ||
+            Number(b.rok) !== Number(currentPeriod.year)) {
+          return;
+        }
+      }
+      if (!map.has(b.kategoria)) map.set(b.kategoria, b);
+    });
+    return map;
+  }, [budgets, currentPeriod]);
 
   // ---- Stan pusty ----
   if (pieData.length === 0) {
@@ -210,11 +229,7 @@ export default function CategoryCharts({ transakcje = [], budgets = [], currentP
           </h2>
           <p className="text-sm text-gray-500 mt-0.5">
             Łącznie: {formatCurrency(totalWydatki)} w {pieData.length}{' '}
-            {pieData.length === 1
-              ? 'kategorii'
-              : pieData.length < 5
-              ? 'kategoriach'
-              : 'kategoriach'}
+            {pieData.length === 1 ? 'kategorii' : 'kategoriach'}
           </p>
         </div>
         <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
@@ -319,9 +334,13 @@ export default function CategoryCharts({ transakcje = [], budgets = [], currentP
         {/* ---- Szczegółowa lista kategorii ---- */}
         <div className="mt-6 space-y-2">
           {pieData.map((item, index) => {
-            const budgetForCat = (budgets || []).find(b => b.kategoria === item.name && (!currentPeriod || (Number(b.miesiac) === Number(currentPeriod.month) && Number(b.rok) === Number(currentPeriod.year))));
-            const limit = budgetForCat ? Number(budgetForCat.limit) : null;
-            const percent = limit ? Math.min(item.value / limit, 1) : null;
+            const budgetForCat = budgetByCategory.get(item.name);
+            const rawLimit = budgetForCat ? Number(budgetForCat.limit) : null;
+            // Tylko dodatni limit pozwala policzyć sensowny procent (chroni
+            // przed dzieleniem przez 0 / NaN / Infinity).
+            const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : null;
+            const ratio = limit !== null ? item.value / limit : null;
+            const percent = ratio !== null ? Math.min(ratio, 1) : null;
             const zrodlo = budgetForCat ? budgetForCat.zrodlo : null;
             const rocznyLimit = budgetForCat ? budgetForCat.rocznyLimit : null;
             let barColor = 'bg-emerald-400';
@@ -350,11 +369,11 @@ export default function CategoryCharts({ transakcje = [], budgets = [], currentP
                   {limit !== null && (
                     <div className="mt-2">
                       <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                        <div className={`${barColor} h-2`} style={{ width: `${Math.min((item.value / limit) * 100, 100)}%` }} />
+                        <div className={`${barColor} h-2`} style={{ width: `${Math.min(ratio * 100, 100)}%` }} />
                       </div>
                       <div className="flex items-center justify-between text-xs text-gray-500 mt-1">
                         <div className="flex items-center gap-1.5">
-                          <span>{Math.round((item.value / limit) * 100)}% z {formatCurrency(limit)}</span>
+                          <span>{Math.round(ratio * 100)}% z {formatCurrency(limit)}</span>
                           {zrodlo === 'monthly' && rocznyLimit !== null && (
                             <span className="text-amber-600">(nadpisany, roczny: {formatCurrency(rocznyLimit)})</span>
                           )}
@@ -362,9 +381,9 @@ export default function CategoryCharts({ transakcje = [], budgets = [], currentP
                             <span className="text-purple-500">(roczny)</span>
                           )}
                         </div>
-                        {item.value / limit >= 1 ? (
+                        {ratio >= 1 ? (
                           <span className="text-rose-600 font-semibold">Przekroczono</span>
-                        ) : item.value / limit >= 0.8 ? (
+                        ) : ratio >= 0.8 ? (
                           <span className="text-amber-600 font-semibold">Blisko limitu</span>
                         ) : null}
                       </div>

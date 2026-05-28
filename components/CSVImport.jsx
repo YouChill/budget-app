@@ -87,19 +87,50 @@ const RULES_STORAGE_KEY = 'csv_recognition_rules';
 
 // ─── Date normalization ───────────────────────────────────────────────────────
 // Accepts: "YYYY-MM-DD", "DD.MM.YYYY", "DD-MM-YYYY"
-// Returns ISO string "YYYY-MM-DD" or null for invalid input
+// Returns ISO string "YYYY-MM-DD" or null for invalid input.
+//
+// Walidujemy przez rekonstrukcję daty i porównanie składowych — dzięki temu
+// nieistniejące daty (np. 30.02, 31.04) są odrzucane niezależnie od tego, czy
+// silnik JS „przewija" je na kolejny miesiąc.
+const isValidIsoDate = (iso) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return (
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === m - 1 &&
+    dt.getUTCDate() === d
+  );
+};
+
 export const normalizeDateToISO = (dateStr) => {
   if (!dateStr) return null;
   const str = dateStr.toString().trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-    return isNaN(new Date(str).getTime()) ? null : str;
+    return isValidIsoDate(str) ? str : null;
   }
   const match = str.match(/^(\d{2})[.\-](\d{2})[.\-](\d{4})$/);
   if (match) {
     const iso = `${match[3]}-${match[2]}-${match[1]}`;
-    return isNaN(new Date(iso).getTime()) ? null : iso;
+    return isValidIsoDate(iso) ? iso : null;
   }
   return null;
+};
+
+// ─── Amount parsing ────────────────────────────────────────────────────────────
+// Akceptuje formaty z separatorem tysięcy (kropka) i dziesiętnym (przecinek),
+// np. "1.234,56" → 1234.56, a także zwykłe "-150,00" → -150. Liczby przekazane
+// jako number są zwracane bez zmian (bez ryzyka ponownego przeparsowania).
+export const parseKwota = (kwotaStr) => {
+  if (kwotaStr == null || kwotaStr === '') return 0;
+  if (typeof kwotaStr === 'number') return isNaN(kwotaStr) ? 0 : kwotaStr;
+  let str = kwotaStr.toString().trim().replace(/[\s\u00A0]/g, '');
+  if (/\d{1,3}(\.\d{3})+(,\d+)?$/.test(str)) {
+    str = str.replace(/\./g, '').replace(',', '.');
+  } else {
+    str = str.replace(',', '.');
+  }
+  const num = parseFloat(str);
+  return isNaN(num) ? 0 : num;
 };
 
 // ─── PKO BP format detection & parsing ───────────────────────────────────────
@@ -351,10 +382,12 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
     setAiLoading(true);
     setAiMatchCount(0);
 
+    let cancelled = false;
     const run = async () => {
       try {
         const descriptions = transactions.map(tx => tx.opis || '');
         const aiResults = await categoryAI.categorizeWithAI(descriptions);
+        if (cancelled) return;
 
         let matched = 0;
         setTransactions(prev =>
@@ -373,13 +406,14 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
         );
         setAiMatchCount(matched);
       } catch (err) {
-        console.error('AI categorization pass failed:', err);
+        if (!cancelled) console.error('AI categorization pass failed:', err);
       } finally {
-        setAiLoading(false);
+        if (!cancelled) setAiLoading(false);
       }
     };
 
     run();
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
@@ -506,19 +540,6 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
     setColumnMapping(prev => ({ ...prev, [field]: value }));
   };
 
-  // ── Amount parsing ────────────────────────────────────────────────────────────
-
-  const parseKwota = (kwotaStr) => {
-    if (!kwotaStr) return 0;
-    let str = kwotaStr.toString().trim().replace(/[\s\u00A0]/g, '');
-    if (/\d{1,3}(\.\d{3})+(,\d+)?$/.test(str)) {
-      str = str.replace(/\./g, '').replace(',', '.');
-    } else {
-      str = str.replace(',', '.');
-    }
-    const num = parseFloat(str);
-    return isNaN(num) ? 0 : num;
-  };
 
   // ── Prepare transactions (step 2 → 3) ────────────────────────────────────────
 
@@ -532,10 +553,13 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
       return false;
     }
 
-    const meta = {};
     const hasSplitColumns = columnMapping.uznania;
+    let skipped = 0;
 
-    const processed = csvData
+    // Buduj transakcję wraz z jej metadanymi w jednym obiekcie, a meta zindeksuj
+    // dopiero po odfiltrowaniu wierszy z błędną datą — dzięki temu klucze meta
+    // pozostają wyrównane do finalnej tablicy transakcji (brak rozjazdu).
+    const processedWithMeta = csvData
       .filter(row => {
         if (!row[columnMapping.data]) return false;
         if (hasSplitColumns) {
@@ -545,21 +569,28 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
         }
         return row[columnMapping.kwota];
       })
-      .map((row, idx) => {
+      .map((row) => {
         const opis = columnMapping.opis ? row[columnMapping.opis] : '';
         let kwotaNum;
+        let typ;
 
         if (hasSplitColumns) {
+          // Kolumna obciążeń = wydatek (zawsze ujemny), kolumna uznań = przychód
+          // (zawsze dodatni) — niezależnie od znaku w pliku banku.
           const debitStr = columnMapping.kwota ? row[columnMapping.kwota]?.toString().trim() : '';
           const creditStr = row[columnMapping.uznania]?.toString().trim() || '';
-          kwotaNum = creditStr
-            ? Math.abs(parseKwota(creditStr))
-            : parseKwota(debitStr);
+          if (creditStr) {
+            kwotaNum = Math.abs(parseKwota(creditStr));
+            typ = 'Przychód';
+          } else {
+            kwotaNum = -Math.abs(parseKwota(debitStr));
+            typ = 'Wydatek';
+          }
         } else {
           kwotaNum = parseKwota(row[columnMapping.kwota]);
+          typ = kwotaNum < 0 ? 'Wydatek' : 'Przychód';
         }
 
-        const typ = kwotaNum < 0 ? 'Wydatek' : 'Przychód';
         const categoryData = categorizeDescription(opis, recognitionRules);
         const rawKategoria = categoryData?.kategoria || 'Inne';
         const rawPodkategoria = categoryData?.podkategoria || 'Nieprzewidziane';
@@ -571,14 +602,31 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
             csvRawFields[key] = value;
           }
         }
-        meta[idx] = { _originalOpis: opis, _csvRaw: csvRawFields };
 
         const isoDate = normalizeDateToISO(row[columnMapping.data]);
-        if (!isoDate) return null;
+        if (!isoDate) {
+          skipped++;
+          return null;
+        }
 
-        return { data: isoDate, kwota: kwotaNum, opis, kategoria: validated.kategoria, podkategoria: validated.podkategoria, typ };
+        return {
+          tx: { data: isoDate, kwota: kwotaNum, opis, kategoria: validated.kategoria, podkategoria: validated.podkategoria, typ },
+          meta: { _originalOpis: opis, _csvRaw: csvRawFields },
+        };
       })
       .filter(Boolean);
+
+    const processed = processedWithMeta.map(x => x.tx);
+    const meta = {};
+    processedWithMeta.forEach((x, i) => { meta[i] = x.meta; });
+
+    if (processed.length === 0) {
+      setError('Brak poprawnych wierszy do importu (sprawdź format daty: YYYY-MM-DD lub DD.MM.YYYY)');
+      return false;
+    }
+    if (skipped > 0) {
+      setError(`Pominięto ${skipped} ${skipped === 1 ? 'wiersz' : 'wierszy'} z nieprawidłową datą.`);
+    }
 
     setTransactions(processed);
     setTxMeta(meta);
@@ -640,6 +688,8 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
     setIsLoading(true);
     try {
       const normalizedTransactions = transactions.map(tx => {
+        // tx.kwota jest już liczbą (z przygotowania lub onBlur); parseKwota
+        // przepuszcza liczby bez zmian, więc nie psuje wartości typu 1.234.
         const kwota = parseKwota(tx.kwota);
         return {
           data: tx.data,
@@ -647,7 +697,9 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
           opis: tx.opis,
           kategoria: tx.kategoria,
           podkategoria: tx.podkategoria,
-          typ: kwota < 0 ? 'Wydatek' : 'Przychód',
+          // Preferuj typ ustalony w podglądzie (zsynchronizowany ze znakiem),
+          // a tylko w razie braku wyprowadź ze znaku kwoty.
+          typ: tx.typ || (kwota < 0 ? 'Wydatek' : 'Przychód'),
           osoba: selectedOsoba,
         };
       });
@@ -674,17 +726,31 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
   // ── Edit / delete transactions ────────────────────────────────────────────────
 
   const handleEditTransaction = useCallback((index, field, value) => {
-    setTransactions(prev => prev.map((tx, i) => i === index ? { ...tx, [field]: value } : tx));
+    setTransactions(prev => prev.map((tx, i) => {
+      if (i !== index) return tx;
+      const updated = { ...tx, [field]: value };
+      // Gdy zmienia się kwota, utrzymuj typ zgodny ze znakiem, aby listy
+      // kategorii/podkategorii (filtrowane po typ) pozostały spójne.
+      if (field === 'kwota') {
+        const num = typeof value === 'number' ? value : parseKwota(value);
+        if (!isNaN(num) && num !== 0) updated.typ = num < 0 ? 'Wydatek' : 'Przychód';
+      }
+      return updated;
+    }));
   }, []);
 
   const handleDeleteTransaction = (index) => {
     setTransactions(prev => prev.filter((_, i) => i !== index));
+    // Przebuduj meta zachowując wyrównanie do nowych, zwartych indeksów tablicy
+    // transakcji — iterujemy po wszystkich istniejących kluczach meta, pomijamy
+    // usuwany indeks i przesuwamy kolejne w dół.
     setTxMeta(prev => {
+      const keys = Object.keys(prev).map(Number).sort((a, b) => a - b);
       const next = {};
       let newIdx = 0;
-      for (let i = 0; i < Object.keys(prev).length + 1; i++) {
-        if (i === index) continue;
-        if (prev[i]) next[newIdx] = prev[i];
+      for (const k of keys) {
+        if (k === index) continue;
+        next[newIdx] = prev[k];
         newIdx++;
       }
       return next;

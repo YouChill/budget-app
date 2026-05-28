@@ -90,10 +90,23 @@ async function getHouseholdId() {
 }
 
 /**
- * Obsługuje błędy 401/403 — redirect na login
+ * Wykrywa błędy wygasłej/nieważnej sesji. PostgREST zwraca obiekt błędu bez
+ * pola `.status`, więc poza HTTP 401/403 sprawdzamy też kod JWT (PGRST301)
+ * oraz komunikat — inaczej automatyczne wylogowanie nigdy by się nie wyzwoliło.
+ */
+function isSessionError(error) {
+  if (!error) return false;
+  if (error.status === 401 || error.status === 403) return true;
+  if (error.code === 'PGRST301') return true; // JWT expired / invalid
+  const msg = (error.message || '').toLowerCase();
+  return msg.includes('jwt expired') || msg.includes('invalid token') || msg.includes('token is expired');
+}
+
+/**
+ * Obsługuje błędy autoryzacji — powiadamia AuthContext o wygaśnięciu sesji.
  */
 function handleAuthError(error) {
-  if (error?.status === 401 || error?.status === 403) {
+  if (isSessionError(error)) {
     // Notify AuthContext to handle logout with session-expired reason
     window.dispatchEvent(new CustomEvent('auth:session-expired'));
   }
@@ -111,93 +124,77 @@ export async function getTransakcje(miesiac, rok) {
     ? `${rok + 1}-01-01`
     : `${rok}-${String(miesiac + 1).padStart(2, '0')}-01`;
 
-  try {
-    const { data, error } = await supabase
-      .from('transakcje')
-      .select('id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz')
-      .eq('household_id', householdId)
-      .gte('data', startDate)
-      .lt('data', endDate)
-      .order('data', { ascending: false });
+  const { data, error } = await supabase
+    .from('transakcje')
+    .select('id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz')
+    .eq('household_id', householdId)
+    .gte('data', startDate)
+    .lt('data', endDate)
+    .order('data', { ascending: false });
 
-    if (error) {
-      handleAuthError(error);
-    }
-    return data;
-  } catch (err) {
-    throw err;
+  if (error) {
+    handleAuthError(error);
   }
+  return data;
 }
 
 export async function addTransakcja(transakcja) {
   const householdId = await getHouseholdId();
-  try {
-    const { data, error } = await supabase
-      .from('transakcje')
-      .insert({
-        household_id: householdId,
-        data: transakcja.data,
-        typ: transakcja.typ,
-        kwota: Math.abs(transakcja.kwota),
-        kategoria: transakcja.kategoria,
-        podkategoria: transakcja.podkategoria || null,
-        osoba: transakcja.osoba,
-        komentarz: transakcja.komentarz || null,
-      })
-      .select('id')
-      .single();
+  const { data, error } = await supabase
+    .from('transakcje')
+    .insert({
+      household_id: householdId,
+      data: transakcja.data,
+      typ: transakcja.typ,
+      kwota: Math.abs(transakcja.kwota),
+      kategoria: transakcja.kategoria,
+      podkategoria: transakcja.podkategoria || null,
+      osoba: transakcja.osoba,
+      komentarz: transakcja.komentarz || null,
+    })
+    .select('id')
+    .single();
 
-    if (error) {
-      handleAuthError(error);
-    }
-    return { success: true, id: data.id };
-  } catch (err) {
-    throw err;
+  if (error) {
+    handleAuthError(error);
   }
+  return { success: true, id: data.id };
 }
 
 export async function updateTransakcja(id, transakcja) {
   const householdId = await getHouseholdId();
-  try {
-    const { error } = await supabase
-      .from('transakcje')
-      .update({
-        data: transakcja.data,
-        typ: transakcja.typ,
-        kwota: Math.abs(transakcja.kwota),
-        kategoria: transakcja.kategoria,
-        podkategoria: transakcja.podkategoria || null,
-        osoba: transakcja.osoba,
-        komentarz: transakcja.komentarz || null,
-      })
-      .eq('id', id)
-      .eq('household_id', householdId);
+  const { error } = await supabase
+    .from('transakcje')
+    .update({
+      data: transakcja.data,
+      typ: transakcja.typ,
+      kwota: Math.abs(transakcja.kwota),
+      kategoria: transakcja.kategoria,
+      podkategoria: transakcja.podkategoria || null,
+      osoba: transakcja.osoba,
+      komentarz: transakcja.komentarz || null,
+    })
+    .eq('id', id)
+    .eq('household_id', householdId);
 
-    if (error) {
-      handleAuthError(error);
-    }
-    return { success: true };
-  } catch (err) {
-    throw err;
+  if (error) {
+    handleAuthError(error);
   }
+  return { success: true };
 }
 
 export async function deleteTransakcja(id) {
   const householdId = await getHouseholdId();
-  try {
-    const { error } = await supabase
-      .from('transakcje')
-      .delete()
-      .eq('id', id)
-      .eq('household_id', householdId);
+  const { error } = await supabase
+    .from('transakcje')
+    .delete()
+    .eq('id', id)
+    .eq('household_id', householdId);
 
-    if (error) {
-      handleAuthError(error);
-    }
-    return { success: true };
-  } catch (err) {
-    throw err;
+  if (error) {
+    handleAuthError(error);
   }
+  return { success: true };
 }
 
 export async function addTransakcjeBatch(transakcje) {
@@ -217,19 +214,15 @@ export async function addTransakcjeBatch(transakcje) {
     };
   });
 
-  try {
-    const { data, error } = await supabase
-      .from('transakcje')
-      .insert(records)
-      .select('id');
+  const { data, error } = await supabase
+    .from('transakcje')
+    .insert(records)
+    .select('id');
 
-    if (error) {
-      handleAuthError(error);
-    }
-    return { success: true, count: data.length, ids: data.map(d => d.id) };
-  } catch (err) {
-    throw err;
+  if (error) {
+    handleAuthError(error);
   }
+  return { success: true, count: data.length, ids: data.map(d => d.id) };
 }
 
 // ═══════════════════════════════════════════
@@ -238,79 +231,67 @@ export async function addTransakcjeBatch(transakcje) {
 
 export async function getKategorie() {
   const householdId = await getHouseholdId();
-  try {
-    const { data, error } = await supabase
-      .from('kategorie')
-      .select('typ, kategoria, podkategoria')
-      .eq('household_id', householdId)
-      .order('typ')
-      .order('kategoria')
-      .order('podkategoria');
+  const { data, error } = await supabase
+    .from('kategorie')
+    .select('typ, kategoria, podkategoria')
+    .eq('household_id', householdId)
+    .order('typ')
+    .order('kategoria')
+    .order('podkategoria');
 
-    if (error) {
-      handleAuthError(error);
-    }
-
-    // Transform flat rows → nested { Wydatek: { cat: [subcats] }, Przychód: {...} }
-    const result = { Wydatek: {}, Przychód: {} };
-    for (const row of data) {
-      if (!result[row.typ]) result[row.typ] = {};
-      if (!result[row.typ][row.kategoria]) result[row.typ][row.kategoria] = [];
-      if (row.podkategoria) {
-        result[row.typ][row.kategoria].push(row.podkategoria);
-      }
-    }
-    return result;
-  } catch (err) {
-    throw err;
+  if (error) {
+    handleAuthError(error);
   }
+
+  // Transform flat rows → nested { Wydatek: { cat: [subcats] }, Przychód: {...} }
+  const result = { Wydatek: {}, Przychód: {} };
+  for (const row of data) {
+    if (!result[row.typ]) result[row.typ] = {};
+    if (!result[row.typ][row.kategoria]) result[row.typ][row.kategoria] = [];
+    if (row.podkategoria) {
+      result[row.typ][row.kategoria].push(row.podkategoria);
+    }
+  }
+  return result;
 }
 
 export async function addKategoria(typ, kategoria, podkategoria) {
   if (!typ || typeof typ !== 'string' || !typ.trim()) throw new Error('Nieprawidłowy typ kategorii');
   if (!kategoria || typeof kategoria !== 'string' || !kategoria.trim()) throw new Error('Nieprawidłowa nazwa kategorii');
   const householdId = await getHouseholdId();
-  try {
-    const { error } = await supabase
-      .from('kategorie')
-      .insert({
-        household_id: householdId,
-        typ,
-        kategoria,
-        podkategoria: podkategoria || null,
-      });
+  const { error } = await supabase
+    .from('kategorie')
+    .insert({
+      household_id: householdId,
+      typ,
+      kategoria,
+      podkategoria: podkategoria || null,
+    });
 
-    if (error) {
-      handleAuthError(error);
-    }
-    return { success: true };
-  } catch (err) {
-    throw err;
+  if (error) {
+    handleAuthError(error);
   }
+  return { success: true };
 }
 
 export async function deleteKategoria(typ, kategoria, podkategoria) {
   const householdId = await getHouseholdId();
-  try {
-    let query = supabase
-      .from('kategorie')
-      .delete()
-      .eq('household_id', householdId)
-      .eq('typ', typ)
-      .eq('kategoria', kategoria);
+  let query = supabase
+    .from('kategorie')
+    .delete()
+    .eq('household_id', householdId)
+    .eq('typ', typ)
+    .eq('kategoria', kategoria);
 
-    if (podkategoria) {
-      query = query.eq('podkategoria', podkategoria);
-    }
-
-    const { error } = await query;
-    if (error) {
-      handleAuthError(error);
-    }
-    return { success: true };
-  } catch (err) {
-    throw err;
+  if (podkategoria) {
+    query = query.eq('podkategoria', podkategoria);
   }
+
+  const { error } = await query;
+  if (error) {
+    handleAuthError(error);
+  }
+  return { success: true };
 }
 
 // ═══════════════════════════════════════════
@@ -319,57 +300,45 @@ export async function deleteKategoria(typ, kategoria, podkategoria) {
 
 export async function getOsoby() {
   const householdId = await getHouseholdId();
-  try {
-    const { data, error } = await supabase
-      .from('osoby')
-      .select('nazwa')
-      .eq('household_id', householdId)
-      .order('nazwa');
+  const { data, error } = await supabase
+    .from('osoby')
+    .select('nazwa')
+    .eq('household_id', householdId)
+    .order('nazwa');
 
-    if (error) {
-      handleAuthError(error);
-    }
-    return data.map(o => o.nazwa);
-  } catch (err) {
-    throw err;
+  if (error) {
+    handleAuthError(error);
   }
+  return data.map(o => o.nazwa);
 }
 
 export async function addOsoba(osoba) {
   const householdId = await getHouseholdId();
-  try {
-    const { error } = await supabase
-      .from('osoby')
-      .insert({
-        household_id: householdId,
-        nazwa: osoba,
-      });
+  const { error } = await supabase
+    .from('osoby')
+    .insert({
+      household_id: householdId,
+      nazwa: osoba,
+    });
 
-    if (error) {
-      handleAuthError(error);
-    }
-    return { success: true };
-  } catch (err) {
-    throw err;
+  if (error) {
+    handleAuthError(error);
   }
+  return { success: true };
 }
 
 export async function deleteOsoba(osoba) {
   const householdId = await getHouseholdId();
-  try {
-    const { error } = await supabase
-      .from('osoby')
-      .delete()
-      .eq('household_id', householdId)
-      .eq('nazwa', osoba);
+  const { error } = await supabase
+    .from('osoby')
+    .delete()
+    .eq('household_id', householdId)
+    .eq('nazwa', osoba);
 
-    if (error) {
-      handleAuthError(error);
-    }
-    return { success: true };
-  } catch (err) {
-    throw err;
+  if (error) {
+    handleAuthError(error);
   }
+  return { success: true };
 }
 
 // ═══════════════════════════════════════════
@@ -393,154 +362,138 @@ function transformBudget(b, zrodlo) {
 
 export async function getBudgets(miesiac, rok) {
   const householdId = await getHouseholdId();
-  try {
-    // Get monthly budgets for the specific month
-    const { data: monthly, error: monthlyError } = await supabase
-      .from('budzety')
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('zakres', 'monthly')
-      .eq('miesiac', miesiac)
-      .eq('rok', rok);
+  // Get monthly budgets for the specific month
+  const { data: monthly, error: monthlyError } = await supabase
+    .from('budzety')
+    .select('*')
+    .eq('household_id', householdId)
+    .eq('zakres', 'monthly')
+    .eq('miesiac', miesiac)
+    .eq('rok', rok);
 
-    if (monthlyError) {
-      handleAuthError(monthlyError);
-    }
+  if (monthlyError) {
+    handleAuthError(monthlyError);
+  }
 
-    // Get yearly budgets
-    const { data: yearly, error: yearlyError } = await supabase
-      .from('budzety')
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('zakres', 'yearly')
-      .eq('rok', rok);
+  // Get yearly budgets
+  const { data: yearly, error: yearlyError } = await supabase
+    .from('budzety')
+    .select('*')
+    .eq('household_id', householdId)
+    .eq('zakres', 'yearly')
+    .eq('rok', rok);
 
-    if (yearlyError) {
-      handleAuthError(yearlyError);
-    }
+  if (yearlyError) {
+    handleAuthError(yearlyError);
+  }
 
-    // Resolve hierarchy: monthly overrides yearly
-    const resolved = [];
-    const monthlyByKey = new Map();
+  // Resolve hierarchy: monthly overrides yearly
+  const resolved = [];
+  const monthlyByKey = new Map();
 
-    for (const b of monthly) {
-      const key = `${b.kategoria}|${b.osoba || ''}`;
-      monthlyByKey.set(key, b);
-      resolved.push(transformBudget(b, 'monthly'));
-    }
+  for (const b of monthly) {
+    const key = `${b.kategoria}|${b.osoba || ''}`;
+    monthlyByKey.set(key, b);
+    resolved.push(transformBudget(b, 'monthly'));
+  }
 
-    for (const b of yearly) {
-      const key = `${b.kategoria}|${b.osoba || ''}`;
-      if (!monthlyByKey.has(key)) {
-        resolved.push(transformBudget(b, 'yearly'));
-      } else {
-        // Monthly exists — attach yearly info
-        const existing = resolved.find(r =>
-          r.kategoria === b.kategoria && (r.osoba || '') === (b.osoba || '') && r.zrodlo === 'monthly'
-        );
-        if (existing) {
-          existing.rocznyLimit = b.limit_kwota;
-          existing.roczneNotatki = b.notatki;
-        }
+  for (const b of yearly) {
+    const key = `${b.kategoria}|${b.osoba || ''}`;
+    if (!monthlyByKey.has(key)) {
+      resolved.push(transformBudget(b, 'yearly'));
+    } else {
+      // Monthly exists — attach yearly info
+      const existing = resolved.find(r =>
+        r.kategoria === b.kategoria && (r.osoba || '') === (b.osoba || '') && r.zrodlo === 'monthly'
+      );
+      if (existing) {
+        existing.rocznyLimit = b.limit_kwota;
+        existing.roczneNotatki = b.notatki;
       }
     }
-
-    return resolved;
-  } catch (err) {
-    throw err;
   }
+
+  return resolved;
 }
 
 export async function getAllBudgetsForYear(rok) {
   const householdId = await getHouseholdId();
-  try {
-    const { data, error } = await supabase
-      .from('budzety')
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('rok', rok)
-      .order('kategoria')
-      .order('zakres')
-      .order('miesiac');
+  const { data, error } = await supabase
+    .from('budzety')
+    .select('*')
+    .eq('household_id', householdId)
+    .eq('rok', rok)
+    .order('kategoria')
+    .order('zakres')
+    .order('miesiac');
 
-    if (error) {
-      handleAuthError(error);
-    }
-
-    return data.map(b => ({
-      kategoria: b.kategoria,
-      limit: b.limit_kwota,
-      miesiac: b.miesiac,
-      rok: b.rok,
-      osoba: b.osoba || '',
-      zakres: b.zakres,
-      notatki: b.notatki || '',
-    }));
-  } catch (err) {
-    throw err;
+  if (error) {
+    handleAuthError(error);
   }
+
+  return data.map(b => ({
+    kategoria: b.kategoria,
+    limit: b.limit_kwota,
+    miesiac: b.miesiac,
+    rok: b.rok,
+    osoba: b.osoba || '',
+    zakres: b.zakres,
+    notatki: b.notatki || '',
+  }));
 }
 
 export async function setBudget(budget) {
   const householdId = await getHouseholdId();
-  try {
-    const record = {
-      household_id: householdId,
-      kategoria: budget.kategoria,
-      limit_kwota: budget.limit,
-      rok: Number(budget.rok),
-      osoba: budget.osoba || null,
-      zakres: budget.zakres,
-      notatki: budget.notatki || null,
-      miesiac: budget.zakres === 'monthly' ? Number(budget.miesiac) : null,
-    };
+  const record = {
+    household_id: householdId,
+    kategoria: budget.kategoria,
+    limit_kwota: budget.limit,
+    rok: Number(budget.rok),
+    osoba: budget.osoba || null,
+    zakres: budget.zakres,
+    notatki: budget.notatki || null,
+    miesiac: budget.zakres === 'monthly' ? Number(budget.miesiac) : null,
+  };
 
-    const { error } = await supabase
-      .from('budzety')
-      .upsert(record, {
-        onConflict: 'household_id,kategoria,osoba,zakres,rok,miesiac',
-      });
+  const { error } = await supabase
+    .from('budzety')
+    .upsert(record, {
+      onConflict: 'household_id,kategoria,osoba,zakres,rok,miesiac',
+    });
 
-    if (error) {
-      handleAuthError(error);
-    }
-    return { success: true };
-  } catch (err) {
-    throw err;
+  if (error) {
+    handleAuthError(error);
   }
+  return { success: true };
 }
 
 export async function deleteBudget(budget) {
   const householdId = await getHouseholdId();
-  try {
-    let query = supabase
-      .from('budzety')
-      .delete()
-      .eq('household_id', householdId)
-      .eq('kategoria', budget.kategoria)
-      .eq('zakres', budget.zakres)
-      .eq('rok', budget.rok);
+  let query = supabase
+    .from('budzety')
+    .delete()
+    .eq('household_id', householdId)
+    .eq('kategoria', budget.kategoria)
+    .eq('zakres', budget.zakres)
+    .eq('rok', budget.rok);
 
-    if (budget.osoba) {
-      query = query.eq('osoba', budget.osoba);
-    } else {
-      query = query.is('osoba', null);
-    }
-
-    if (budget.zakres === 'monthly' && budget.miesiac) {
-      query = query.eq('miesiac', budget.miesiac);
-    } else {
-      query = query.is('miesiac', null);
-    }
-
-    const { error } = await query;
-    if (error) {
-      handleAuthError(error);
-    }
-    return { success: true };
-  } catch (err) {
-    throw err;
+  if (budget.osoba) {
+    query = query.eq('osoba', budget.osoba);
+  } else {
+    query = query.is('osoba', null);
   }
+
+  if (budget.zakres === 'monthly' && budget.miesiac) {
+    query = query.eq('miesiac', budget.miesiac);
+  } else {
+    query = query.is('miesiac', null);
+  }
+
+  const { error } = await query;
+  if (error) {
+    handleAuthError(error);
+  }
+  return { success: true };
 }
 
 // ═══════════════════════════════════════════
