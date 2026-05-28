@@ -1054,6 +1054,12 @@ export default function BudgetApp() {
     addToast,
   });
 
+  // Najświeższe fetchData dostępne dla callbacków real-time bez konieczności
+  // ponownej subskrypcji przy każdej zmianie miesiąca (fetchData zmienia
+  // tożsamość, gdy zmienia się month/year).
+  const fetchDataRef = useRef(fetchData);
+  useEffect(() => { fetchDataRef.current = fetchData; }, [fetchData]);
+
   // Real-time subscriptions — nasłuchuj zmian w Supabase
   useEffect(() => {
     if (isOffline || !user) return; // Skip if offline or not authenticated
@@ -1086,7 +1092,7 @@ export default function BudgetApp() {
           },
           (payload) => {
             // Odśwież dane gdy zmienią się transakcje
-            fetchData(false);
+            fetchDataRef.current(false);
           }
         )
         .subscribe();
@@ -1104,7 +1110,7 @@ export default function BudgetApp() {
           },
           (payload) => {
             // Odśwież dane gdy zmienią się kategorie
-            fetchData(false);
+            fetchDataRef.current(false);
           }
         )
         .subscribe();
@@ -1122,7 +1128,7 @@ export default function BudgetApp() {
           },
           (payload) => {
             // Odśwież dane gdy zmienią się osoby
-            fetchData(false);
+            fetchDataRef.current(false);
           }
         )
         .subscribe();
@@ -1138,7 +1144,10 @@ export default function BudgetApp() {
         supabase.removeChannel(channel);
       });
     };
-  }, [user, isOffline, fetchData]);
+    // fetchData celowo poza zależnościami — wywołujemy je przez fetchDataRef,
+    // aby nawigacja między miesiącami nie zrywała i nie odtwarzała kanałów.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isOffline]);
 
   // Dodawanie transakcji
   const handleAddTransaction = async (transakcja) => {

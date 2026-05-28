@@ -79,7 +79,7 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
       b.kategoria === form.kategoria &&
       (b.osoba || '') === form.osoba &&
       b.zakres === 'yearly' &&
-      b.rok === Number(form.rok)
+      Number(b.rok) === Number(form.rok)
     );
   }, [allBudgets, form.kategoria, form.osoba, form.rok]);
 
@@ -103,11 +103,17 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
   };
 
   const doSave = async () => {
+    const limitNum = Number(String(form.limit).replace(',', '.'));
+    if (!Number.isFinite(limitNum) || limitNum < 0) {
+      alert('Podaj poprawny limit (liczba ≥ 0)');
+      return;
+    }
+
     setIsSaving(true);
     try {
       const budgetData = {
         kategoria: form.kategoria,
-        limit: form.limit,
+        limit: limitNum,
         rok: Number(form.rok),
         osoba: form.osoba,
         zakres: form.zakres,

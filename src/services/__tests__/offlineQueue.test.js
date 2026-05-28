@@ -174,7 +174,7 @@ describe('offlineQueue', () => {
   describe('processQueue', () => {
     it('zwraca 0 sukcesów i 0 błędów dla pustej kolejki', async () => {
       const result = await processQueue();
-      expect(result).toEqual({ succeeded: 0, failed: 0, errors: [] });
+      expect(result).toEqual({ succeeded: 0, failed: 0, dropped: 0, errors: [] });
     });
 
     it('przetwarza operację i czyści kolejkę po sukcesie', async () => {
@@ -201,7 +201,7 @@ describe('offlineQueue', () => {
       expect(result.errors[0]).toContain('Network error');
     });
 
-    it('czyści kolejkę nawet gdy część operacji się nie powiedzie', async () => {
+    it('usuwa udane, ale zachowuje nieudane operacje do ponowienia', async () => {
       processOfflineOperation
         .mockResolvedValueOnce({ success: true })
         .mockRejectedValueOnce(new Error('Failed'));
@@ -213,6 +213,28 @@ describe('offlineQueue', () => {
 
       expect(result.succeeded).toBe(1);
       expect(result.failed).toBe(1);
+      expect(result.dropped).toBe(0);
+      // Udana operacja zniknęła, nieudana została z licznikiem prób = 1
+      const remaining = getQueuedOperations();
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].action).toBe('deleteTransakcja');
+      expect(remaining[0].attempts).toBe(1);
+    });
+
+    it('porzuca operację po przekroczeniu limitu prób', async () => {
+      processOfflineOperation.mockRejectedValue(new Error('Persistent failure'));
+      addToQueue({ action: 'addTransakcja', payload: { transakcja: {} } });
+
+      // 1. próba → attempts 1 (zostaje), 2. próba → attempts 2 (zostaje)
+      await processQueue();
+      await processQueue();
+      expect(getQueuedOperations()).toHaveLength(1);
+      expect(getQueuedOperations()[0].attempts).toBe(2);
+
+      // 3. próba → przekroczono MAX_ATTEMPTS, operacja porzucona
+      const result = await processQueue();
+      expect(result.failed).toBe(1);
+      expect(result.dropped).toBe(1);
       expect(getQueuedOperations()).toHaveLength(0);
     });
 

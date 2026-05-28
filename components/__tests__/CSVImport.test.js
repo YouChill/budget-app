@@ -15,6 +15,7 @@ import {
   normalizeDateToISO,
   categorizeDescription,
   validateCategoryExists,
+  parseKwota,
 } from '../CSVImport';
 
 // ─── normalizeDateToISO ────────────────────────────────────────────────────────
@@ -81,6 +82,66 @@ describe('normalizeDateToISO', () => {
       const result = normalizeDateToISO('2026-03-15');
       expect(result).toBe('2026-03-15');
     });
+  });
+
+  describe('odrzucanie nieistniejących dat', () => {
+    it('zwraca null dla 30 lutego (ISO)', () => {
+      expect(normalizeDateToISO('2025-02-30')).toBeNull();
+    });
+
+    it('zwraca null dla 31 kwietnia (ISO)', () => {
+      expect(normalizeDateToISO('2025-04-31')).toBeNull();
+    });
+
+    it('zwraca null dla 30.02 (format polski)', () => {
+      expect(normalizeDateToISO('30.02.2025')).toBeNull();
+    });
+
+    it('zwraca null dla 31-04 (myślniki)', () => {
+      expect(normalizeDateToISO('31-04-2025')).toBeNull();
+    });
+
+    it('akceptuje 29 lutego w roku przestępnym', () => {
+      expect(normalizeDateToISO('2024-02-29')).toBe('2024-02-29');
+    });
+
+    it('odrzuca 29 lutego w roku nieprzestępnym', () => {
+      expect(normalizeDateToISO('2025-02-29')).toBeNull();
+    });
+  });
+});
+
+// ─── parseKwota ─────────────────────────────────────────────────────────────
+
+describe('parseKwota', () => {
+  it('parsuje liczbę dziesiętną z przecinkiem', () => {
+    expect(parseKwota('150,00')).toBe(150);
+    expect(parseKwota('-150,50')).toBe(-150.5);
+  });
+
+  it('parsuje format z separatorem tysięcy (kropka) i przecinkiem', () => {
+    expect(parseKwota('1.234,56')).toBeCloseTo(1234.56, 2);
+    expect(parseKwota('1.000.000,00')).toBe(1000000);
+  });
+
+  it('zwraca liczby bez zmian (nie psuje wartości typu 1.234)', () => {
+    // Kluczowa regresja: ponowne parsowanie liczby nie może zamienić 1.234 → 1234
+    expect(parseKwota(1.234)).toBe(1.234);
+    expect(parseKwota(-150.5)).toBe(-150.5);
+    expect(parseKwota(1500)).toBe(1500);
+  });
+
+  it('zwraca 0 dla pustych / niepoprawnych wartości', () => {
+    expect(parseKwota('')).toBe(0);
+    expect(parseKwota(null)).toBe(0);
+    expect(parseKwota(undefined)).toBe(0);
+    expect(parseKwota('abc')).toBe(0);
+    expect(parseKwota(NaN)).toBe(0);
+  });
+
+  it('ignoruje spacje i twarde spacje', () => {
+    expect(parseKwota('1 234,56')).toBeCloseTo(1234.56, 2);
+    expect(parseKwota(' 150,00 ')).toBe(150);
   });
 });
 

@@ -14,7 +14,7 @@ Aplikacja do śledzenia domowych wydatków i przychodów. Stworzona z myślą o 
 - **Nawigacja miesięczna** — przeglądanie różnych miesięcy
 - **Usuwanie transakcji** — swipe na mobile lub przycisk
 - **Wieloosobowe** — oznaczanie kto wprowadził transakcję
-- **Autoryzacja Google OAuth 2.0** — logowanie kontem Google z weryfikacją JWT
+- **Autoryzacja email + hasło** — natywny Supabase Auth (rejestracja, logowanie, reset hasła) z weryfikacją sesji JWT
 - **Synchronizacja** — dane w Supabase (PostgreSQL), dostępne z każdego urządzenia
 - **Real-time sync** — automatyczna aktualizacja danych między urządzeniami w czasie rzeczywistym
 - **Wykresy** — wykresy kołowe i słupkowe wydatków wg kategorii (Recharts)
@@ -30,7 +30,7 @@ Aplikacja do śledzenia domowych wydatków i przychodów. Stworzona z myślą o 
 - **Wykresy:** Recharts
 - **Import CSV:** PapaParse
 - **Obsługa gestów:** react-swipeable
-- **Autoryzacja:** Google OAuth 2.0 + Supabase Auth
+- **Autoryzacja:** Supabase Auth (email + hasło)
 - **Backend:** Supabase (PostgreSQL + PostgREST API)
 - **AI / embeddingi:** OpenAI `text-embedding-3-small` + Supabase pgvector
 - **Real-time:** Supabase Realtime (WebSocket)
@@ -39,9 +39,8 @@ Aplikacja do śledzenia domowych wydatków i przychodów. Stworzona z myślą o 
 ## Wymagania
 
 - Node.js 18+
-- Konto Supabase (baza danych PostgreSQL)
-- Konto Google (do autoryzacji OAuth logowania)
-- Klucz OpenAI API *(opcjonalnie — do kategoryzacji AI)*
+- Konto Supabase (baza danych PostgreSQL + Auth)
+- Klucz OpenAI API *(opcjonalnie — do kategoryzacji AI, ustawiany po stronie serwera)*
 
 ## Instalacja
 
@@ -71,8 +70,11 @@ VITE_SUPABASE_URL=https://twoj-projekt.supabase.co
 VITE_SUPABASE_ANON_KEY=twoj-anon-key
 VITE_HOUSEHOLD_ID=twoj-household-uuid
 
-# Opcjonalnie — włącza kategoryzację AI podczas importu CSV
-VITE_OPENAI_API_KEY=sk-...
+# Opcjonalnie — kategoryzacja AI podczas importu CSV.
+# Klucz OpenAI pozostaje WYŁĄCZNIE po stronie serwera (bez prefiksu VITE_):
+OPENAI_API_KEY=sk-...
+# Flaga widoczna w przeglądarce — włącz gdy OPENAI_API_KEY jest ustawiony:
+VITE_AI_ENABLED=true
 ```
 
 Szczegółowa instrukcja Supabase: [docs/SETUP_SUPABASE.md](./docs/SETUP_SUPABASE.md)
@@ -87,6 +89,9 @@ migration/002_rls_policies_phase2.sql
 migration/003_authentication_phase3.sql
 migration/004_category_embeddings.sql   ← pgvector + AI kategoryzacja
 migration/005_email_password_auth.sql   ← Supabase Auth email+hasło
+migration/006_fix_profiles_schema.sql   ← naprawa schematu profiles + trigger
+migration/007_auto_create_household.sql ← auto-tworzenie household dla nowych userów
+migration/008_fix_category_rules_rls.sql ← fix RLS: usunięcie permisywnej polityki (bezpieczeństwo)
 ```
 
 > Przed uruchomieniem migracji 004 włącz rozszerzenie **pgvector** w Supabase Dashboard → Database → Extensions.
@@ -169,7 +174,7 @@ budget-app/
 │   ├── App.jsx                  # Główna aplikacja React
 │   ├── main.jsx                 # Punkt wejścia
 │   ├── components/
-│   │   ├── LoginPage.jsx        # Strona logowania Google OAuth
+│   │   ├── LoginPage.jsx        # Strona logowania (email + hasło, reset hasła)
 │   │   ├── TransactionForm.jsx  # Formularz transakcji
 │   │   ├── TransactionItem.jsx  # Pojedyncza transakcja (swipe)
 │   │   ├── YearlySummary.jsx    # Podsumowanie roczne z wykresami
@@ -266,7 +271,8 @@ budget-app/
 | `VITE_SUPABASE_URL` | ✅ | URL projektu Supabase |
 | `VITE_SUPABASE_ANON_KEY` | ✅ | Klucz anonimowy Supabase |
 | `VITE_HOUSEHOLD_ID` | ⚠️ | UUID gospodarstwa (fallback bez auth) |
-| `VITE_OPENAI_API_KEY` | ➕ | Klucz OpenAI — włącza kategoryzację AI |
+| `OPENAI_API_KEY` | ➕ | Klucz OpenAI — **tylko po stronie serwera** (proxy `/api/embeddings`) |
+| `VITE_AI_ENABLED` | ➕ | Flaga `true/false` włączająca kategoryzację AI w UI |
 
 ## Deployment
 
@@ -274,8 +280,8 @@ budget-app/
 
 1. Zbuduj aplikację: `npm run build`
 2. Połącz repozytorium z Netlify lub Vercel
-3. Ustaw wszystkie zmienne środowiskowe w ustawieniach projektu
-4. Dodaj domenę do **Authorized JavaScript origins** w Google Cloud Console i do **Allowed URLs** w Supabase
+3. Ustaw wszystkie zmienne środowiskowe w ustawieniach projektu (w tym `OPENAI_API_KEY` — bez prefiksu `VITE_`, by nie trafił do bundle'a)
+4. Dodaj domenę do **Allowed URLs / Redirect URLs** w Supabase (Authentication → URL Configuration)
 
 ## Roadmap
 
