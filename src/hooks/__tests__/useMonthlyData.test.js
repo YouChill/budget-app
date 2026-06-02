@@ -3,6 +3,8 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 
 vi.mock('../../services/api', () => ({
   getAllData: vi.fn(),
+  seedDefaultKategorie: vi.fn(),
+  getKategorie: vi.fn(),
 }));
 vi.mock('../../utils/logger', () => ({
   logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -23,6 +25,9 @@ describe('useMonthlyData', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setOnline(true);
+    // Domyślnie zasiew nic nie robi (gospodarstwo ma już kategorie).
+    api.seedDefaultKategorie.mockResolvedValue({ success: true, seeded: 0 });
+    api.getKategorie.mockResolvedValue({ Wydatek: {}, Przychód: {} });
   });
 
   afterEach(() => {
@@ -82,6 +87,45 @@ describe('useMonthlyData', () => {
     expect(result.current.transakcje).toEqual([]);
     expect(result.current.kategorie).toEqual({ Wydatek: {}, Przychód: {} });
     expect(result.current.osoby).toEqual([]);
+  });
+
+  it('zasiewa domyślne kategorie gdy gospodarstwo jest puste', async () => {
+    api.getAllData.mockResolvedValue({
+      transakcje: [],
+      kategorie: { Wydatek: {}, Przychód: {} },
+      osoby: [],
+    });
+    api.seedDefaultKategorie.mockResolvedValue({ success: true, seeded: 3 });
+    api.getKategorie.mockResolvedValue({
+      Wydatek: { Jedzenie: ['Zakupy domowe'] },
+      Przychód: {},
+    });
+
+    const { result } = renderHook(() => useMonthlyData({ month: 1, year: 2026 }));
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(api.seedDefaultKategorie).toHaveBeenCalledTimes(1);
+    expect(result.current.kategorie).toEqual({
+      Wydatek: { Jedzenie: ['Zakupy domowe'] },
+      Przychód: {},
+    });
+  });
+
+  it('nie zasiewa gdy kategorie już istnieją', async () => {
+    api.getAllData.mockResolvedValue({
+      transakcje: [],
+      kategorie: { Wydatek: { Jedzenie: ['Lidl'] }, Przychód: {} },
+      osoby: [],
+    });
+
+    const { result } = renderHook(() => useMonthlyData({ month: 1, year: 2026 }));
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(api.seedDefaultKategorie).not.toHaveBeenCalled();
   });
 
   it('setTransakcje pozwala na optimistic update', async () => {
