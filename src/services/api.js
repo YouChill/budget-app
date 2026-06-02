@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { logger } from '../utils/logger';
+import { DEFAULT_KATEGORIE } from '../data/defaultKategorie';
 
 // Fallback dla backward compatibility (dla development bez auth)
 const FALLBACK_HOUSEHOLD_ID = import.meta.env.VITE_HOUSEHOLD_ID;
@@ -253,6 +254,41 @@ export async function getKategorie() {
     }
   }
   return result;
+}
+
+// Zasiewa domyślny zestaw kategorii dla nowego/pustego gospodarstwa.
+// Idempotentne: wstawia rekordy tylko gdy household nie ma jeszcze żadnej
+// kategorii, więc bezpiecznie wywoływać przy każdym ładowaniu danych.
+export async function seedDefaultKategorie() {
+  const householdId = await getHouseholdId();
+
+  const { count, error: countError } = await supabase
+    .from('kategorie')
+    .select('*', { count: 'exact', head: true })
+    .eq('household_id', householdId);
+
+  if (countError) {
+    handleAuthError(countError);
+  }
+
+  if (count && count > 0) {
+    return { success: true, seeded: 0 };
+  }
+
+  const rows = DEFAULT_KATEGORIE.map(k => ({
+    household_id: householdId,
+    typ: k.typ,
+    kategoria: k.kategoria,
+    podkategoria: k.podkategoria || null,
+  }));
+
+  const { error } = await supabase.from('kategorie').insert(rows);
+
+  if (error) {
+    handleAuthError(error);
+  }
+
+  return { success: true, seeded: rows.length };
 }
 
 export async function addKategoria(typ, kategoria, podkategoria) {
