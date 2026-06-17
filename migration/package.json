@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "migrate": "node migrate.mjs",
-    "migrate:dry": "node migrate.mjs --dry-run"
+    "migrate:dry": "node migrate.mjs --dry-run",
+    "assign": "node assign-to-household.mjs",
+    "assign:dry": "node assign-to-household.mjs --dry-run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
