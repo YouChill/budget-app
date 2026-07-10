@@ -4,6 +4,7 @@ import * as api from '../src/services/api';
 import * as categoryAI from '../src/services/categoryAI';
 import ModalShell from '../src/components/ModalShell';
 import ConfirmDialog from '../src/components/ConfirmDialog';
+import Button from '../src/components/Button';
 
 // ─── Keyword → category mapping ──────────────────────────────────────────────
 const categoryMapping = {
@@ -232,6 +233,31 @@ const extractMillenniumDescription = (row) => {
   return opis || rodzaj;
 };
 
+// ─── Ikony (SVG zamiast emoji — spójny rendering i czytniki ekranu) ──────────
+const SparkleIcon = ({ size = 16 }) => (
+  <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4L12 2z" />
+  </svg>
+);
+
+const BankIcon = () => (
+  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+    <path d="M3 22h18" /><path d="M6 18v-7" /><path d="M10 18v-7" /><path d="M14 18v-7" /><path d="M18 18v-7" /><path d="m12 2 9 4H3z" />
+  </svg>
+);
+
+const TableIcon = () => (
+  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+    <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M9 9v12" />
+  </svg>
+);
+
+const ListIcon = () => (
+  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+    <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+  </svg>
+);
+
 // ─── Step indicator component ─────────────────────────────────────────────────
 function StepIndicator({ current }) {
   const steps = [
@@ -248,7 +274,7 @@ function StepIndicator({ current }) {
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${
                 current > n
-                  ? 'bg-green-500 text-white'
+                  ? 'bg-emerald-500 text-white'
                   : current === n
                   ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
                   : 'bg-gray-100 text-gray-400'
@@ -267,7 +293,7 @@ function StepIndicator({ current }) {
           {i < steps.length - 1 && (
             <div
               className={`h-0.5 w-8 sm:w-12 rounded-full transition-all duration-300 ${
-                current > n ? 'bg-green-400' : 'bg-gray-200'
+                current > n ? 'bg-emerald-400' : 'bg-gray-200'
               }`}
             />
           )}
@@ -824,9 +850,9 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
 
           {/* Inline error */}
           {error && (
-            <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-5 flex items-center justify-between">
+            <div className="rounded-xl bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700 mb-5 flex items-center justify-between">
               <span>{error}</span>
-              <button onClick={() => setError(null)} aria-label="Zamknij komunikat błędu" className="text-red-400 hover:text-red-600 ml-2 font-bold">&#10005;</button>
+              <button onClick={() => setError(null)} aria-label="Zamknij komunikat błędu" className="text-rose-400 hover:text-rose-600 ml-2 font-bold">&#10005;</button>
             </div>
           )}
 
@@ -896,14 +922,14 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
               {/* Supported formats */}
               <div className="flex flex-col gap-1.5">
                 {[
-                  { icon: '🏦', label: 'Rozpoznawanie automatyczne', desc: 'PKO BP / iPKO, Bank Millennium' },
-                  { icon: '📊', label: 'CSV z nagłówkami', desc: 'standardowy format' },
-                  { icon: '📋', label: 'CSV bez nagłówków', desc: 'mapowanie ręczne' },
+                  { icon: <BankIcon />, label: 'Rozpoznawanie automatyczne', desc: 'PKO BP / iPKO, Bank Millennium' },
+                  { icon: <TableIcon />, label: 'CSV z nagłówkami', desc: 'standardowy format' },
+                  { icon: <ListIcon />, label: 'CSV bez nagłówków', desc: 'mapowanie ręczne' },
                 ].map(({ icon, label, desc }) => (
                   <div key={label} className="flex items-center gap-2 text-sm text-gray-500">
-                    <span className="text-base leading-none">{icon}</span>
+                    <span className="text-indigo-400 leading-none">{icon}</span>
                     <span className="font-medium text-gray-700 whitespace-nowrap">{label}:</span>
-                    <span className="text-gray-400 whitespace-nowrap">{desc}</span>
+                    <span className="text-gray-500 whitespace-nowrap">{desc}</span>
                   </div>
                 ))}
               </div>
@@ -911,7 +937,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
               {/* AI badge */}
               {aiEnabled && (
                 <div className="flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3">
-                  <span className="text-violet-500 text-lg">✦</span>
+                  <span className="text-violet-500"><SparkleIcon size={18} /></span>
                   <div>
                     <span className="text-sm font-semibold text-violet-700">Kategoryzacja AI włączona</span>
                     <span className="text-xs text-violet-500 ml-2">
@@ -955,7 +981,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                   <div key={field}>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">
                       {label}
-                      {required && <span className="text-red-500 ml-1">*</span>}
+                      {required && <span className="text-rose-500 ml-1">*</span>}
                       {hint && <span className="text-gray-400 font-normal ml-1 text-xs">— {hint}</span>}
                     </label>
                     <select
@@ -973,7 +999,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
               {/* Person selector */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Osoba <span className="text-red-500">*</span>
+                  Osoba <span className="text-rose-500">*</span>
                 </label>
                 <select
                   value={selectedOsoba}
@@ -1020,18 +1046,12 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
               </div>
 
               <div className="flex gap-3 pt-1">
-                <button
-                  onClick={() => { setStep(1); setDetectedFormat(null); }}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
-                >
+                <Button variant="secondary" className="flex-1" onClick={() => { setStep(1); setDetectedFormat(null); }}>
                   ← Wstecz
-                </button>
-                <button
-                  onClick={prepareTransactions}
-                  className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors"
-                >
+                </Button>
+                <Button className="flex-1" onClick={prepareTransactions}>
                   Dalej →
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -1086,7 +1106,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
               {/* AI success badge */}
               {!aiLoading && aiMatchCount > 0 && (
                 <div className="flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-xl px-4 py-2.5 text-sm text-violet-700">
-                  <span className="text-violet-500">✦</span>
+                  <span className="text-violet-500"><SparkleIcon /></span>
                   AI automatycznie przypisało <strong>{aiMatchCount}</strong> transakcji na podstawie historii kategoryzacji
                 </div>
               )}
@@ -1212,7 +1232,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                               <button
                                 onClick={() => handleDeleteTransaction(idx)}
                                 aria-label={`Usuń wiersz ${idx + 1} z importu`}
-                                className="text-red-400 hover:text-red-600 font-bold w-8 h-8 flex items-center justify-center rounded hover:bg-red-50 transition-colors"
+                                className="text-rose-400 hover:text-rose-600 font-bold w-8 h-8 flex items-center justify-center rounded hover:bg-rose-50 transition-colors"
                               >
                                 ✕
                               </button>
@@ -1256,8 +1276,8 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                       </span>
                     )}
                     {aiEnabled && (
-                      <span className="text-xs text-violet-500 flex items-center gap-0.5">
-                        <span>✦</span> Zapisywane w AI
+                      <span className="text-xs text-violet-500 flex items-center gap-1">
+                        <SparkleIcon size={12} /> Zapisywane w AI
                       </span>
                     )}
                   </div>
@@ -1293,7 +1313,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                           <button
                             onClick={() => handleDeleteRule(i)}
                             aria-label={`Usuń regułę „${rule.keyword}"`}
-                            className="text-red-400 hover:text-red-600 ml-2 font-bold"
+                            className="text-rose-400 hover:text-rose-600 ml-2 font-bold"
                           >
                             ✕
                           </button>
@@ -1352,12 +1372,9 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                         </select>
                       </div>
                       <div className="flex items-end">
-                        <button
-                          onClick={handleAddRule}
-                          className="w-full px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-colors"
-                        >
+                        <Button variant="success" size="sm" className="w-full" onClick={handleAddRule}>
                           Dodaj i zastosuj
-                        </button>
+                        </Button>
                       </div>
                     </div>
                     <p className="text-xs text-gray-400 mt-2">
@@ -1370,20 +1387,13 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
 
               {/* Bottom actions */}
               <div className="flex gap-3 pt-1">
-                <button
-                  onClick={() => setStep(2)}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
-                >
+                <Button variant="secondary" className="flex-1" onClick={() => setStep(2)}>
                   ← Wstecz
-                </button>
-                <button
-                  onClick={handleImport}
-                  disabled={isLoading || aiLoading}
-                  className="flex-1 px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-                >
+                </Button>
+                <Button className="flex-1" onClick={handleImport} disabled={isLoading || aiLoading}>
                   {isLoading ? (
                     <>
-                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <svg aria-hidden="true" className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                       </svg>
@@ -1392,7 +1402,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                   ) : (
                     `Importuj ${transactions.length} transakcji`
                   )}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -1412,16 +1422,13 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                 </p>
                 {aiEnabled && (
                   <p className="text-xs text-violet-500 mt-2 flex items-center justify-center gap-1">
-                    <span>✦</span> Kategorie zapisane w bazie wektorowej AI
+                    <SparkleIcon size={12} /> Kategorie zapisane w bazie wektorowej AI
                   </p>
                 )}
               </div>
-              <button
-                onClick={handleClose}
-                className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors"
-              >
+              <Button size="lg" onClick={handleClose}>
                 Zamknij
-              </button>
+              </Button>
             </div>
           )}
         </div>
