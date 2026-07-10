@@ -32,10 +32,10 @@ export default function OfflineBanner({ isOffline, pendingCount, isSyncing }) {
 
   if (isOffline) {
     return (
-      <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2">
+      <div role="status" className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2">
         <WifiOffIcon />
         <span>
-          Tryb offline — dane z cache (tylko odczyt)
+          Tryb offline — zmiany transakcji zsynchronizują się po połączeniu
           {pendingCount > 0 && (
             <span className="ml-1 inline-flex items-center bg-white/20 rounded-full px-2 py-0.5 text-xs">
               {pendingCount} do synchronizacji

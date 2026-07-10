@@ -387,8 +387,10 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading, editD
   );
 };
 
-// Komponent pojedynczej transakcji
-const TransactionItem = ({ transaction, onDelete, onEdit, isOffline, addToast }) => {
+// Komponent pojedynczej transakcji.
+// Edycja i usuwanie działają także offline — handlery w BudgetApp kolejkują
+// operacje do synchronizacji po odzyskaniu połączenia.
+const TransactionItem = ({ transaction, onDelete, onEdit }) => {
   const isExpense = transaction.typ === 'Wydatek';
 
   return (
@@ -426,30 +428,18 @@ const TransactionItem = ({ transaction, onDelete, onEdit, isOffline, addToast })
         </p>
         <div className="flex items-center gap-1 sm:gap-2">
           <button
-            onClick={() => {
-              if (isOffline) {
-                addToast('W trybie offline nie możesz edytować transakcji', 'error');
-                return;
-              }
-              onEdit(transaction);
-            }}
-            disabled={isOffline}
-            className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:bg-indigo-100 hover:text-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-[opacity,colors]"
+            onClick={() => onEdit(transaction)}
+            className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 w-10 h-10 sm:w-8 sm:h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:bg-indigo-100 hover:text-indigo-600 transition-[opacity,colors]"
             title="Edytuj"
+            aria-label={`Edytuj transakcję ${transaction.kategoria} z ${formatDate(transaction.data)}`}
           >
             <Icons.Edit />
           </button>
           <button
-            onClick={() => {
-              if (isOffline) {
-                addToast('W trybie offline nie możesz usuwać transakcji', 'error');
-                return;
-              }
-              onDelete(transaction.id);
-            }}
-            disabled={isOffline}
-            className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:bg-rose-100 hover:text-rose-600 disabled:opacity-50 disabled:cursor-not-allowed transition-[opacity,colors]"
+            onClick={() => onDelete(transaction.id)}
+            className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 w-10 h-10 sm:w-8 sm:h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-[opacity,colors]"
             title="Usuń"
+            aria-label={`Usuń transakcję ${transaction.kategoria} z ${formatDate(transaction.data)}`}
           >
             <Icons.Trash />
           </button>
@@ -1513,15 +1503,8 @@ export default function BudgetApp() {
                   Transakcje ({transakcje.length})
                 </h2>
                 <button
-                  onClick={() => {
-                    if (isOffline) {
-                      addToast('W trybie offline możesz tylko czytać dane z cache', 'error');
-                      return;
-                    }
-                    setShowForm(true);
-                  }}
-                  disabled={isOffline}
-                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => setShowForm(true)}
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 transition-all"
                 >
                   <Icons.Plus />
                   Dodaj
@@ -1533,15 +1516,8 @@ export default function BudgetApp() {
                   <div className="text-center py-12 text-gray-500">
                     <p className="mb-2">Brak transakcji w tym miesiącu</p>
                     <button
-                      onClick={() => {
-                        if (isOffline) {
-                          addToast('W trybie offline możesz tylko czytać dane z cache', 'error');
-                          return;
-                        }
-                        setShowForm(true);
-                      }}
-                      disabled={isOffline}
-                      className="text-indigo-600 hover:underline font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => setShowForm(true)}
+                      className="text-indigo-600 hover:underline font-medium"
                     >
                       Dodaj pierwszą transakcję
                     </button>
@@ -1611,9 +1587,10 @@ export default function BudgetApp() {
       )}
       
       {/* FAB dla mobile */}
-      {!showForm && !isLoading && !isOffline && activeView === 'monthly' && (
+      {!showForm && !isLoading && activeView === 'monthly' && (
         <button
           onClick={() => setShowForm(true)}
+          aria-label="Dodaj transakcję"
           className="fixed bottom-6 right-6 md:hidden rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 p-4 text-white shadow-2xl shadow-indigo-400 hover:scale-110 transition-transform"
         >
           <Icons.Plus />
