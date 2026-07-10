@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Papa from 'papaparse';
 import * as api from '../src/services/api';
 import * as categoryAI from '../src/services/categoryAI';
+import ModalShell from '../src/components/ModalShell';
+import ConfirmDialog from '../src/components/ConfirmDialog';
 
 // ─── Keyword → category mapping ──────────────────────────────────────────────
 const categoryMapping = {
@@ -326,6 +328,9 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
     } catch { /* ignore */ }
   }, []);
 
+  // Zapisany postęp — zamiast window.confirm pokazujemy spójny dialog.
+  const [restorePrompt, setRestorePrompt] = useState(null);
+
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -333,13 +338,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
       const parsed = JSON.parse(saved);
       const { timestamp, transactions: savedTx, txMeta: savedMeta, step: savedStep } = parsed;
       if (Date.now() - timestamp < 24 * 60 * 60 * 1000 && savedTx?.length > 0) {
-        if (window.confirm('Znaleziono zapisany postęp importu CSV. Czy chcesz go przywrócić?')) {
-          setTransactions(savedTx);
-          if (savedMeta) setTxMeta(savedMeta);
-          setStep(savedStep || 3);
-        } else {
-          localStorage.removeItem(STORAGE_KEY);
-        }
+        setRestorePrompt({ savedTx, savedMeta, savedStep });
       } else {
         localStorage.removeItem(STORAGE_KEY);
       }
@@ -347,6 +346,19 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
       localStorage.removeItem(STORAGE_KEY);
     }
   }, []);
+
+  const handleRestoreProgress = () => {
+    const { savedTx, savedMeta, savedStep } = restorePrompt;
+    setTransactions(savedTx);
+    if (savedMeta) setTxMeta(savedMeta);
+    setStep(savedStep || 3);
+    setRestorePrompt(null);
+  };
+
+  const handleDiscardProgress = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    setRestorePrompt(null);
+  };
 
   useEffect(() => {
     if (step === 3 && transactions.length > 0) {
@@ -781,14 +793,14 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
   // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[92vh] flex flex-col">
+    <>
+      <ModalShell onClose={handleClose} labelId="csv-import-title" maxWidth="max-w-5xl" overlayTint="bg-black/60">
 
         {/* Header */}
-        <div className="sticky top-0 bg-white px-6 py-4 flex justify-between items-center border-b border-gray-100 z-10 shrink-0 rounded-t-2xl">
+        <div className="bg-white px-6 py-4 flex justify-between items-center border-b border-gray-100 shrink-0">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Import z CSV</h2>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <h2 id="csv-import-title" className="text-xl font-bold text-gray-900">Import z CSV</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
               {step === 1 && 'Wybierz plik do zaimportowania'}
               {step === 2 && 'Dopasuj kolumny do pól'}
               {step === 3 && `${transactions.length} transakcji do przejrzenia`}
@@ -797,7 +809,8 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
           </div>
           <button
             onClick={handleClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors text-xl font-bold"
+            aria-label="Zamknij import CSV"
+            className="w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors text-xl font-bold"
           >
             ×
           </button>
@@ -813,7 +826,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
           {error && (
             <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-5 flex items-center justify-between">
               <span>{error}</span>
-              <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 ml-2 font-bold">&#10005;</button>
+              <button onClick={() => setError(null)} aria-label="Zamknij komunikat błędu" className="text-red-400 hover:text-red-600 ml-2 font-bold">&#10005;</button>
             </div>
           )}
 
@@ -1042,7 +1055,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                 </div>
                 <div className="flex items-center gap-2">
                   {lastSaved && (
-                    <span className="text-xs text-gray-300">
+                    <span className="text-xs text-gray-500">
                       Zapis: {lastSaved.toLocaleTimeString('pl-PL')}
                     </span>
                   )}
@@ -1092,7 +1105,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                       )}
                     </span>
                   </div>
-                  <button onClick={() => setRuleNotification(null)} className="text-emerald-400 hover:text-emerald-600 ml-2">✕</button>
+                  <button onClick={() => setRuleNotification(null)} aria-label="Zamknij powiadomienie o regule" className="text-emerald-400 hover:text-emerald-600 ml-2">✕</button>
                 </div>
               )}
 
@@ -1198,7 +1211,8 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                               )}
                               <button
                                 onClick={() => handleDeleteTransaction(idx)}
-                                className="text-red-400 hover:text-red-600 font-bold w-6 h-6 flex items-center justify-center rounded hover:bg-red-50 transition-colors"
+                                aria-label={`Usuń wiersz ${idx + 1} z importu`}
+                                className="text-red-400 hover:text-red-600 font-bold w-8 h-8 flex items-center justify-center rounded hover:bg-red-50 transition-colors"
                               >
                                 ✕
                               </button>
@@ -1278,6 +1292,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                           </span>
                           <button
                             onClick={() => handleDeleteRule(i)}
+                            aria-label={`Usuń regułę „${rule.keyword}"`}
                             className="text-red-400 hover:text-red-600 ml-2 font-bold"
                           >
                             ✕
@@ -1410,7 +1425,19 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </ModalShell>
+
+      {/* Dialog przywracania zapisanego postępu */}
+      {restorePrompt && (
+        <ConfirmDialog
+          title="Przywrócić zapisany postęp?"
+          message={`Znaleziono zapisany postęp importu CSV (${restorePrompt.savedTx.length} transakcji). Możesz kontynuować od miejsca, w którym skończono.`}
+          confirmLabel="Przywróć"
+          cancelLabel="Odrzuć"
+          onConfirm={handleRestoreProgress}
+          onCancel={handleDiscardProgress}
+        />
+      )}
+    </>
   );
 }

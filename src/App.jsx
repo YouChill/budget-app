@@ -3,6 +3,8 @@ import CategoryCharts from '/components/CategoryCharts';
 import Budgets from '/components/Budgets';
 import CSVImport from '/components/CSVImport';
 import LoginPage from './components/LoginPage';
+import ModalShell from './components/ModalShell';
+import ConfirmDialog from './components/ConfirmDialog';
 import OfflineBanner from './components/OfflineBanner';
 import YearlySummary from './components/YearlySummary';
 import { useAuth } from './contexts/AuthContext';
@@ -38,100 +40,100 @@ const formatDate = (dateString) => {
 // Ikony SVG
 const Icons = {
   Plus: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="12" y1="5" x2="12" y2="19"></line>
       <line x1="5" y1="12" x2="19" y2="12"></line>
     </svg>
   ),
   TrendingUp: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
       <polyline points="17 6 23 6 23 12"></polyline>
     </svg>
   ),
   TrendingDown: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline>
       <polyline points="17 18 23 18 23 12"></polyline>
     </svg>
   ),
   Wallet: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"></path>
       <path d="M3 5v14a2 2 0 0 0 2 2h16v-5"></path>
       <path d="M18 12a2 2 0 0 0 0 4h4v-4Z"></path>
     </svg>
   ),
   ChevronLeft: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="15 18 9 12 15 6"></polyline>
     </svg>
   ),
   ChevronRight: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="9 18 15 12 9 6"></polyline>
     </svg>
   ),
   ChevronDown: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="6 9 12 15 18 9"></polyline>
     </svg>
   ),
   ChevronUp: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="18 15 12 9 6 15"></polyline>
     </svg>
   ),
   X: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="18" y1="6" x2="6" y2="18"></line>
       <line x1="6" y1="6" x2="18" y2="18"></line>
     </svg>
   ),
   Trash: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="3 6 5 6 21 6"></polyline>
       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
     </svg>
   ),
   Edit: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
       <path d="m15 5 4 4"></path>
     </svg>
   ),
   Settings: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="3"></circle>
       <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
     </svg>
   ),
   User: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
       <circle cx="12" cy="7" r="4"></circle>
     </svg>
   ),
   Tag: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
       <line x1="7" y1="7" x2="7.01" y2="7"></line>
     </svg>
   ),
   AlertTriangle: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
       <line x1="12" y1="9" x2="12" y2="13"></line>
       <line x1="12" y1="17" x2="12.01" y2="17"></line>
     </svg>
   ),
   Loader: () => (
-    <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
     </svg>
   ),
   Calendar: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
       <line x1="16" y1="2" x2="16" y2="6"/>
       <line x1="8" y1="2" x2="8" y2="6"/>
@@ -139,7 +141,7 @@ const Icons = {
     </svg>
   ),
   Piggy: () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M19 5c-1.5 0-2.8 1.4-3 2-3.5-1.5-11-.3-11 5 0 1.8 0 3 2 4.5V20h4v-2h3v2h4v-4c1-.5 1.7-1 2-2h2v-4h-2c0-1-.5-1.5-1-2"/>
       <path d="M2 9.5a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0"/>
     </svg>
@@ -241,21 +243,21 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading, editD
   };
   
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm sm:p-4">
-      <div className="w-full max-w-md max-h-[95vh] sm:max-h-[90vh] rounded-t-3xl sm:rounded-3xl bg-white shadow-2xl flex flex-col">
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 shrink-0">
-          <h2 className="text-xl font-semibold text-gray-800">
-            {isEditMode ? 'Edytuj transakcję' : 'Nowa transakcja'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-          >
-            <Icons.X />
-          </button>
-        </div>
+    <ModalShell onClose={onClose} labelId="transaction-form-title">
+      <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 shrink-0">
+        <h2 id="transaction-form-title" className="text-xl font-semibold text-gray-800">
+          {isEditMode ? 'Edytuj transakcję' : 'Nowa transakcja'}
+        </h2>
+        <button
+          onClick={onClose}
+          aria-label="Zamknij formularz"
+          className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+        >
+          <Icons.X />
+        </button>
+      </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto flex-1">
+      <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto flex-1">
           {/* Typ transakcji */}
           <div className="flex gap-2">
             {['Wydatek', 'Przychód'].map(typ => (
@@ -279,17 +281,20 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading, editD
           {/* Data i kwota */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="min-w-0 overflow-hidden">
-              <label className="block text-sm font-medium text-gray-600 mb-2">Data</label>
+              <label htmlFor="transaction-date" className="block text-sm font-medium text-gray-600 mb-2">Data</label>
               <input
+                id="transaction-date"
                 type="date"
                 value={formData.data}
                 onChange={e => setFormData(prev => ({ ...prev, data: e.target.value }))}
                 className="w-full min-w-0 rounded-xl border border-gray-200 px-3 py-3 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-2">Kwota (PLN)</label>
+              <label htmlFor="transaction-amount" className="block text-sm font-medium text-gray-600 mb-2">Kwota (PLN)</label>
               <input
+                id="transaction-amount"
                 type="number"
                 step="0.01"
                 min="0"
@@ -305,8 +310,9 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading, editD
           {/* Kategoria i podkategoria */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-2">Kategoria</label>
+              <label htmlFor="transaction-category" className="block text-sm font-medium text-gray-600 mb-2">Kategoria</label>
               <select
+                id="transaction-category"
                 value={formData.kategoria}
                 onChange={e => handleKategoriaChange(e.target.value)}
                 className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all bg-white"
@@ -319,8 +325,9 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading, editD
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-2">Podkategoria</label>
+              <label htmlFor="transaction-subcategory" className="block text-sm font-medium text-gray-600 mb-2">Podkategoria</label>
               <select
+                id="transaction-subcategory"
                 value={formData.podkategoria}
                 onChange={e => setFormData(prev => ({ ...prev, podkategoria: e.target.value }))}
                 className="w-full rounded-xl border border-gray-200 px-4 py-3 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all bg-white"
@@ -357,8 +364,9 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading, editD
           
           {/* Komentarz */}
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-2">Komentarz (opcjonalnie)</label>
+            <label htmlFor="transaction-comment" className="block text-sm font-medium text-gray-600 mb-2">Komentarz (opcjonalnie)</label>
             <input
+              id="transaction-comment"
               type="text"
               placeholder="np. zakupy w Biedronce"
               value={formData.komentarz}
@@ -381,9 +389,8 @@ const TransactionForm = ({ onSubmit, onClose, kategorie, osoby, isLoading, editD
               <><Icons.Plus /> Dodaj transakcję</>
             )}
           </button>
-        </form>
-      </div>
-    </div>
+      </form>
+    </ModalShell>
   );
 };
 
@@ -404,7 +411,7 @@ const TransactionItem = ({ transaction, onDelete, onEdit }) => {
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium text-gray-800">{transaction.kategoria}</p>
             {transaction.podkategoria && (
-              <span className="text-sm text-gray-400 truncate">/ {transaction.podkategoria}</span>
+              <span className="text-sm text-gray-500 truncate">/ {transaction.podkategoria}</span>
             )}
           </div>
           <div className="flex items-center gap-x-2 gap-y-0.5 mt-1 flex-wrap">
@@ -414,7 +421,7 @@ const TransactionItem = ({ transaction, onDelete, onEdit }) => {
             {transaction.komentarz && (
               <>
                 <span className="text-gray-300 hidden sm:inline">•</span>
-                <span className="text-sm text-gray-400 truncate max-w-[200px] sm:max-w-[150px] basis-full sm:basis-auto">{transaction.komentarz}</span>
+                <span className="text-sm text-gray-500 truncate max-w-[200px] sm:max-w-[150px] basis-full sm:basis-auto">{transaction.komentarz}</span>
               </>
             )}
           </div>
@@ -709,8 +716,9 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
             <button
               onClick={() => handleDeleteKategoria(typ, nazwaKat)}
               disabled={isProcessing}
-              className="rounded-lg p-1.5 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all disabled:opacity-50"
+              className="rounded-lg p-2.5 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all disabled:opacity-50"
               title={`Usuń kategorię ${nazwaKat}`}
+              aria-label={`Usuń kategorię ${nazwaKat}`}
             >
               <Icons.Trash />
             </button>
@@ -731,8 +739,9 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
                     <button
                       onClick={() => handleDeleteKategoria(typ, nazwaKat, podkat)}
                       disabled={isProcessing}
-                      className="rounded-lg p-1 text-gray-300 hover:bg-rose-100 hover:text-rose-600 transition-all disabled:opacity-50"
+                      className="rounded-lg p-2 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all disabled:opacity-50"
                       title={`Usuń podkategorię ${podkat}`}
+                      aria-label={`Usuń podkategorię ${podkat}`}
                     >
                       <Icons.Trash />
                     </button>
@@ -747,24 +756,25 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
   };
   
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="w-full max-w-lg max-h-[90vh] rounded-3xl bg-white shadow-2xl flex flex-col">
+    <>
+      <ModalShell onClose={onClose} labelId="settings-title" maxWidth="max-w-lg">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 shrink-0">
           <div className="flex items-center gap-3">
             <div className="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-2 text-white">
               <Icons.Settings />
             </div>
-            <h2 className="text-xl font-semibold text-gray-800">Ustawienia</h2>
+            <h2 id="settings-title" className="text-xl font-semibold text-gray-800">Ustawienia</h2>
           </div>
-          <button 
+          <button
             onClick={onClose}
+            aria-label="Zamknij ustawienia"
             className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
           >
             <Icons.X />
           </button>
         </div>
-        
+
         {/* Tabs */}
         <div className="flex gap-1 px-6 pt-4 shrink-0">
           <button
@@ -928,8 +938,9 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
                           <button
                             onClick={() => handleDeleteOsoba(osoba)}
                             disabled={isProcessing}
-                            className="rounded-lg p-1.5 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all disabled:opacity-50"
+                            className="rounded-lg p-2.5 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all disabled:opacity-50"
                             title={`Usuń osobę ${osoba}`}
+                            aria-label={`Usuń osobę ${osoba}`}
                           >
                             <Icons.Trash />
                           </button>
@@ -942,43 +953,19 @@ const SettingsPanel = ({ onClose, kategorie, osoby, transakcje, onKategorieChang
             </div>
           )}
         </div>
-      </div>
-      
+      </ModalShell>
+
       {/* Dialog potwierdzenia */}
       {confirmDialog && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              {confirmDialog.isWarning && (
-                <div className="rounded-lg bg-amber-100 p-2 text-amber-600">
-                  <Icons.AlertTriangle />
-                </div>
-              )}
-              <h3 className="text-lg font-semibold text-gray-800">{confirmDialog.title}</h3>
-            </div>
-            <p className="text-sm text-gray-600 leading-relaxed">{confirmDialog.message}</p>
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setConfirmDialog(null)}
-                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-              >
-                Anuluj
-              </button>
-              <button
-                onClick={confirmDialog.onConfirm}
-                className={`flex-1 rounded-xl py-2.5 text-sm font-medium text-white transition-all ${
-                  confirmDialog.isWarning
-                    ? 'bg-amber-500 hover:bg-amber-600'
-                    : 'bg-rose-500 hover:bg-rose-600'
-                }`}
-              >
-                Usuń
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          isWarning={confirmDialog.isWarning}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
+        />
       )}
-    </div>
+    </>
   );
 };
 
@@ -997,6 +984,7 @@ export default function BudgetApp() {
   const [showSettings, setShowSettings] = useState(false);
   const [showCSVImport, setShowCSVImport] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   // Dane miesiąca — transakcje, kategorie, osoby + fetch z isLoading/error.
   // Setery zwracane do optymistycznych aktualizacji i callbacków ustawień.
@@ -1228,10 +1216,10 @@ export default function BudgetApp() {
     setEditingTransaction(null);
   };
   
-  // Usuwanie transakcji
-  const handleDeleteTransaction = async (id) => {
-    if (!window.confirm('Czy na pewno chcesz usunąć tę transakcję?')) return;
+  // Usuwanie transakcji — najpierw potwierdzenie we wspólnym dialogu
+  const handleDeleteTransaction = (id) => setConfirmDeleteId(id);
 
+  const performDeleteTransaction = async (id) => {
     if (isOffline) {
       // Optimistic update + queue
       const noweTransakcje = transakcje.filter(t => t.id !== id);
@@ -1316,6 +1304,7 @@ export default function BudgetApp() {
                   className={`relative w-10 h-10 sm:w-11 sm:h-11 cursor-pointer shrink-0 ${pulseActive ? 'animate-pulse' : ''}`}
                   style={{ perspective: '600px' }}
                   title={activeView === 'monthly' ? 'Podsumowanie roku' : 'Widok miesięczny'}
+                  aria-label={activeView === 'monthly' ? 'Przełącz na podsumowanie roku' : 'Przełącz na widok miesięczny'}
                 >
                   <div
                     className="absolute inset-0 transition-transform duration-500"
@@ -1356,9 +1345,10 @@ export default function BudgetApp() {
                 onClick={() => !isOffline && setShowCSVImport(true)}
                 className={`rounded-xl p-2 sm:p-2.5 transition-all ${isOffline ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-100 hover:text-indigo-600'}`}
                 title={isOffline ? 'Niedostępne offline' : 'Import z CSV'}
+                aria-label={isOffline ? 'Import z CSV — niedostępne offline' : 'Import z CSV'}
                 disabled={isOffline}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
               </button>
 
               {/* Przycisk budżetów */}
@@ -1366,9 +1356,10 @@ export default function BudgetApp() {
                 onClick={() => !isOffline && setShowBudgets(true)}
                 className={`rounded-xl p-2 sm:p-2.5 transition-all ${isOffline ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-100 hover:text-indigo-600'}`}
                 title={isOffline ? 'Niedostępne offline' : 'Budżety'}
+                aria-label={isOffline ? 'Budżety — niedostępne offline' : 'Budżety'}
                 disabled={isOffline}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10v6a2 2 0 0 1-2 2H7"/><path d="M3 6h18"/><path d="M8 6v12"/></svg>
+                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10v6a2 2 0 0 1-2 2H7"/><path d="M3 6h18"/><path d="M8 6v12"/></svg>
               </button>
 
               {/* Przycisk ustawień */}
@@ -1376,6 +1367,7 @@ export default function BudgetApp() {
                 onClick={() => !isOffline && setShowSettings(true)}
                 className={`rounded-xl p-2 sm:p-2.5 transition-all ${isOffline ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:bg-gray-100 hover:text-indigo-600'}`}
                 title={isOffline ? 'Niedostępne offline' : 'Ustawienia'}
+                aria-label={isOffline ? 'Ustawienia — niedostępne offline' : 'Ustawienia'}
                 disabled={isOffline}
               >
                 <Icons.Settings />
@@ -1393,8 +1385,9 @@ export default function BudgetApp() {
                   onClick={logout}
                   className="rounded-lg p-1.5 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all"
                   title="Wyloguj się"
+                  aria-label="Wyloguj się"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                     <polyline points="16 17 21 12 16 7"></polyline>
                     <line x1="21" y1="12" x2="9" y2="12"></line>
@@ -1410,16 +1403,18 @@ export default function BudgetApp() {
               <div className="flex items-center gap-1 sm:gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
                 <button
                   onClick={() => changeMonth(-1)}
-                  className="rounded-xl p-1.5 sm:p-2 text-gray-600 hover:bg-gray-100 transition-colors"
+                  aria-label="Poprzedni miesiąc"
+                  className="rounded-xl p-2.5 text-gray-600 hover:bg-gray-100 transition-colors"
                 >
                   <Icons.ChevronLeft />
                 </button>
-                <span className="px-2 sm:px-3 py-1 text-sm font-medium text-gray-700 min-w-[130px] sm:min-w-[140px] text-center capitalize">
+                <span className="px-2 sm:px-3 py-1 text-sm font-medium text-gray-700 min-w-[130px] sm:min-w-[140px] text-center capitalize" aria-live="polite">
                   {getMonthName(currentPeriod.month, currentPeriod.year)}
                 </span>
                 <button
                   onClick={() => changeMonth(1)}
-                  className="rounded-xl p-1.5 sm:p-2 text-gray-600 hover:bg-gray-100 transition-colors"
+                  aria-label="Następny miesiąc"
+                  className="rounded-xl p-2.5 text-gray-600 hover:bg-gray-100 transition-colors"
                 >
                   <Icons.ChevronRight />
                 </button>
@@ -1586,6 +1581,20 @@ export default function BudgetApp() {
         />
       )}
       
+      {/* Potwierdzenie usunięcia transakcji */}
+      {confirmDeleteId !== null && (
+        <ConfirmDialog
+          title="Usunąć transakcję?"
+          message="Tej operacji nie można cofnąć."
+          onConfirm={() => {
+            const id = confirmDeleteId;
+            setConfirmDeleteId(null);
+            performDeleteTransaction(id);
+          }}
+          onCancel={() => setConfirmDeleteId(null)}
+        />
+      )}
+
       {/* FAB dla mobile */}
       {!showForm && !isLoading && activeView === 'monthly' && (
         <button
