@@ -12,7 +12,6 @@ import { useToast } from './contexts/ToastContext';
 import { useOffline } from './hooks/useOffline';
 import { useBudgets } from './hooks/useBudgets';
 import { useAvailableYears } from './hooks/useAvailableYears';
-import { useYearlyViewHint } from './hooks/useYearlyViewHint';
 import { usePendingOperations } from './hooks/usePendingOperations';
 import { useMonthlyData } from './hooks/useMonthlyData';
 import { addToQueue } from './services/offlineQueue';
@@ -35,6 +34,13 @@ import {
 const formatDate = (dateString) => {
   const date = new Date(dateString);
   return date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+// Nagłówek grupy dziennej na liście transakcji, np. "czwartek, 10 lipca"
+const formatDayHeader = (dateString) => {
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return dateString;
+  return date.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });
 };
 
 // Ikony SVG
@@ -1007,7 +1013,6 @@ export default function BudgetApp() {
   // Yearly summary view state
   const [activeView, setActiveView] = useState('monthly');
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
-  const { showHint, pulseActive, dismissHint } = useYearlyViewHint();
 
   // Budżety dla bieżącego okresu — własny hook, niezależny od fetchData
   const { budgets, refresh: refreshBudgets } = useBudgets({
@@ -1017,13 +1022,6 @@ export default function BudgetApp() {
   });
 
   const availableYears = useAvailableYears({ enabled: isAuthenticated && !isRecoveringPassword && !isOffline });
-
-  // Auto-stop pulse animation after 5 seconds
-  // Handle yearly view toggle
-  const handleToggleView = () => {
-    setActiveView(v => v === 'monthly' ? 'yearly' : 'monthly');
-    if (showHint) dismissHint();
-  };
 
   // Offline queue: licznik + auto-sync przy powrocie online
   const { pendingCount, isSyncing, refreshPendingCount } = usePendingOperations({
@@ -1249,9 +1247,11 @@ export default function BudgetApp() {
     }
   };
   
-  // Nawigacja miesięcy
+  // Nawigacja miesięcy — czyści wyszukiwanie, żeby filtr z poprzedniego
+  // miesiąca nie ukrywał danych nowego.
   const changeMonth = (delta) => {
     setCurrentPeriod(prev => computeMonthChange(prev.month, prev.year, delta));
+    setSearchQuery('');
   };
   
   // Callbacki dla ustawień — aktualizują stan
@@ -1269,6 +1269,35 @@ export default function BudgetApp() {
   const bilans = przychody - wydatki;
 
   const sortedTransakcje = useMemo(() => sortTransactionsByDate(transakcje), [transakcje]);
+
+  // Wyszukiwanie i grupowanie listy transakcji po dniu
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredTransakcje = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return sortedTransakcje;
+    return sortedTransakcje.filter(t =>
+      [t.kategoria, t.podkategoria, t.osoba, t.komentarz, String(t.kwota)]
+        .filter(Boolean)
+        .some(v => String(v).toLowerCase().includes(q))
+    );
+  }, [sortedTransakcje, searchQuery]);
+
+  const groupedByDay = useMemo(() => {
+    const groups = [];
+    let current = null;
+    filteredTransakcje.forEach(t => {
+      const key = t.data ? String(t.data).slice(0, 10) : '';
+      if (!current || current.key !== key) {
+        current = { key, items: [], net: 0 };
+        groups.push(current);
+      }
+      current.items.push(t);
+      const kwota = Number(t.kwota) || 0;
+      current.net += t.typ === 'Wydatek' ? -kwota : kwota;
+    });
+    return groups;
+  }, [filteredTransakcje]);
   
   // Auth gate: show login page if not authenticated
   if (authLoading) {
@@ -1297,41 +1326,9 @@ export default function BudgetApp() {
           {/* Top row: logo/title + action buttons */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-              {/* Flip icon toggle: Wallet (monthly) ↔ Calendar (yearly) */}
-              <div className="relative">
-                <button
-                  onClick={handleToggleView}
-                  className={`relative w-10 h-10 sm:w-11 sm:h-11 cursor-pointer shrink-0 ${pulseActive ? 'animate-pulse' : ''}`}
-                  style={{ perspective: '600px' }}
-                  title={activeView === 'monthly' ? 'Podsumowanie roku' : 'Widok miesięczny'}
-                  aria-label={activeView === 'monthly' ? 'Przełącz na podsumowanie roku' : 'Przełącz na widok miesięczny'}
-                >
-                  <div
-                    className="absolute inset-0 transition-transform duration-500"
-                    style={{
-                      transformStyle: 'preserve-3d',
-                      transform: activeView === 'yearly' ? 'rotateY(180deg)' : 'rotateY(0deg)',
-                    }}
-                  >
-                    {/* Front — Wallet */}
-                    <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-2 sm:p-2.5 text-white shadow-lg flex items-center justify-center"
-                         style={{ backfaceVisibility: 'hidden' }}>
-                      <Icons.Wallet />
-                    </div>
-                    {/* Back — Calendar */}
-                    <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-2 sm:p-2.5 text-white shadow-lg flex items-center justify-center"
-                         style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
-                      <Icons.Calendar />
-                    </div>
-                  </div>
-                </button>
-                {/* One-time hint badge */}
-                {showHint && (
-                  <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-xs rounded-lg px-3 py-1.5 whitespace-nowrap shadow-lg z-50 pointer-events-none">
-                    Kliknij, aby zobaczyć rok
-                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-800 rotate-45"></div>
-                  </div>
-                )}
+              {/* Logo */}
+              <div className="w-10 h-10 sm:w-11 sm:h-11 shrink-0 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-2 sm:p-2.5 text-white shadow-lg flex items-center justify-center">
+                <Icons.Wallet />
               </div>
               <div className="min-w-0">
                 <h1 className="text-base sm:text-xl font-bold text-gray-800 truncate">Budżet Domowy</h1>
@@ -1397,8 +1394,34 @@ export default function BudgetApp() {
             </div>
           </div>
 
-          {/* Navigation - monthly or yearly */}
-          <div className="flex justify-center mt-2 sm:mt-2">
+          {/* Navigation - view switch + monthly or yearly period */}
+          <div className="flex justify-center items-center gap-2 mt-2 sm:mt-2 flex-wrap">
+            {/* Jawny przełącznik widoku Miesiąc/Rok */}
+            <div className="flex gap-1 bg-white rounded-2xl shadow-sm border border-gray-100 p-1" role="group" aria-label="Widok danych">
+              <button
+                onClick={() => setActiveView('monthly')}
+                aria-pressed={activeView === 'monthly'}
+                className={`rounded-xl px-3 py-1.5 text-sm font-medium transition-all ${
+                  activeView === 'monthly'
+                    ? 'bg-indigo-500 text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                Miesiąc
+              </button>
+              <button
+                onClick={() => setActiveView('yearly')}
+                aria-pressed={activeView === 'yearly'}
+                className={`rounded-xl px-3 py-1.5 text-sm font-medium transition-all ${
+                  activeView === 'yearly'
+                    ? 'bg-indigo-500 text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                Rok
+              </button>
+            </div>
+
             {activeView === 'monthly' ? (
               <div className="flex items-center gap-1 sm:gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
                 <button
@@ -1418,6 +1441,18 @@ export default function BudgetApp() {
                 >
                   <Icons.ChevronRight />
                 </button>
+                {/* Szybki powrót do bieżącego miesiąca */}
+                {(currentPeriod.month !== getCurrentMonth().month || currentPeriod.year !== getCurrentMonth().year) && (
+                  <button
+                    onClick={() => {
+                      setCurrentPeriod(getCurrentMonth());
+                      setSearchQuery('');
+                    }}
+                    className="rounded-xl px-3 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 transition-colors"
+                  >
+                    Dziś
+                  </button>
+                )}
               </div>
             ) : (
               <div className="flex items-center gap-1 bg-white rounded-2xl shadow-sm border border-gray-100 p-1 flex-wrap justify-center">
@@ -1495,7 +1530,7 @@ export default function BudgetApp() {
             <div className="rounded-3xl bg-white/50 backdrop-blur border border-gray-100 shadow-sm overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                 <h2 className="text-lg font-semibold text-gray-800">
-                  Transakcje ({transakcje.length})
+                  Transakcje ({searchQuery ? `${filteredTransakcje.length} z ${transakcje.length}` : transakcje.length})
                 </h2>
                 <button
                   onClick={() => setShowForm(true)}
@@ -1506,7 +1541,27 @@ export default function BudgetApp() {
                 </button>
               </div>
 
-              <div className="p-4 space-y-3 max-h-[500px] overflow-y-auto">
+              {/* Wyszukiwarka */}
+              {sortedTransakcje.length > 0 && (
+                <div className="px-4 sm:px-6 py-3 border-b border-gray-100">
+                  <div className="relative">
+                    <svg aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input
+                      type="search"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      placeholder="Szukaj po kategorii, osobie, komentarzu…"
+                      aria-label="Szukaj transakcji"
+                      className="w-full rounded-xl border border-gray-200 bg-white pl-9 pr-4 py-2.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="p-4 space-y-5">
                 {sortedTransakcje.length === 0 ? (
                   <div className="text-center py-12 text-gray-500">
                     <p className="mb-2">Brak transakcji w tym miesiącu</p>
@@ -1517,14 +1572,38 @@ export default function BudgetApp() {
                       Dodaj pierwszą transakcję
                     </button>
                   </div>
+                ) : filteredTransakcje.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    <p className="mb-2">Brak transakcji pasujących do „{searchQuery}"</p>
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="text-indigo-600 hover:underline font-medium"
+                    >
+                      Wyczyść wyszukiwanie
+                    </button>
+                  </div>
                 ) : (
-                  sortedTransakcje.map(transaction => (
-                    <TransactionItem
-                      key={transaction.id}
-                      transaction={transaction}
-                      onDelete={handleDeleteTransaction}
-                      onEdit={handleOpenEdit}
-                    />
+                  groupedByDay.map(group => (
+                    <div key={group.key}>
+                      <div className="flex items-baseline justify-between px-1 pb-2">
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                          {formatDayHeader(group.key)}
+                        </h3>
+                        <span className={`text-xs font-semibold whitespace-nowrap ${group.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {group.net >= 0 ? '+' : '-'}{formatCurrency(Math.abs(group.net))}
+                        </span>
+                      </div>
+                      <div className="space-y-3">
+                        {group.items.map(transaction => (
+                          <TransactionItem
+                            key={transaction.id}
+                            transaction={transaction}
+                            onDelete={handleDeleteTransaction}
+                            onEdit={handleOpenEdit}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   ))
                 )}
               </div>
