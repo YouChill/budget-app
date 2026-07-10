@@ -1,6 +1,10 @@
 import React from 'react';
 import { formatCurrency } from '../utils/calculations';
 
+// UWAGA: ten komponent NIE jest używany przez aplikację — App.jsx ma własną,
+// inaczej wyglądającą implementację pozycji transakcji. Plik istnieje wyłącznie
+// pod testy jednostkowe; przy zmianach UI edytuj wersję w App.jsx.
+
 // Format daty specyficzny dla UI (kropki pl-PL, np. "13.02.2026").
 const formatDate = (dateString) => {
   const date = new Date(dateString);
