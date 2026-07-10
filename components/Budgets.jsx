@@ -1,5 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import * as api from '../src/services/api';
+import ModalShell from '../src/components/ModalShell';
+import ConfirmDialog from '../src/components/ConfirmDialog';
+import { useToast } from '../src/contexts/ToastContext';
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('pl-PL', {
@@ -17,6 +20,7 @@ const MONTH_NAMES = [
 
 export default function Budgets({ onClose, kategorie = {}, month, year, budgets = [], onSaved, osoby = [] }) {
   const expenseCats = Object.keys(kategorie['Wydatek'] || {});
+  const { addToast } = useToast();
 
   const [form, setForm] = useState({
     kategoria: expenseCats[0] || '',
@@ -32,6 +36,7 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
   const [isLoadingAll, setIsLoadingAll] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmOverride, setConfirmOverride] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
 
   // Pobierz wszystkie budżety dla roku (do widoku zarządzania)
   const fetchAllBudgets = async () => {
@@ -105,7 +110,7 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
   const doSave = async () => {
     const limitNum = Number(String(form.limit).replace(',', '.'));
     if (!Number.isFinite(limitNum) || limitNum < 0) {
-      alert('Podaj poprawny limit (liczba ≥ 0)');
+      addToast('Podaj poprawny limit (liczba ≥ 0)', 'error');
       return;
     }
 
@@ -128,27 +133,29 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
         await fetchAllBudgets();
         if (onSaved) onSaved();
         setForm(prev => ({ ...prev, limit: '', notatki: '' }));
+        addToast(`Zapisano budżet dla "${budgetData.kategoria}"`);
       }
     } catch (err) {
       console.error(err);
-      alert(err.message || 'Błąd zapisu budżetu');
+      addToast(err.message || 'Błąd zapisu budżetu', 'error');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDelete = async (budget) => {
-    if (!window.confirm(`Czy na pewno chcesz usunąć budżet ${budget.zakres === 'yearly' ? 'roczny' : 'miesięczny'} dla "${budget.kategoria}"?`)) return;
+  const handleDelete = (budget) => setConfirmDelete(budget);
 
+  const performDelete = async (budget) => {
     try {
       const data = await api.deleteBudget(budget);
       if (data.success) {
         await fetchAllBudgets();
         if (onSaved) onSaved();
+        addToast('Budżet został usunięty');
       }
     } catch (err) {
       console.error(err);
-      alert(err.message || 'Błąd usuwania budżetu');
+      addToast(err.message || 'Błąd usuwania budżetu', 'error');
     }
   };
 
@@ -165,13 +172,13 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="w-full max-w-xl max-h-[90vh] rounded-3xl bg-white shadow-2xl flex flex-col">
+    <>
+      <ModalShell onClose={onClose} labelId="budgets-title" maxWidth="max-w-xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 shrink-0">
-          <h2 className="text-xl font-semibold text-gray-800">Budżety</h2>
-          <button onClick={onClose} className="rounded-full p-2 text-gray-400 hover:bg-gray-100 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <h2 id="budgets-title" className="text-xl font-semibold text-gray-800">Budżety</h2>
+          <button onClick={onClose} aria-label="Zamknij budżety" className="rounded-full p-2 text-gray-400 hover:bg-gray-100 transition-colors">
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
 
@@ -264,9 +271,9 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
               </div>
             </div>
 
-            {/* Limit + Okres */}
-            <div className={`grid gap-3 ${form.zakres === 'monthly' ? 'grid-cols-5' : 'grid-cols-2'}`}>
-              <div className={form.zakres === 'monthly' ? 'col-span-3' : ''}>
+            {/* Limit + Okres — na mobile limit zajmuje pełny wiersz */}
+            <div className={`grid gap-3 ${form.zakres === 'monthly' ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-1 sm:grid-cols-2'}`}>
+              <div className={form.zakres === 'monthly' ? 'col-span-2 sm:col-span-3' : ''}>
                 <label className="block text-sm text-gray-600 mb-2">Limit (PLN)</label>
                 <input
                   type="number"
@@ -380,17 +387,19 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               onClick={() => handleLoadExisting(entry.yearly)}
-                              className="rounded-lg p-1.5 text-gray-400 hover:bg-indigo-100 hover:text-indigo-600 transition-all"
+                              className="rounded-lg p-2.5 text-gray-400 hover:bg-indigo-100 hover:text-indigo-600 transition-all"
                               title="Edytuj"
+                              aria-label={`Edytuj budżet roczny ${entry.kategoria}`}
                             >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                              <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                             </button>
                             <button
                               onClick={() => handleDelete(entry.yearly)}
-                              className="rounded-lg p-1.5 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all"
+                              className="rounded-lg p-2.5 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all"
                               title="Usuń"
+                              aria-label={`Usuń budżet roczny ${entry.kategoria}`}
                             >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                              <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                             </button>
                           </div>
                         </div>
@@ -415,17 +424,19 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               onClick={() => handleLoadExisting(mb)}
-                              className="rounded-lg p-1.5 text-gray-400 hover:bg-indigo-100 hover:text-indigo-600 transition-all"
+                              className="rounded-lg p-2.5 text-gray-400 hover:bg-indigo-100 hover:text-indigo-600 transition-all"
                               title="Edytuj"
+                              aria-label={`Edytuj budżet ${entry.kategoria} — ${MONTH_NAMES[mb.miesiac]}`}
                             >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                              <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                             </button>
                             <button
                               onClick={() => handleDelete(mb)}
-                              className="rounded-lg p-1.5 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all"
+                              className="rounded-lg p-2.5 text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-all"
                               title="Usuń"
+                              aria-label={`Usuń budżet ${entry.kategoria} — ${MONTH_NAMES[mb.miesiac]}`}
                             >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                              <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                             </button>
                           </div>
                         </div>
@@ -437,36 +448,33 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
             )}
           </div>
         </div>
-      </div>
+      </ModalShell>
 
-      {/* Dialog potwierdzenia nadpisania */}
+      {/* Dialog potwierdzenia nadpisania rocznego */}
       {confirmOverride && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-amber-100 p-2 text-amber-600">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              </div>
-              <h3 className="text-lg font-semibold text-gray-800">Nadpisanie budżetu rocznego</h3>
-            </div>
-            <p className="text-sm text-gray-600 leading-relaxed">{confirmOverride.message}</p>
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setConfirmOverride(null)}
-                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-              >
-                Anuluj
-              </button>
-              <button
-                onClick={confirmOverride.onConfirm}
-                className="flex-1 rounded-xl bg-amber-500 hover:bg-amber-600 py-2.5 text-sm font-medium text-white transition-all"
-              >
-                Nadpisz
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Nadpisanie budżetu rocznego"
+          message={confirmOverride.message}
+          confirmLabel="Nadpisz"
+          isWarning
+          onConfirm={confirmOverride.onConfirm}
+          onCancel={() => setConfirmOverride(null)}
+        />
       )}
-    </div>
+
+      {/* Dialog potwierdzenia usunięcia */}
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Usunąć budżet?"
+          message={`Czy na pewno chcesz usunąć budżet ${confirmDelete.zakres === 'yearly' ? 'roczny' : 'miesięczny'} dla "${confirmDelete.kategoria}"?`}
+          onConfirm={() => {
+            const budget = confirmDelete;
+            setConfirmDelete(null);
+            performDelete(budget);
+          }}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+    </>
   );
 }

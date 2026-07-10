@@ -1,7 +1,7 @@
 import React from 'react';
 
 const WifiOffIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="2" y1="2" x2="22" y2="22"></line>
     <path d="M8.5 16.5a5 5 0 0 1 7 0"></path>
     <path d="M2 8.82a15 15 0 0 1 4.17-2.65"></path>
@@ -13,7 +13,7 @@ const WifiOffIcon = () => (
 );
 
 const SyncIcon = () => (
-  <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg aria-hidden="true" className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
   </svg>
 );
@@ -32,10 +32,10 @@ export default function OfflineBanner({ isOffline, pendingCount, isSyncing }) {
 
   if (isOffline) {
     return (
-      <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2">
+      <div role="status" className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2">
         <WifiOffIcon />
         <span>
-          Tryb offline — dane z cache (tylko odczyt)
+          Tryb offline — zmiany transakcji zsynchronizują się po połączeniu
           {pendingCount > 0 && (
             <span className="ml-1 inline-flex items-center bg-white/20 rounded-full px-2 py-0.5 text-xs">
               {pendingCount} do synchronizacji

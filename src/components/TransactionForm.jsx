@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 
 /**
+ * UWAGA: ten komponent NIE jest używany przez aplikację — App.jsx ma własną,
+ * inaczej wyglądającą implementację formularza. Plik istnieje wyłącznie jako
+ * odniesienie i pod testy jednostkowe; przy zmianach UI edytuj wersję w App.jsx.
+ *
  * Formularz do dodawania/edycji transakcji
  * @param {Object} props
  * @param {Object} kategorie - Kategorie zgrupowane: { Wydatek: { cat: [subcats] }, Przychód: {...} }
