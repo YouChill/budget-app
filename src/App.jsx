@@ -1430,10 +1430,10 @@ export default function BudgetApp() {
               </button>
             </div>
 
-            {/* Nawigacja okresu — identyczna struktura w obu widokach
-                (‹ | etykieta | › | Dziś), żeby przełączanie Miesiąc/Rok
-                nie przesuwało układu. „Dziś" na bieżącym okresie jest
-                niewidoczny, ale zajmuje miejsce. */}
+            {/* Nawigacja okresu — identyczna, stała struktura w obu widokach
+                (‹ | etykieta | ›), żeby przełączanie Miesiąc/Rok nie
+                przesuwało układu. Etykieta okresu jest przyciskiem
+                „wróć do dziś" — bez osobnego przycisku zajmującego miejsce. */}
             {activeView === 'monthly' ? (
               <div className="flex items-center gap-1 sm:gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
                 <button
@@ -1443,27 +1443,25 @@ export default function BudgetApp() {
                 >
                   <Icons.ChevronLeft />
                 </button>
-                <span className="px-2 sm:px-3 py-1 text-sm font-medium text-gray-700 min-w-[130px] sm:min-w-[140px] text-center capitalize" aria-live="polite">
-                  {getMonthName(currentPeriod.month, currentPeriod.year)}
-                </span>
-                <button
-                  onClick={() => changeMonth(1)}
-                  aria-label="Następny miesiąc"
-                  className="rounded-xl p-2.5 text-gray-600 hover:bg-gray-100 transition-colors"
-                >
-                  <Icons.ChevronRight />
-                </button>
                 <button
                   onClick={() => {
                     setCurrentPeriod(getCurrentMonth());
                     setSearchQuery('');
                   }}
                   disabled={isCurrentMonth}
-                  tabIndex={isCurrentMonth ? -1 : 0}
-                  aria-hidden={isCurrentMonth}
-                  className={`rounded-xl px-3 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 transition-colors ${isCurrentMonth ? 'invisible' : ''}`}
+                  title={isCurrentMonth ? undefined : 'Wróć do bieżącego miesiąca'}
+                  aria-label={isCurrentMonth ? undefined : `${getMonthName(currentPeriod.month, currentPeriod.year)} — wróć do bieżącego miesiąca`}
+                  className="rounded-xl px-2 sm:px-3 py-1 text-sm font-medium text-gray-700 min-w-[130px] sm:min-w-[140px] text-center capitalize hover:bg-gray-100 disabled:hover:bg-transparent transition-colors"
+                  aria-live="polite"
                 >
-                  Dziś
+                  {getMonthName(currentPeriod.month, currentPeriod.year)}
+                </button>
+                <button
+                  onClick={() => changeMonth(1)}
+                  aria-label="Następny miesiąc"
+                  className="rounded-xl p-2.5 text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  <Icons.ChevronRight />
                 </button>
               </div>
             ) : (
@@ -1476,9 +1474,16 @@ export default function BudgetApp() {
                 >
                   <Icons.ChevronLeft />
                 </button>
-                <span className="px-2 sm:px-3 py-1 text-sm font-medium text-gray-700 min-w-[130px] sm:min-w-[140px] text-center" aria-live="polite">
+                <button
+                  onClick={() => setSelectedYear(currentYear)}
+                  disabled={selectedYear === currentYear}
+                  title={selectedYear === currentYear ? undefined : 'Wróć do bieżącego roku'}
+                  aria-label={selectedYear === currentYear ? undefined : `${selectedYear} — wróć do bieżącego roku`}
+                  className="rounded-xl px-2 sm:px-3 py-1 text-sm font-medium text-gray-700 min-w-[130px] sm:min-w-[140px] text-center hover:bg-gray-100 disabled:hover:bg-transparent transition-colors"
+                  aria-live="polite"
+                >
                   {selectedYear}
-                </span>
+                </button>
                 <button
                   onClick={() => setSelectedYear(y => Math.min(maxYear, y + 1))}
                   disabled={selectedYear >= maxYear}
@@ -1486,15 +1491,6 @@ export default function BudgetApp() {
                   className="rounded-xl p-2.5 text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                 >
                   <Icons.ChevronRight />
-                </button>
-                <button
-                  onClick={() => setSelectedYear(currentYear)}
-                  disabled={selectedYear === currentYear}
-                  tabIndex={selectedYear === currentYear ? -1 : 0}
-                  aria-hidden={selectedYear === currentYear}
-                  className={`rounded-xl px-3 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 transition-colors ${selectedYear === currentYear ? 'invisible' : ''}`}
-                >
-                  Dziś
                 </button>
               </div>
             )}
