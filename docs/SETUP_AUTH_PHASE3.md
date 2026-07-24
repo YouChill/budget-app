@@ -33,9 +33,6 @@ Aplikacja używa **Supabase Auth** z logowaniem przez **email + hasło**. Row Le
 ```env
 VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 VITE_SUPABASE_ANON_KEY=your_anon_key
-
-# Fallback dla dev (używany tylko jeśli profil nie ma household_id)
-VITE_HOUSEHOLD_ID=your_fallback_household_uuid
 ```
 
 ### 5. Migracje SQL

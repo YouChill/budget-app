@@ -3,6 +3,7 @@ import * as api from '../src/services/api';
 import ModalShell from '../src/components/ModalShell';
 import ConfirmDialog from '../src/components/ConfirmDialog';
 import { useToast } from '../src/contexts/ToastContext';
+import { logger } from '../src/utils/logger';
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('pl-PL', {
@@ -45,7 +46,7 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
       const data = await api.getAllBudgetsForYear(form.rok);
       setAllBudgets(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.warn('Nie udało się pobrać budżetów rocznych', err);
+      logger.warn('Budgets', 'Nie udało się pobrać budżetów rocznych', err);
     } finally {
       setIsLoadingAll(false);
     }
@@ -136,7 +137,7 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
         addToast(`Zapisano budżet dla "${budgetData.kategoria}"`);
       }
     } catch (err) {
-      console.error(err);
+      logger.error('Budgets', 'setBudget failed:', err);
       addToast(err.message || 'Błąd zapisu budżetu', 'error');
     } finally {
       setIsSaving(false);
@@ -154,7 +155,7 @@ export default function Budgets({ onClose, kategorie = {}, month, year, budgets 
         addToast('Budżet został usunięty');
       }
     } catch (err) {
-      console.error(err);
+      logger.error('Budgets', 'deleteBudget failed:', err);
       addToast(err.message || 'Błąd usuwania budżetu', 'error');
     }
   };

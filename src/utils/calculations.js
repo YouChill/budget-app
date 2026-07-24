@@ -1,4 +1,13 @@
 /**
+ * Zaokrągla kwotę do groszy (2 miejsc). Sumy pieniężne liczone na floatach
+ * potrafią zbierać dryf rzędu 0,01 zł przy wielu składnikach — zaokrąglamy w
+ * jednym miejscu, żeby wyświetlane sumy były spójne z zapisem w bazie (numeric).
+ * @param {number} value
+ * @returns {number}
+ */
+export const roundTo2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
+
+/**
  * Formatuje kwotę do formatu polskiego PLN
  * @param {number} amount - Kwota do sformatowania
  * @returns {string} Sformatowana kwota (np. "1 234,56 zł")
@@ -54,9 +63,11 @@ export const getMonthName = (month, year) => {
  * @returns {number} Suma przychodów
  */
 export const calculateIncome = (transakcje = []) => {
-  return transakcje
-    .filter(t => t.typ === 'Przychód')
-    .reduce((sum, t) => sum + (parseFloat(t.kwota) || 0), 0);
+  return roundTo2(
+    transakcje
+      .filter(t => t.typ === 'Przychód')
+      .reduce((sum, t) => sum + (parseFloat(t.kwota) || 0), 0)
+  );
 };
 
 /**
@@ -65,9 +76,11 @@ export const calculateIncome = (transakcje = []) => {
  * @returns {number} Suma wydatków
  */
 export const calculateExpenses = (transakcje = []) => {
-  return transakcje
-    .filter(t => t.typ === 'Wydatek')
-    .reduce((sum, t) => sum + (parseFloat(t.kwota) || 0), 0);
+  return roundTo2(
+    transakcje
+      .filter(t => t.typ === 'Wydatek')
+      .reduce((sum, t) => sum + (parseFloat(t.kwota) || 0), 0)
+  );
 };
 
 /**
@@ -78,7 +91,7 @@ export const calculateExpenses = (transakcje = []) => {
 export const calculateBalance = (transakcje = []) => {
   const income = calculateIncome(transakcje);
   const expenses = calculateExpenses(transakcje);
-  return income - expenses;
+  return roundTo2(income - expenses);
 };
 
 /**

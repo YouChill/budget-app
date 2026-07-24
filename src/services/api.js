@@ -1,20 +1,21 @@
 import { supabase } from '../lib/supabase';
-import { logger } from '../utils/logger';
 import { DEFAULT_KATEGORIE } from '../data/defaultKategorie';
-
-// Fallback dla backward compatibility (dla development bez auth)
-const FALLBACK_HOUSEHOLD_ID = import.meta.env.VITE_HOUSEHOLD_ID;
 
 // ═══════════════════════════════════════════
 // PROFILE & HOUSEHOLD FUNCTIONS
 // ═══════════════════════════════════════════
 
 /**
- * Pobiera profil zalogowanego użytkownika wraz z household_id
+ * Pobiera profil zalogowanego użytkownika wraz z household_id.
+ *
+ * Tworzenie profilu (i przypisanie household) należy wyłącznie do triggera
+ * `handle_new_user` po stronie bazy (migracje 006/007) — klient nigdy nie
+ * zgaduje household_id, żeby nie dało się przypadkiem trafić do cudzego
+ * gospodarstwa przy regresji RLS.
  */
 export async function getUserProfile() {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
-  
+
   if (authError || !user) {
     throw new Error('Użytkownik nie zalogowany');
   }
@@ -26,29 +27,6 @@ export async function getUserProfile() {
     .single();
 
   if (profileError) {
-    // Profil nie istnieje — twórz go
-    if (profileError.code === 'PGRST116') {
-      // Spróbuj automatycznie stworzyć profil z ostatnim household
-      const { data: households } = await supabase
-        .from('households')
-        .select('id')
-        .limit(1);
-
-      if (households && households.length > 0) {
-        const { data: created } = await supabase
-          .from('profiles')
-          .insert({
-            id: user.id,
-            email: user.email,
-            display_name: user.user_metadata?.name || user.email,
-            household_id: households[0].id,
-          })
-          .select('id, email, display_name, household_id')
-          .single();
-
-        return created;
-      }
-    }
     throw profileError;
   }
 
@@ -74,20 +52,11 @@ export async function assignUserToHousehold(userId, householdId) {
 }
 
 /**
- * Pobiera household_id zalogowanego użytkownika
- * Falls back do VITE_HOUSEHOLD_ID dla backward compatibility
+ * Pobiera household_id zalogowanego użytkownika z jego profilu.
  */
 async function getHouseholdId() {
-  try {
-    const profile = await getUserProfile();
-    return profile.household_id;
-  } catch (err) {
-    logger.warn('api', 'Nie udało się pobrać household_id z profilu, używam fallback', err);
-    if (FALLBACK_HOUSEHOLD_ID) {
-      return FALLBACK_HOUSEHOLD_ID;
-    }
-    throw new Error('Brak household_id — zaloguj się lub ustaw VITE_HOUSEHOLD_ID');
-  }
+  const profile = await getUserProfile();
+  return profile.household_id;
 }
 
 /**
@@ -112,6 +81,28 @@ function handleAuthError(error) {
     window.dispatchEvent(new CustomEvent('auth:session-expired'));
   }
   throw error;
+}
+
+// ═══════════════════════════════════════════
+// CACHE HELPERS
+// ═══════════════════════════════════════════
+
+const YEARLY_CACHE_PREFIX = 'yearly_transakcje_';
+
+// Usuwa cały cache roczny (widok „Rok"). Wołane po każdej mutacji transakcji,
+// bo pojedyncza operacja może dotyczyć dowolnego roku (przy delete znamy tylko
+// id), a nieaktualny cache pokazywałby błędne sumy roczne/YoY do wygaśnięcia TTL.
+function invalidateYearlyCache() {
+  try {
+    const keys = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && key.startsWith(YEARLY_CACHE_PREFIX)) keys.push(key);
+    }
+    keys.forEach(k => sessionStorage.removeItem(k));
+  } catch {
+    // sessionStorage niedostępny — ignoruj
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -159,6 +150,7 @@ export async function addTransakcja(transakcja) {
   if (error) {
     handleAuthError(error);
   }
+  invalidateYearlyCache();
   return { success: true, id: data.id };
 }
 
@@ -181,6 +173,7 @@ export async function updateTransakcja(id, transakcja) {
   if (error) {
     handleAuthError(error);
   }
+  invalidateYearlyCache();
   return { success: true };
 }
 
@@ -195,6 +188,7 @@ export async function deleteTransakcja(id) {
   if (error) {
     handleAuthError(error);
   }
+  invalidateYearlyCache();
   return { success: true };
 }
 
@@ -223,6 +217,7 @@ export async function addTransakcjeBatch(transakcje) {
   if (error) {
     handleAuthError(error);
   }
+  invalidateYearlyCache();
   return { success: true, count: data.length, ids: data.map(d => d.id) };
 }
 
@@ -540,7 +535,7 @@ const YEARLY_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 export async function getTransakcjeForYear(rok) {
   // Check sessionStorage cache first (with TTL)
-  const cacheKey = `yearly_transakcje_${rok}`;
+  const cacheKey = `${YEARLY_CACHE_PREFIX}${rok}`;
   const cacheTimestampKey = `${cacheKey}_ts`;
   const cached = sessionStorage.getItem(cacheKey);
   const cachedTs = sessionStorage.getItem(cacheTimestampKey);

@@ -5,6 +5,7 @@ import * as categoryAI from '../src/services/categoryAI';
 import ModalShell from '../src/components/ModalShell';
 import ConfirmDialog from '../src/components/ConfirmDialog';
 import Button from '../src/components/Button';
+import { logger } from '../src/utils/logger';
 
 // ─── Keyword → category mapping ──────────────────────────────────────────────
 const categoryMapping = {
@@ -444,7 +445,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
         );
         setAiMatchCount(matched);
       } catch (err) {
-        if (!cancelled) console.error('AI categorization pass failed:', err);
+        if (!cancelled) logger.error('CSVImport', 'AI categorization pass failed:', err);
       } finally {
         if (!cancelled) setAiLoading(false);
       }
@@ -702,7 +703,8 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
 
     // Save to Supabase vector store (non-blocking)
     if (aiEnabled) {
-      categoryAI.saveCategoryRule(keyword.trim(), kategoria, podkategoria, 'manual').catch(console.error);
+      categoryAI.saveCategoryRule(keyword.trim(), kategoria, podkategoria, 'manual')
+        .catch(err => logger.error('CSVImport', 'saveCategoryRule failed:', err));
     }
 
     const { updated, matchCount } = applyRuleToTransactions(newRule, transactions);
@@ -751,11 +753,12 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
 
         // Save AI category rules in background (non-blocking)
         if (aiEnabled) {
-          categoryAI.saveCategoryRulesBatch(normalizedTransactions).catch(console.error);
+          categoryAI.saveCategoryRulesBatch(normalizedTransactions)
+            .catch(err => logger.error('CSVImport', 'saveCategoryRulesBatch failed:', err));
         }
       }
     } catch (err) {
-      console.error(err);
+      logger.error('CSVImport', 'handleImport failed:', err);
       setError(err.message || 'Błąd importu. Twój postęp został zapisany lokalnie.');
       setIsLoading(false);
     }

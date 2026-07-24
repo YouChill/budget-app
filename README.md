@@ -68,7 +68,6 @@ Uzupełnij plik `.env`:
 ```env
 VITE_SUPABASE_URL=https://twoj-projekt.supabase.co
 VITE_SUPABASE_ANON_KEY=twoj-anon-key
-VITE_HOUSEHOLD_ID=twoj-household-uuid
 
 # Opcjonalnie — kategoryzacja AI podczas importu CSV.
 # Klucz OpenAI pozostaje WYŁĄCZNIE po stronie serwera (bez prefiksu VITE_):
@@ -270,7 +269,6 @@ budget-app/
 |---------|----------|------|
 | `VITE_SUPABASE_URL` | ✅ | URL projektu Supabase |
 | `VITE_SUPABASE_ANON_KEY` | ✅ | Klucz anonimowy Supabase |
-| `VITE_HOUSEHOLD_ID` | ⚠️ | UUID gospodarstwa (fallback bez auth) |
 | `OPENAI_API_KEY` | ➕ | Klucz OpenAI — **tylko po stronie serwera** (proxy `/api/embeddings`) |
 | `VITE_AI_ENABLED` | ➕ | Flaga `true/false` włączająca kategoryzację AI w UI |
 
