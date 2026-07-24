@@ -77,22 +77,14 @@ Przejdź do **Table Editor** w Supabase — powinieneś zobaczyć tabele:
 - `transakcje`
 - `budgets`
 
-### 5. Utwórz gospodarstwo (household)
+### 5. Gospodarstwo (household) — tworzone automatycznie
 
-Gospodarstwo (household) to grupa osób współdzielących budżet. Utwórz jedno ręcznie:
+Gospodarstwo (household) to grupa osób współdzielących budżet. **Nie trzeba go
+tworzyć ręcznie** — trigger `handle_new_user` (migracje 006/007) tworzy nowe
+gospodarstwo przy pierwszej rejestracji i przypisuje je do profilu użytkownika.
 
-1. Przejdź do **Table Editor** → **households**
-2. Kliknij **Insert row**
-3. Podaj:
-   - **id**: Wygeneruj UUID (np. `f47ac10b-58cc-4372-a567-0e02b2c3d479`) lub pozwól Supabase to zrobić
-   - **name**: "Moja rodzina" (lub inna nazwa)
-
-4. Skopiuj **id** tego gospodarstwa
-5. Wklej do `.env` jako `VITE_HOUSEHOLD_ID`:
-
-```env
-VITE_HOUSEHOLD_ID=f47ac10b-58cc-4372-a567-0e02b2c3d479
-```
+Aby dołączyć drugą osobę do istniejącego gospodarstwa, ustaw jej
+`profiles.household_id` na to samo UUID (Table Editor → **profiles**).
 
 ### 6. Skonfiguruj RLS (Row Level Security) — Supabase Auth
 
@@ -129,7 +121,6 @@ Po konfiguracji `.env` powinien wyglądać tak:
 # Supabase
 VITE_SUPABASE_URL=https://xxxxxxxxxxxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-VITE_HOUSEHOLD_ID=f47ac10b-58cc-4372-a567-0e02b2c3d479
 ```
 
 Logowanie działa przez Supabase Auth (email + hasło) — nie wymaga dodatkowych zmiennych w `.env`. Konfiguracja providera odbywa się w Supabase Dashboard (patrz `docs/SETUP_AUTH_PHASE3.md`).
@@ -162,7 +153,6 @@ Zawsze używaj HTTPS w produkcji (Vercel/Netlify automatycznie)
 1. Dodaj zmienne środowiskowe w ustawieniach projektu:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
-   - `VITE_HOUSEHOLD_ID`
 
 2. W Supabase **Project Settings** → **API** → **Authorization** dodaj domenę hostingu do **Allowed origins**:
    ```

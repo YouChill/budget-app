@@ -24,6 +24,7 @@ import {
   getCurrentMonth,
   calculateIncome,
   calculateExpenses,
+  roundTo2,
   sortTransactionsByDate,
   changeMonth as computeMonthChange,
 } from './utils/calculations';
@@ -1266,7 +1267,7 @@ export default function BudgetApp() {
   // Obliczenia — memoizowane, korzystają z pure helperów z utils/calculations.
   const przychody = useMemo(() => calculateIncome(transakcje), [transakcje]);
   const wydatki = useMemo(() => calculateExpenses(transakcje), [transakcje]);
-  const bilans = przychody - wydatki;
+  const bilans = roundTo2(przychody - wydatki);
 
   const sortedTransakcje = useMemo(() => sortTransactionsByDate(transakcje), [transakcje]);
 
