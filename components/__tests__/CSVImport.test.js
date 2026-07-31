@@ -201,6 +201,63 @@ describe('categorizeDescription', () => {
     const result = categorizeDescription('Biedronka zakupy', []);
     expect(result).toEqual({ kategoria: 'Jedzenie', podkategoria: 'Zakupy domowe' });
   });
+
+  describe('rozróżnianie typu transakcji (Wydatek/Przychód)', () => {
+    it('nie stosuje wbudowanego słownika wydatkowego do przychodów', () => {
+      // Zwrot za zakupy kartą (uznanie) nie może dostać kategorii wydatkowej
+      expect(categorizeDescription('ZWROT ZAKUP BIEDRONKA WARSZAWA', [], 'Przychód')).toBeNull();
+      expect(categorizeDescription('Przelew od Jana — za pizzę i kino', [], 'Przychód')).toBeNull();
+    });
+
+    it('stosuje wbudowany słownik dla wydatków (domyślny typ)', () => {
+      expect(categorizeDescription('Płatność BIEDRONKA', [], 'Wydatek')).toEqual(
+        { kategoria: 'Jedzenie', podkategoria: 'Zakupy domowe' }
+      );
+      // Brak argumentu typ = zachowanie jak dla wydatku (kompatybilność wstecz)
+      expect(categorizeDescription('Płatność BIEDRONKA')).toEqual(
+        { kategoria: 'Jedzenie', podkategoria: 'Zakupy domowe' }
+      );
+    });
+
+    it('nie stosuje reguły z typem Wydatek do przychodu', () => {
+      const userRules = [
+        { keyword: 'biedronka', kategoria: 'Jedzenie', podkategoria: 'Zakupy domowe', typ: 'Wydatek' },
+      ];
+      expect(categorizeDescription('ZWROT BIEDRONKA', userRules, 'Przychód')).toBeNull();
+    });
+
+    it('stosuje regułę z typem Przychód do przychodu', () => {
+      const userRules = [
+        { keyword: 'wynagrodzenie', kategoria: 'Pensja', podkategoria: '', typ: 'Przychód' },
+      ];
+      expect(categorizeDescription('WYNAGRODZENIE ZA LIPIEC', userRules, 'Przychód')).toEqual(
+        { kategoria: 'Pensja', podkategoria: '' }
+      );
+      expect(categorizeDescription('WYNAGRODZENIE ZA LIPIEC', userRules, 'Wydatek')).toBeNull();
+    });
+
+    it('reguły bez typu (starsze) stosuje do obu typów', () => {
+      const userRules = [
+        { keyword: 'allegro', kategoria: 'Dom', podkategoria: 'Wyposażenie' },
+      ];
+      expect(categorizeDescription('ALLEGRO zamówienie', userRules, 'Wydatek')).toEqual(
+        { kategoria: 'Dom', podkategoria: 'Wyposażenie' }
+      );
+      expect(categorizeDescription('ALLEGRO zwrot', userRules, 'Przychód')).toEqual(
+        { kategoria: 'Dom', podkategoria: 'Wyposażenie' }
+      );
+    });
+
+    it('pomija regułę o niezgodnym typie i sprawdza kolejne', () => {
+      const userRules = [
+        { keyword: 'biedronka', kategoria: 'Złe', podkategoria: '', typ: 'Przychód' },
+        { keyword: 'biedronka', kategoria: 'Moje Zakupy', podkategoria: 'Tygodniowe', typ: 'Wydatek' },
+      ];
+      expect(categorizeDescription('BIEDRONKA zakupy', userRules, 'Wydatek')).toEqual(
+        { kategoria: 'Moje Zakupy', podkategoria: 'Tygodniowe' }
+      );
+    });
+  });
 });
 
 // ─── validateCategoryExists ───────────────────────────────────────────────────
