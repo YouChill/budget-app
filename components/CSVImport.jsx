@@ -65,14 +65,19 @@ const categoryMapping = {
   'prezent': { kategoria: 'Inne', podkategoria: 'Prezenty' },
 };
 
-export const categorizeDescription = (description, userRules = []) => {
+export const categorizeDescription = (description, userRules = [], typ = 'Wydatek') => {
   if (!description) return null;
   const lowerDesc = description.toLowerCase();
   for (const rule of userRules) {
+    // Reguły sprzed wprowadzenia pola typ (bez rule.typ) stosujemy do obu typów.
+    if (rule.typ && rule.typ !== typ) continue;
     if (lowerDesc.includes(rule.keyword.toLowerCase())) {
       return { kategoria: rule.kategoria, podkategoria: rule.podkategoria };
     }
   }
+  // Wbudowany słownik zawiera wyłącznie kategorie wydatkowe — nie stosujemy go
+  // do przychodów (np. zwrot „ZWROT ZAKUP BIEDRONKA" to nie wydatek Jedzenie).
+  if (typ !== 'Wydatek') return null;
   for (const [keyword, category] of Object.entries(categoryMapping)) {
     if (lowerDesc.includes(keyword)) return category;
   }
@@ -630,7 +635,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
           typ = kwotaNum < 0 ? 'Wydatek' : 'Przychód';
         }
 
-        const categoryData = categorizeDescription(opis, recognitionRules);
+        const categoryData = categorizeDescription(opis, recognitionRules, typ);
         const rawKategoria = categoryData?.kategoria || 'Inne';
         const rawPodkategoria = categoryData?.podkategoria || 'Nieprzewidziane';
         const validated = validateCategoryExists(rawKategoria, rawPodkategoria, kategorie, typ);
@@ -681,6 +686,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
     let matchCount = 0;
     const updated = currentTransactions.map(tx => {
       if (tx.kategoria !== 'Inne' || tx.podkategoria !== 'Nieprzewidziane') return tx;
+      if (rule.typ && tx.typ !== rule.typ) return tx;
       if ((tx.opis || '').toLowerCase().includes(keyword)) {
         matchCount++;
         return { ...tx, kategoria: rule.kategoria, podkategoria: rule.podkategoria || '' };
@@ -691,11 +697,11 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
   }, []);
 
   const handleAddRule = async () => {
-    const { keyword, kategoria, podkategoria } = ruleForm;
+    const { keyword, kategoria, podkategoria, typ } = ruleForm;
     if (!keyword.trim()) { setError('Podaj warunek (tekst do wyszukania)'); return; }
     if (!kategoria) { setError('Wybierz kategorię'); return; }
 
-    const newRule = { keyword: keyword.trim(), kategoria, podkategoria: podkategoria || '', createdAt: Date.now() };
+    const newRule = { keyword: keyword.trim(), kategoria, podkategoria: podkategoria || '', typ, createdAt: Date.now() };
 
     const updatedRules = [...recognitionRules, newRule];
     setRecognitionRules(updatedRules);
@@ -1312,6 +1318,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                             Jeśli zawiera „<strong>{rule.keyword}</strong>" →{' '}
                             <span className="text-indigo-600 font-medium">{rule.kategoria}</span>
                             {rule.podkategoria && <> &gt; <span className="text-indigo-500">{rule.podkategoria}</span></>}
+                            {rule.typ && <span className="text-gray-400 ml-1">({rule.typ})</span>}
                           </span>
                           <button
                             onClick={() => handleDeleteRule(i)}
