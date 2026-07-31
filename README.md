@@ -22,6 +22,7 @@ Aplikacja do śledzenia domowych wydatków i przychodów. Stworzona z myślą o 
 - **Budżety** — ustawianie miesięcznych limitów wydatków wg kategorii (z powtarzalnością roczną/miesięczną)
 - **Podsumowanie roczne** — KPI roczne, wykresy miesięczne przychody vs wydatki, oszczędności skumulowane, porównanie rok do roku, podział wydatków na osoby
 - **Offline mode** — kolejka operacji offline z automatyczną synchronizacją po powrocie do sieci
+- **REST API** — pełny CRUD (`/api/v1`) dla transakcji, kategorii, osób i budżetów z autoryzacją JWT i izolacją gospodarstw ([dokumentacja](./docs/API.md))
 
 ## Stack technologiczny
 
@@ -194,6 +195,10 @@ budget-app/
 │   ├── CSVImport.jsx            # Import CSV (drag-and-drop + AI)
 │   ├── CategoryCharts.jsx       # Wykresy kategorii (Recharts)
 │   └── Budgets.jsx              # Zarządzanie budżetami
+├── api/                         # Funkcje serverless (Vercel)
+│   ├── _lib/                    # Wspólne moduły API (auth, walidacja, błędy)
+│   ├── v1/[...route].js         # REST API CRUD (docs/API.md)
+│   └── embeddings.js            # Proxy OpenAI Embeddings
 ├── migration/
 │   ├── 001_create_budzety.sql
 │   ├── 002_rls_policies_phase2.sql
@@ -296,6 +301,7 @@ budget-app/
 - [x] Podsumowanie roczne z porównaniem lat i podziałem na osoby
 - [x] Kategoryzacja AI — pgvector + OpenAI embeddingi
 - [x] Drag-and-drop upload z nowym UX importu CSV
+- [x] REST API `/api/v1` — pełny CRUD z autoryzacją JWT i izolacją gospodarstw
 - [ ] Eksport danych do CSV (backup)
 - [ ] Integracje bankowe (Open Banking API)
 - [ ] Raporty szczegółowe PDF
