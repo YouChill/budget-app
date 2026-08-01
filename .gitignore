@@ -31,3 +31,41 @@ Zestawienie*
 *.njsproj
 *.sln
 *.sw?
+
+# ── DODAJ TO DO ISTNIEJĄCEGO .gitignore ──────────────────────────────────
+# Wklej poniższą sekcję na koniec pliku .gitignore w korzeniu projektu.
+# Obecna reguła `Zestawienie*` łapie tylko eksporty z Millennium; poniższe
+# domykają resztę formatów, które przewinęły się przez ten import.
+
+# ── Wyciągi bankowe i dane finansowe ─────────────────────────────────────
+# Nazwy plików z eksportów: Millennium, iPKO, Revolut
+Zestawienie*
+Historia_transakcji_*
+account-statement*
+transaction-history*
+*.numbers
+
+# Payloady importu — zawierają kwoty wynagrodzeń, salda, nazwiska
+migration/IMPORT_*.json
+migration/ODTWORZENIE_*.json
+migration/ODTWORZENIE_*.sql
+
+# Robocze pliki kategoryzacji
+migration/FINAL_*.csv
+migration/pawel_*.csv
+migration/*_do_weryfikacji.csv
+migration/*_dopasowanie.csv
+
+# Zrzuty z Allegro (historia zakupów, ceny, adresy)
+allegro_*.json
+allegro_*.csv
+
+# ── Sekrety ──────────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Klucze service_role bywają wklejane do plików roboczych
+*service_role*
+*.key
