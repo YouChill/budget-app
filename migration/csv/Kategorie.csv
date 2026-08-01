@@ -3,14 +3,18 @@ Wydatek,Mieszkanie,Czynsz
 Wydatek,Mieszkanie,Prąd
 Wydatek,Mieszkanie,Gaz
 Wydatek,Mieszkanie,Woda
+Wydatek,Mieszkanie,Wywóz śmieci
+Wydatek,Mieszkanie,Podatki lokalne
 Wydatek,Mieszkanie,Internet
 Wydatek,Mieszkanie,Telefon
 Wydatek,Mieszkanie,Ubezpieczenie mieszkania
+Wydatek,Mieszkanie,Ubezpieczenie na życie
 Wydatek,Dzieci,Przedszkole/Szkoła
 Wydatek,Dzieci,Zajęcia dodatkowe
 Wydatek,Dzieci,Ubrania dzieci
 Wydatek,Dzieci,Zabawki/książki
 Wydatek,Dzieci,Lekarz/leki dzieci
+Wydatek,Dzieci,Rehabilitacja
 Wydatek,Transport,Paliwo
 Wydatek,Transport,Ubezpieczenie auta
 Wydatek,Transport,Serwis/naprawy
@@ -19,6 +23,7 @@ Wydatek,Transport,Parking
 Wydatek,Kredyty/Raty,Kredyt hipoteczny
 Wydatek,Kredyty/Raty,Kredyt gotówkowy
 Wydatek,Kredyty/Raty,Raty
+Wydatek,Kredyty/Raty,Pożyczka prywatna
 Wydatek,Jedzenie,Zakupy domowe
 Wydatek,Jedzenie,Restauracje/miasto
 Wydatek,Jedzenie,Praca
@@ -26,21 +31,37 @@ Wydatek,Jedzenie,Kawa/przekąski
 Wydatek,Zdrowie,Lekarz
 Wydatek,Zdrowie,Leki
 Wydatek,Zdrowie,Suplementy
+Wydatek,Zdrowie,Terapia i rehabilitacja
+Wydatek,Zdrowie,Ubezpieczenie
 Wydatek,Rozrywka,Kino/koncerty
 Wydatek,Rozrywka,Subskrypcje
 Wydatek,Rozrywka,Hobby
 Wydatek,Rozrywka,Wyjazdy/wakacje
+Wydatek,Rozrywka,Oprogramowanie i licencje
+Wydatek,Rozrywka,Sport i aktywność
+Wydatek,Rozrywka,Atrakcje i bilety
 Wydatek,Dom,Wyposażenie
 Wydatek,Dom,Chemia/środki czystości
 Wydatek,Dom,Naprawy
 Wydatek,Dom,Ogród
+Wydatek,Zwierzęta,Karma
+Wydatek,Zwierzęta,Akcesoria
+Wydatek,Zwierzęta,Weterynarz
 Wydatek,Ubrania,Dorośli
+Wydatek,Ubrania,Obuwie
 Wydatek,Inne,Prezenty
 Wydatek,Inne,Fryzjer/kosmetyki
+Wydatek,Inne,Darowizny
+Wydatek,Inne,Wypłata gotówki
+Wydatek,Inne,Transfer własny
 Wydatek,Inne,Nieprzewidziane
-Przychód,Wynagrodzenie,Osoba1
-Przychód,Wynagrodzenie,Osoba2
+Przychód,Wynagrodzenie,Paweł
+Przychód,Wynagrodzenie,Teresa
 Przychód,Inne przychody,800+
 Przychód,Inne przychody,Zwroty
 Przychód,Inne przychody,Premia
 Przychód,Inne przychody,Sprzedaż rzeczy
+Przychód,Inne przychody,Sprzedaż Allegro
+Przychód,Inne przychody,Rozliczenia rodzinne
+Przychód,Inne przychody,Transfer własny
+Przychód,Inne przychody,Delegacje
