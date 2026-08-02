@@ -78,6 +78,28 @@ describe('useMonthlyData', () => {
     expect(api.getAllData).not.toHaveBeenCalled();
   });
 
+  it('pobiera dane po przejściu enabled false -> true (logowanie)', async () => {
+    api.getAllData.mockResolvedValue({
+      transakcje: [],
+      kategorie: { Wydatek: { Jedzenie: ['Lidl'] }, Przychód: {} },
+      osoby: [],
+    });
+
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useMonthlyData({ month: 1, year: 2026, enabled }),
+      { initialProps: { enabled: false } }
+    );
+    expect(api.getAllData).not.toHaveBeenCalled();
+
+    rerender({ enabled: true });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(api.getAllData).toHaveBeenCalledTimes(1);
+    expect(result.current.kategorie).toEqual({ Wydatek: { Jedzenie: ['Lidl'] }, Przychód: {} });
+  });
+
   it('odpornie traktuje brak pól w odpowiedzi API', async () => {
     api.getAllData.mockResolvedValue({});
     const { result } = renderHook(() => useMonthlyData({ month: 1, year: 2026 }));
@@ -109,6 +131,32 @@ describe('useMonthlyData', () => {
     expect(api.seedDefaultKategorie).toHaveBeenCalledTimes(1);
     expect(result.current.kategorie).toEqual({
       Wydatek: { Jedzenie: ['Zakupy domowe'] },
+      Przychód: {},
+    });
+  });
+
+  it('ponawia getKategorie gdy słownik pusty mimo seeded=0 (przejściowy błąd)', async () => {
+    // getAllData połknęło błąd getKategorie i zwróciło pusty słownik,
+    // choć gospodarstwo ma kategorie (seed nic nie wstawia).
+    api.getAllData.mockResolvedValue({
+      transakcje: [{ id: '1', kwota: 10 }],
+      kategorie: { Wydatek: {}, Przychód: {} },
+      osoby: [],
+    });
+    api.seedDefaultKategorie.mockResolvedValue({ success: true, seeded: 0 });
+    api.getKategorie.mockResolvedValue({
+      Wydatek: { Jedzenie: ['Lidl'] },
+      Przychód: {},
+    });
+
+    const { result } = renderHook(() => useMonthlyData({ month: 1, year: 2026 }));
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+    expect(api.getKategorie).toHaveBeenCalledTimes(1);
+    expect(result.current.kategorie).toEqual({
+      Wydatek: { Jedzenie: ['Lidl'] },
       Przychód: {},
     });
   });

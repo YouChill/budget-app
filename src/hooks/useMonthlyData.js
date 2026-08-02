@@ -44,10 +44,11 @@ export function useMonthlyData({ month, year, enabled = true }) {
       if (kategorieEmpty(kategorie) && !seedAttemptedRef.current) {
         seedAttemptedRef.current = true;
         try {
-          const { seeded } = await api.seedDefaultKategorie();
-          if (seeded > 0) {
-            kategorie = await api.getKategorie();
-          }
+          await api.seedDefaultKategorie();
+          // Refetch także gdy nic nie zasiano: pusty słownik może pochodzić
+          // z przejściowego błędu getKategorie połkniętego przez getAllData,
+          // podczas gdy baza ma komplet kategorii.
+          kategorie = await api.getKategorie();
         } catch (seedErr) {
           logger.error('useMonthlyData:seed', seedErr);
         }

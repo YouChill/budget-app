@@ -1009,6 +1009,10 @@ export default function BudgetApp() {
   } = useMonthlyData({
     month: currentPeriod.month,
     year: currentPeriod.year,
+    // Bez tej bramki fetch odpala się przed zalogowaniem, pada na braku
+    // sesji i nigdy nie jest ponawiany — po zalogowaniu bez przeładowania
+    // strony formularz transakcji zostawał bez kategorii.
+    enabled: isAuthenticated && !isRecoveringPassword,
   });
 
   // Yearly summary view state
