@@ -145,12 +145,27 @@ const ChartIcon = () => (
 // Props:
 //   transakcje — tablica transakcji z bieżącego miesiąca
 //                (ta sama co w BudgetApp state)
+//   selectedCategory — aktywny filtr kategorii (string | null);
+//                      służy tylko do podświetlenia, nie zmienia danych
+//   onSelectCategory — callback kliknięcia kategorii (wykres/lista)
 //
 // Komponent sam filtruje Wydatki i grupuje po kategoriach.
 // Nie wykonuje żadnych zapytań API.
 // ============================================
-export default function CategoryCharts({ transakcje = [], budgets = [], currentPeriod = null }) {
+export default function CategoryCharts({
+  transakcje = [],
+  budgets = [],
+  currentPeriod = null,
+  selectedCategory = null,
+  onSelectCategory,
+}) {
   const [activeView, setActiveView] = useState('pie');
+
+  const handleClick = (name) => {
+    if (onSelectCategory && name) onSelectCategory(name);
+  };
+  const dimmed = (name) =>
+    selectedCategory && name !== selectedCategory ? 0.35 : 1;
 
   // ---- Dane do wykresu kołowego ----
   const pieData = useMemo(() => {
@@ -274,11 +289,14 @@ export default function CategoryCharts({ transakcje = [], budgets = [], currentP
                   label={renderCustomLabel}
                   animationBegin={0}
                   animationDuration={800}
+                  cursor="pointer"
+                  onClick={(data) => handleClick(data?.name ?? data?.payload?.name)}
                 >
-                  {pieData.map((_, index) => (
+                  {pieData.map((entry, index) => (
                     <Cell
                       key={`cell-${index}`}
                       fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+                      fillOpacity={dimmed(entry.name)}
                       stroke="white"
                       strokeWidth={2}
                     />
@@ -322,9 +340,15 @@ export default function CategoryCharts({ transakcje = [], budgets = [], currentP
                 name="Wydatki"
                 radius={[8, 8, 0, 0]}
                 animationDuration={800}
+                cursor="pointer"
+                onClick={(data) => handleClick(data?.fullName ?? data?.payload?.fullName)}
               >
                 {barData.map((entry, index) => (
-                  <Cell key={`bar-${index}`} fill={entry.fill} />
+                  <Cell
+                    key={`bar-${index}`}
+                    fill={entry.fill}
+                    fillOpacity={dimmed(entry.fullName)}
+                  />
                 ))}
               </Bar>
             </BarChart>
@@ -349,10 +373,27 @@ export default function CategoryCharts({ transakcje = [], budgets = [], currentP
               else if (percent >= 0.8) barColor = 'bg-amber-400';
             }
 
+            const isSelected = selectedCategory === item.name;
+            const rowStateClasses = isSelected
+              ? 'bg-indigo-50 ring-1 ring-indigo-200'
+              : selectedCategory
+                ? 'bg-white/80 opacity-50 hover:opacity-80'
+                : 'bg-white/80 hover:bg-white';
+
             return (
               <div
                 key={item.name}
-                className="flex items-center gap-3 rounded-xl bg-white/80 px-4 py-2.5 hover:bg-white transition-colors"
+                role="button"
+                tabIndex={0}
+                aria-pressed={isSelected}
+                onClick={() => handleClick(item.name)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleClick(item.name);
+                  }
+                }}
+                className={`flex items-center gap-3 rounded-xl px-4 py-2.5 cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${rowStateClasses}`}
               >
                 <div
                   className="w-3 h-3 rounded-full flex-shrink-0"
