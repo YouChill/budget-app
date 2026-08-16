@@ -1257,6 +1257,7 @@ export default function BudgetApp() {
   const changeMonth = (delta) => {
     setCurrentPeriod(prev => computeMonthChange(prev.month, prev.year, delta));
     setSearchQuery('');
+    setSelectedCategory(null);
   };
   
   // Callbacki dla ustawień — aktualizują stan
@@ -1275,18 +1276,29 @@ export default function BudgetApp() {
 
   const sortedTransakcje = useMemo(() => sortTransactionsByDate(transakcje), [transakcje]);
 
-  // Wyszukiwanie i grupowanie listy transakcji po dniu
+  // Wyszukiwanie, filtr kategorii i grupowanie listy transakcji po dniu
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(null);
+
+  // Klik w tę samą kategorię drugi raz zdejmuje filtr (toggle)
+  const toggleCategory = (name) =>
+    setSelectedCategory(prev => (prev === name ? null : name));
 
   const filteredTransakcje = useMemo(() => {
+    let result = sortedTransakcje;
+    if (selectedCategory) {
+      // Fallback „Inne" musi odpowiadać grupowaniu na wykresie:
+      // transakcje bez kategorii trafiają tam do „Inne"
+      result = result.filter(t => (t.kategoria || 'Inne') === selectedCategory);
+    }
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return sortedTransakcje;
-    return sortedTransakcje.filter(t =>
+    if (!q) return result;
+    return result.filter(t =>
       [t.kategoria, t.podkategoria, t.osoba, t.komentarz, String(t.kwota)]
         .filter(Boolean)
         .some(v => String(v).toLowerCase().includes(q))
     );
-  }, [sortedTransakcje, searchQuery]);
+  }, [sortedTransakcje, searchQuery, selectedCategory]);
 
   // Stan nawigacji okresu — wspólny dla widoku miesięcznego i rocznego
   const isCurrentMonth =
@@ -1452,6 +1464,7 @@ export default function BudgetApp() {
                   onClick={() => {
                     setCurrentPeriod(getCurrentMonth());
                     setSearchQuery('');
+                    setSelectedCategory(null);
                   }}
                   disabled={isCurrentMonth}
                   title={isCurrentMonth ? undefined : 'Wróć do bieżącego miesiąca'}
@@ -1552,13 +1565,19 @@ export default function BudgetApp() {
             </div>
 
             {/* Wykresy kategorii */}
-            <CategoryCharts transakcje={transakcje} budgets={budgets} currentPeriod={currentPeriod} />
+            <CategoryCharts
+              transakcje={transakcje}
+              budgets={budgets}
+              currentPeriod={currentPeriod}
+              selectedCategory={selectedCategory}
+              onSelectCategory={toggleCategory}
+            />
 
             {/* Lista transakcji */}
             <div className="rounded-3xl bg-white/50 backdrop-blur border border-gray-100 shadow-sm overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                 <h2 className="text-lg font-semibold text-gray-800">
-                  Transakcje ({searchQuery ? `${filteredTransakcje.length} z ${transakcje.length}` : transakcje.length})
+                  Transakcje ({(searchQuery || selectedCategory) ? `${filteredTransakcje.length} z ${transakcje.length}` : transakcje.length})
                 </h2>
                 <button
                   onClick={() => setShowForm(true)}
@@ -1568,6 +1587,26 @@ export default function BudgetApp() {
                   Dodaj
                 </button>
               </div>
+
+              {/* Chip aktywnego filtra kategorii */}
+              {selectedCategory && (
+                <div className="flex items-center gap-2 px-4 sm:px-6 py-3 border-b border-gray-100">
+                  <span className="text-xs text-gray-500">Filtr:</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 text-indigo-700 pl-3 pr-1.5 py-1 text-xs font-medium">
+                    {selectedCategory}
+                    <button
+                      onClick={() => setSelectedCategory(null)}
+                      aria-label={`Wyczyść filtr kategorii ${selectedCategory}`}
+                      className="rounded-full p-0.5 hover:bg-indigo-200 transition-colors"
+                    >
+                      <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
+                    </button>
+                  </span>
+                </div>
+              )}
 
               {/* Wyszukiwarka */}
               {sortedTransakcje.length > 0 && (
@@ -1602,12 +1641,25 @@ export default function BudgetApp() {
                   </div>
                 ) : filteredTransakcje.length === 0 ? (
                   <div className="text-center py-12 text-gray-500">
-                    <p className="mb-2">Brak transakcji pasujących do „{searchQuery}"</p>
+                    <p className="mb-2">
+                      {selectedCategory && searchQuery.trim()
+                        ? <>Brak transakcji w kategorii „{selectedCategory}" pasujących do „{searchQuery}"</>
+                        : selectedCategory
+                          ? <>Brak transakcji w kategorii „{selectedCategory}"</>
+                          : <>Brak transakcji pasujących do „{searchQuery}"</>}
+                    </p>
                     <button
-                      onClick={() => setSearchQuery('')}
+                      onClick={() => {
+                        setSearchQuery('');
+                        setSelectedCategory(null);
+                      }}
                       className="text-indigo-600 hover:underline font-medium"
                     >
-                      Wyczyść wyszukiwanie
+                      {selectedCategory && searchQuery.trim()
+                        ? 'Wyczyść filtry'
+                        : selectedCategory
+                          ? 'Wyczyść filtr'
+                          : 'Wyczyść wyszukiwanie'}
                     </button>
                   </div>
                 ) : (
