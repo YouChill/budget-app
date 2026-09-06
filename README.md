@@ -92,9 +92,18 @@ migration/005_email_password_auth.sql   ← Supabase Auth email+hasło
 migration/006_fix_profiles_schema.sql   ← naprawa schematu profiles + trigger
 migration/007_auto_create_household.sql ← auto-tworzenie household dla nowych userów
 migration/008_fix_category_rules_rls.sql ← fix RLS: usunięcie permisywnej polityki (bezpieczeństwo)
+migration/009_fix_match_rules_security.sql ← fix bezpieczeństwa funkcji dopasowującej reguły
+migration/010_kategorie_rozszerzenie.sql ← rozszerzenie słownika kategorii
+migration/011_kategoria_delegacje.sql   ← kategorie: delegacje + ubezpieczenie
+migration/012_kategorie_zwierzeta_licencje.sql ← kategorie: zwierzęta + licencje
+migration/013_budzety_unique_nulls_not_distinct.sql ← fix duplikatów budżetów (NULL-e w osoba/miesiac)
 ```
 
 > Przed uruchomieniem migracji 004 włącz rozszerzenie **pgvector** w Supabase Dashboard → Database → Extensions.
+
+> Migracja 013 wymaga **PostgreSQL 15+** (`UNIQUE NULLS NOT DISTINCT`) — sprawdź `show server_version;`.
+> Kasuje też duplikaty budżetów, więc uruchom najpierw `migration/013_sprawdz_duplikaty.sql`
+> (samo `SELECT`) i zapisz wynik poza repozytorium. Cofnięcie: `migration/rollback_013.sql`.
 
 ### 5. Skonfiguruj autoryzację (Supabase Auth — email + hasło)
 
