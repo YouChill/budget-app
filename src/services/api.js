@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { DEFAULT_KATEGORIE } from '../data/defaultKategorie';
 import { pozycjaZRekordu, brakMigracji014 } from '../lib/importPozycje';
+import { fetchAll } from '../lib/fetchAll';
 
 // ═══════════════════════════════════════════
 // PROFILE & HOUSEHOLD FUNCTIONS
@@ -103,13 +104,14 @@ export async function getTransakcje(miesiac, rok) {
     ? `${rok + 1}-01-01`
     : `${rok}-${String(miesiac + 1).padStart(2, '0')}-01`;
 
-  const { data, error } = await supabase
+  const { data, error } = await fetchAll(() => supabase
     .from('transakcje')
-    .select('id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz')
+    .select('id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz', { count: 'exact' })
     .eq('household_id', householdId)
     .gte('data', startDate)
     .lt('data', endDate)
-    .order('data', { ascending: false });
+    .order('data', { ascending: false })
+    .order('id', { ascending: false }));
 
   if (error) {
     handleAuthError(error);
@@ -282,13 +284,17 @@ export async function getKontekstParowania(od, doDaty) {
     supabase.from('kontrahenci_aliasy')
       .select('wzorzec, typ_wzorca, kontrahent')
       .eq('household_id', householdId),
-    supabase.from('transakcje')
-      .select('id, data, typ, kwota, kategoria, podkategoria, komentarz')
-      .eq('household_id', householdId).gte('data', od).lte('data', doDaty),
-    supabase.from('transakcje_dowody')
-      .select('transakcja_id')
+    // Okno wyciągu może mieć ponad 1000 transakcji/dowodów — bez stronicowania
+    // część kandydatów do parowania by zniknęła, a import zrobiłby duplikaty.
+    fetchAll(() => supabase.from('transakcje')
+      .select('id, data, typ, kwota, kategoria, podkategoria, komentarz', { count: 'exact' })
+      .eq('household_id', householdId).gte('data', od).lte('data', doDaty)
+      .order('id')),
+    fetchAll(() => supabase.from('transakcje_dowody')
+      .select('transakcja_id', { count: 'exact' })
       .eq('household_id', householdId).gte('data', shiftDate(od, -40)).lte('data', shiftDate(doDaty, 40))
-      .not('transakcja_id', 'is', null),
+      .not('transakcja_id', 'is', null)
+      .order('id')),
   ]);
   for (const r of [zob, aliasy, tx, dowody]) {
     if (r.error) {
@@ -635,13 +641,15 @@ export async function getTransakcjeForYear(rok) {
   }
 
   const householdId = await getHouseholdId();
-  const { data, error } = await supabase
+  // Rok łatwo przekracza 1000 wierszy (limit PostgREST) — stronicujemy.
+  const { data, error } = await fetchAll(() => supabase
     .from('transakcje')
-    .select('id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz')
+    .select('id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz', { count: 'exact' })
     .eq('household_id', householdId)
     .gte('data', `${rok}-01-01`)
     .lt('data', `${rok + 1}-01-01`)
-    .order('data', { ascending: false });
+    .order('data', { ascending: false })
+    .order('id', { ascending: false }));
 
   if (error) handleAuthError(error);
 
