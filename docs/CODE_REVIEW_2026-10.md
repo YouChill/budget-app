@@ -287,8 +287,8 @@ Stan produkcji sprawdzony tylko do odczytu (Supabase `budget-app`, eu-west-1)
 
 | # | Status | Zmiana |
 |---|---|---|
-| K1 | ✅ kod / ⏳ prod | `migration/015_profiles_household_lock.sql` + test SQL + rollback; usunięte `assignUserToHousehold` |
-| — | ✅ kod / ⏳ prod | `migration/016_revoke_public_execute.sql` (z Security Advisora) + test SQL + rollback |
+| K1 | ✅ kod + prod | `migration/015_profiles_household_lock.sql` + test SQL + rollback; usunięte `assignUserToHousehold` |
+| — | ✅ kod + prod | `migration/016_revoke_public_execute.sql` (z Security Advisora) + test SQL + rollback |
 | W1 | ✅ | `src/lib/fetchAll.js`: stronicowanie rok/miesiąc/parowanie importu, z testami |
 | W2 | ✅ | kolejka offline z `userId`, synchronizacja tylko własnych operacji, także po zalogowaniu |
 | W3 | ✅ | UUID transakcji nadawane offline, ponowienie = konflikt PK = sukces; edycja i usunięcie przed synchronizacją działają |
@@ -303,3 +303,28 @@ Stan produkcji sprawdzony tylko do odczytu (Supabase `budget-app`, eu-west-1)
 | D3 | ⏳ decyzja | migracje przez Supabase CLI: produkcja nie ma historii migracji (`supabase_migrations` puste), potrzebny baseline |
 | Q1 | ⏳ | podział `App.jsx` / `CSVImport.jsx`: osobny, większy refaktor |
 | D5 | ⏳ | Sentry, backup `pg_dump` |
+
+### Wdrożenie na produkcję (11.10.2026)
+
+Zastosowane przez Supabase MCP (`apply_migration`), więc są widoczne w
+`supabase_migrations.schema_migrations`:
+
+| Wpis | Zawartość |
+|---|---|
+| `016_revoke_public_execute` | całe 016 |
+| `015a_profiles_column_grants` | 015, część 1: `REVOKE/GRANT` kolumnowy |
+| `015b_profiles_lock_household_trigger` | 015, część 2: funkcja i trigger |
+
+015 trzeba było podzielić: `apply_migration` zawieszało się (timeout 60 s, transakcja
+wycofana) na komunikacie NOTICE z `DROP TRIGGER IF EXISTS` dla nieistniejącego
+triggera. W SQL Editorze plik z repo działa bez zmian.
+
+Weryfikacja na produkcji: jako `authenticated` zmiana `display_name` przechodzi,
+zmiana `household_id` daje `permission denied for table profiles` (test w DO
+z wymuszonym błędem, więc bez zapisu). Security Advisor: zniknęły ostrzeżenia
+`anon` dla `match_category_rules` i `handle_new_user`. Zostaje ostrzeżenie
+`authenticated` dla `match_category_rules`: to zamierzone, bo od 009 funkcja
+sprawdza `auth.uid()`.
+
+Stan pozostałych migracji: 010–013 są wdrożone (kategorie Delegacje i Zwierzęta,
+`budzety_unique_budget NULLS NOT DISTINCT`). **014 nie jest wdrożona.**
