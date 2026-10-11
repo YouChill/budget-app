@@ -3,7 +3,7 @@
 #
 #   PGHOST=/sciezka/do/socketu PGPORT=5432 PGUSER=postgres bash migration/tests/run_sql_tests.sh
 #
-# Tworzy i kasuje bazę tymczasową budget_test_014. Nie dotyka danych produkcyjnych.
+# Tworzy i kasuje bazę tymczasową budget_test_014 (migracje 014+). Nie dotyka danych produkcyjnych.
 set -euo pipefail
 cd "$(dirname "$0")"
 DB=budget_test_014
@@ -17,4 +17,9 @@ run ../014_dowody_i_zobowiazania.sql   # idempotencja
 run 014_dowody.test.sql
 run ../rollback_014.sql
 run ../014_dowody_i_zobowiazania.sql   # rollback → ponowne wdrożenie
+run ../015_profiles_household_lock.sql
+run ../015_profiles_household_lock.sql  # idempotencja
+run 015_profiles.test.sql
+run ../rollback_015.sql
+run ../015_profiles_household_lock.sql  # rollback → ponowne wdrożenie
 echo "OK: migracja, idempotencja i rollback"

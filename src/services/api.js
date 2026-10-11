@@ -39,20 +39,6 @@ export async function getUserProfile() {
 }
 
 /**
- * Przydziel użytkownika do gospodarstwa (household) — admin operation
- */
-export async function assignUserToHousehold(userId, householdId) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .update({ household_id: householdId })
-    .eq('id', userId)
-    .select();
-
-  if (error) throw error;
-  return data[0];
-}
-
-/**
  * Pobiera household_id zalogowanego użytkownika z jego profilu.
  */
 async function getHouseholdId() {
