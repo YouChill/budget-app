@@ -119,11 +119,18 @@ export async function getTransakcje(miesiac, rok) {
   return data;
 }
 
+/**
+ * Dodaje transakcję. `transakcja.id` (UUID nadany przez klienta) czyni zapis
+ * idempotentnym: kolejka offline ponawia operację, gdy odpowiedź zginęła po
+ * udanym INSERT — konflikt klucza głównego oznacza wtedy „już zapisane",
+ * a nie duplikat.
+ */
 export async function addTransakcja(transakcja) {
   const householdId = await getHouseholdId();
   const { data, error } = await supabase
     .from('transakcje')
     .insert({
+      ...(transakcja.id ? { id: transakcja.id } : {}),
       household_id: householdId,
       data: transakcja.data,
       typ: transakcja.typ,
@@ -137,6 +144,9 @@ export async function addTransakcja(transakcja) {
     .single();
 
   if (error) {
+    if (error.code === '23505' && transakcja.id) {
+      return { success: true, id: transakcja.id, duplicate: true };
+    }
     handleAuthError(error);
   }
   invalidateYearlyCache();

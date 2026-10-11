@@ -268,4 +268,50 @@ describe('offlineQueue', () => {
       ).toThrow();
     });
   });
+
+  // ─── Kolejka per użytkownik (współdzielone urządzenie) ───────────────────────
+
+  describe('operacje innego użytkownika', () => {
+    const tx = { data: '2026-01-01', kwota: 10 };
+
+    it('getQueuedOperations(userId) zwraca tylko operacje tego użytkownika i stare wpisy bez userId', () => {
+      addToQueue({ action: 'addTransakcja', userId: 'A', payload: { transakcja: tx } });
+      addToQueue({ action: 'addTransakcja', userId: 'B', payload: { transakcja: tx } });
+      addToQueue({ action: 'addTransakcja', payload: { transakcja: tx } });
+      expect(getQueuedOperations('A')).toHaveLength(2);
+      expect(getQueuedOperations('B')).toHaveLength(2);
+      expect(getQueuedOperations()).toHaveLength(3);
+    });
+
+    it('processQueue(userId) nie wysyła operacji innego konta i zostawia je w kolejce', async () => {
+      processOfflineOperation.mockResolvedValue({ success: true });
+      addToQueue({ action: 'addTransakcja', userId: 'A', payload: { transakcja: tx } });
+      addToQueue({ action: 'addTransakcja', userId: 'B', payload: { transakcja: tx } });
+
+      const result = await processQueue('B');
+
+      expect(result.succeeded).toBe(1);
+      expect(processOfflineOperation).toHaveBeenCalledTimes(1);
+      expect(processOfflineOperation.mock.calls[0][0].userId).toBe('B');
+      const left = getQueuedOperations();
+      expect(left).toHaveLength(1);
+      expect(left[0].userId).toBe('A');
+      expect(left[0].attempts).toBeUndefined();
+    });
+
+    it('nie gubi operacji dodanych w trakcie synchronizacji', async () => {
+      addToQueue({ action: 'addTransakcja', userId: 'A', payload: { transakcja: tx } });
+      processOfflineOperation.mockImplementation(async () => {
+        // połączenie znów zerwane — użytkownik dodaje kolejną transakcję offline
+        addToQueue({ action: 'deleteTransakcja', userId: 'A', payload: { id: 'x' } });
+        return { success: true };
+      });
+
+      await processQueue('A');
+
+      const left = getQueuedOperations('A');
+      expect(left).toHaveLength(1);
+      expect(left[0].action).toBe('deleteTransakcja');
+    });
+  });
 });

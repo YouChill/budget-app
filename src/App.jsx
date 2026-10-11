@@ -1031,6 +1031,7 @@ export default function BudgetApp() {
   // Offline queue: licznik + auto-sync przy powrocie online
   const { pendingCount, isSyncing, refreshPendingCount } = usePendingOperations({
     isOffline,
+    userId: user?.id,
     onSynced: () => fetchData(false),
     addToast,
   });
@@ -1133,13 +1134,19 @@ export default function BudgetApp() {
   // Dodawanie transakcji
   const handleAddTransaction = async (transakcja) => {
     if (isOffline) {
-      // Optimistic update + queue
-      const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-      const optimistic = { ...transakcja, id: tempId, _offline: true };
+      // Optimistic update + queue. Docelowe UUID nadajemy już teraz: ponowienie
+      // po zgubionej odpowiedzi nie zrobi duplikatu, a edycja/usunięcie tej
+      // transakcji przed synchronizacją trafi w ten sam rekord.
+      const id = crypto.randomUUID();
+      const optimistic = { ...transakcja, id, _offline: true };
       const noweTransakcje = [...transakcje, optimistic];
       setTransakcje(noweTransakcje);
 
-      addToQueue({ action: 'addTransakcja', payload: { action: 'addTransakcja', transakcja } });
+      addToQueue({
+        action: 'addTransakcja',
+        userId: user?.id,
+        payload: { action: 'addTransakcja', transakcja: { ...transakcja, id } },
+      });
       refreshPendingCount();
 
       setShowForm(false);
@@ -1177,6 +1184,7 @@ export default function BudgetApp() {
 
       addToQueue({
         action: 'updateTransakcja',
+        userId: user?.id,
         payload: { action: 'updateTransakcja', id: editingTransaction.id, transakcja },
       });
       refreshPendingCount();
@@ -1228,11 +1236,9 @@ export default function BudgetApp() {
       const noweTransakcje = transakcje.filter(t => t.id !== id);
       setTransakcje(noweTransakcje);
 
-      // Don't queue delete for temp (not-yet-synced) transactions
-      if (!String(id).startsWith('temp_')) {
-        addToQueue({ action: 'deleteTransakcja', payload: { action: 'deleteTransakcja', id } });
-        refreshPendingCount();
-      }
+      // Także dla transakcji dodanej offline: kolejka wykona add, potem delete.
+      addToQueue({ action: 'deleteTransakcja', userId: user?.id, payload: { action: 'deleteTransakcja', id } });
+      refreshPendingCount();
 
       addToast('Usunięcie zapisane offline — zsynchronizuje się po połączeniu');
       return;

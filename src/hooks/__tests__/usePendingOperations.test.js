@@ -95,4 +95,26 @@ describe('usePendingOperations', () => {
     });
     expect(result.current.pendingCount).toBe(2);
   });
+
+  it('po zalogowaniu (online) synchronizuje zaległe operacje tego użytkownika', async () => {
+    getQueuedOperations.mockReturnValue([{ id: 1 }]);
+    processQueue.mockResolvedValue({ succeeded: 1, failed: 0 });
+    const onSynced = vi.fn().mockResolvedValue();
+
+    const { rerender } = renderHook(
+      ({ userId }) => usePendingOperations({ isOffline: false, userId, onSynced, addToast: vi.fn() }),
+      { initialProps: { userId: undefined } }
+    );
+    expect(processQueue).not.toHaveBeenCalled();
+
+    rerender({ userId: 'user-1' });
+    await waitFor(() => expect(processQueue).toHaveBeenCalledWith('user-1'));
+    expect(getQueuedOperations).toHaveBeenCalledWith('user-1');
+    await waitFor(() => expect(onSynced).toHaveBeenCalled());
+
+    // ponowny render z tym samym użytkownikiem nie synchronizuje drugi raz
+    rerender({ userId: 'user-1' });
+    await new Promise(r => setTimeout(r, 10));
+    expect(processQueue).toHaveBeenCalledTimes(1);
+  });
 });
