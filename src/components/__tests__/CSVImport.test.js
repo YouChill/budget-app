@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 
 // Mock dependencies that need Supabase — pure helper functions don't use them
-vi.mock('../../src/lib/supabase', () => ({
+vi.mock('../../lib/supabase', () => ({
   supabase: { from: vi.fn(), auth: { getUser: vi.fn() } },
 }));
-vi.mock('../../src/services/api', () => ({}));
-vi.mock('../../src/services/categoryAI', () => ({
+vi.mock('../../services/api', () => ({}));
+vi.mock('../../services/categoryAI', () => ({
   isAIEnabled: vi.fn(() => false),
   categorizeWithAI: vi.fn(async (d) => d.map(() => null)),
   saveCategoryRulesBatch: vi.fn(),

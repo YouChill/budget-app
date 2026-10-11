@@ -4,10 +4,10 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { sha256Hex } from '../../src/lib/odciski';
+import { sha256Hex } from '../../lib/odciski';
 
-vi.mock('../../src/lib/supabase', () => ({ supabase: { from: vi.fn(), auth: { getUser: vi.fn() } } }));
-vi.mock('../../src/services/categoryAI', () => ({
+vi.mock('../../lib/supabase', () => ({ supabase: { from: vi.fn(), auth: { getUser: vi.fn() } } }));
+vi.mock('../../services/categoryAI', () => ({
   isAIEnabled: vi.fn(() => false),
   categorizeWithAI: vi.fn(async (d) => d.map(() => null)),
   saveCategoryRulesBatch: vi.fn(),
@@ -19,7 +19,7 @@ const api = vi.hoisted(() => ({
   importujTransakcje: vi.fn(),
   addTransakcjeBatch: vi.fn(),
 }));
-vi.mock('../../src/services/api', () => api);
+vi.mock('../../services/api', () => api);
 
 import CSVImport, { zrodloMillennium } from '../CSVImport';
 

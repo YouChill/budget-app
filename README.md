@@ -190,6 +190,9 @@ budget-app/
 │   │   ├── TransactionForm.jsx  # Formularz transakcji
 │   │   ├── TransactionItem.jsx  # Pojedyncza transakcja (swipe)
 │   │   ├── YearlySummary.jsx    # Podsumowanie roczne z wykresami
+│   │   ├── CSVImport.jsx        # Import CSV (drag-and-drop + AI)
+│   │   ├── CategoryCharts.jsx   # Wykresy kategorii (Recharts)
+│   │   ├── Budgets.jsx          # Zarządzanie budżetami
 │   │   └── OfflineBanner.jsx    # Banner trybu offline
 │   ├── contexts/
 │   │   └── AuthContext.jsx      # Kontekst autoryzacji (JWT)
@@ -203,10 +206,6 @@ budget-app/
 │   │   └── offlineQueue.js      # Kolejka offline operations
 │   └── utils/
 │       └── calculations.js      # Obliczenia finansowe
-├── components/
-│   ├── CSVImport.jsx            # Import CSV (drag-and-drop + AI)
-│   ├── CategoryCharts.jsx       # Wykresy kategorii (Recharts)
-│   └── Budgets.jsx              # Zarządzanie budżetami
 ├── api/                         # Funkcje serverless (Vercel)
 │   ├── _lib/                    # Wspólne moduły API (auth, walidacja, błędy)
 │   ├── v1/[...route].js         # REST API CRUD (docs/API.md)

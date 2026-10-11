@@ -1,12 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import CategoryCharts from '/components/CategoryCharts';
-import Budgets from '/components/Budgets';
-import CSVImport from '/components/CSVImport';
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import LoginPage from './components/LoginPage';
 import ModalShell from './components/ModalShell';
 import ConfirmDialog from './components/ConfirmDialog';
 import OfflineBanner from './components/OfflineBanner';
-import YearlySummary from './components/YearlySummary';
 import { useAuth } from './contexts/AuthContext';
 import { useToast } from './contexts/ToastContext';
 import { useOffline } from './hooks/useOffline';
@@ -18,6 +14,14 @@ import { addToQueue } from './services/offlineQueue';
 import { supabase } from './lib/supabase';
 import * as api from './services/api';
 import { logger } from './utils/logger';
+
+// Ciężkie widoki (recharts, papaparse, parsery bankowe) w osobnych chunkach —
+// ekran logowania i lista transakcji ładują się bez nich. Service worker
+// precache'uje wszystkie chunki, więc działają też offline.
+const CategoryCharts = lazy(() => import('./components/CategoryCharts'));
+const Budgets = lazy(() => import('./components/Budgets'));
+const CSVImport = lazy(() => import('./components/CSVImport'));
+const YearlySummary = lazy(() => import('./components/YearlySummary'));
 import {
   formatCurrency,
   getMonthName,
@@ -1538,7 +1542,9 @@ export default function BudgetApp() {
         )}
         
         {activeView === 'yearly' ? (
-          <YearlySummary year={selectedYear} />
+          <Suspense fallback={<div className="py-20 text-center text-gray-400">Ładowanie…</div>}>
+            <YearlySummary year={selectedYear} />
+          </Suspense>
         ) : isLoading ? (
           <div className="flex items-center justify-center py-20">
             <div className="flex items-center gap-3 text-gray-500">
@@ -1571,13 +1577,15 @@ export default function BudgetApp() {
             </div>
 
             {/* Wykresy kategorii */}
-            <CategoryCharts
-              transakcje={transakcje}
-              budgets={budgets}
-              currentPeriod={currentPeriod}
-              selectedCategory={selectedCategory}
-              onSelectCategory={toggleCategory}
-            />
+            <Suspense fallback={<div className="h-72 rounded-3xl bg-white/50 border border-gray-100 animate-pulse" />}>
+              <CategoryCharts
+                transakcje={transakcje}
+                budgets={budgets}
+                currentPeriod={currentPeriod}
+                selectedCategory={selectedCategory}
+                onSelectCategory={toggleCategory}
+              />
+            </Suspense>
 
             {/* Lista transakcji */}
             <div className="rounded-3xl bg-white/50 backdrop-blur border border-gray-100 shadow-sm overflow-hidden">
@@ -1722,13 +1730,13 @@ export default function BudgetApp() {
         />
       )}
 
+      <Suspense fallback={null}>
       {showBudgets && (
         <Budgets
           onClose={() => setShowBudgets(false)}
           kategorie={kategorie}
           month={currentPeriod.month}
           year={currentPeriod.year}
-          budgets={budgets}
           osoby={osoby}
           onSaved={refreshBudgets}
         />
@@ -1745,6 +1753,7 @@ export default function BudgetApp() {
           }}
         />
       )}
+      </Suspense>
       
       {/* Potwierdzenie usunięcia transakcji */}
       {confirmDeleteId !== null && (

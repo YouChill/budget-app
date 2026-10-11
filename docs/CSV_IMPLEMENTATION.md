@@ -3,7 +3,7 @@
 ## ✅ Realizowane zadania
 
 ### 1. ✅ Formularz uploadu pliku CSV
-- **Lokalizacja**: `components/CSVImport.jsx` - Krok 1
+- **Lokalizacja**: `src/components/CSVImport.jsx` - Krok 1
 - **Funkcje**: 
   - Drag & drop lub kliknij aby wybrać
   - Obsługa plików .csv

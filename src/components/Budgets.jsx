@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import * as api from '../src/services/api';
-import ModalShell from '../src/components/ModalShell';
-import ConfirmDialog from '../src/components/ConfirmDialog';
-import { useToast } from '../src/contexts/ToastContext';
-import { logger } from '../src/utils/logger';
+import * as api from '../services/api';
+import ModalShell from './ModalShell';
+import ConfirmDialog from './ConfirmDialog';
+import { useToast } from '../contexts/ToastContext';
+import { logger } from '../utils/logger';
 
 const formatCurrency = (value) => {
   return new Intl.NumberFormat('pl-PL', {
