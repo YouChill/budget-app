@@ -81,6 +81,10 @@ Szczegółowa instrukcja Supabase: [docs/SETUP_SUPABASE.md](./docs/SETUP_SUPABAS
 
 ### 4. Uruchom migracje bazy danych
 
+> **Od 2026-10-11 nowe migracje idą przez Supabase CLI i CI** — patrz
+> [Migracje bazy](#migracje-bazy-supabase-cli). Poniższa lista to historia
+> (001–016), potrzebna tylko przy stawianiu nowej bazy od zera.
+
 W panelu Supabase → SQL Editor uruchom kolejno:
 
 ```
@@ -97,6 +101,9 @@ migration/010_kategorie_rozszerzenie.sql ← rozszerzenie słownika kategorii
 migration/011_kategoria_delegacje.sql   ← kategorie: delegacje + ubezpieczenie
 migration/012_kategorie_zwierzeta_licencje.sql ← kategorie: zwierzęta + licencje
 migration/013_budzety_unique_nulls_not_distinct.sql ← fix duplikatów budżetów (NULL-e w osoba/miesiac)
+migration/014_dowody_i_zobowiazania.sql ← odciski importu, zobowiązania, aliasy kontrahentów
+migration/015_profiles_household_lock.sql ← bezpieczeństwo: blokada zmiany household_id przez użytkownika
+migration/016_revoke_public_execute.sql ← bezpieczeństwo: funkcje SECURITY DEFINER niedostępne dla anon
 ```
 
 > Przed uruchomieniem migracji 004 włącz rozszerzenie **pgvector** w Supabase Dashboard → Database → Extensions.
@@ -187,6 +194,9 @@ budget-app/
 │   │   ├── TransactionForm.jsx  # Formularz transakcji
 │   │   ├── TransactionItem.jsx  # Pojedyncza transakcja (swipe)
 │   │   ├── YearlySummary.jsx    # Podsumowanie roczne z wykresami
+│   │   ├── CSVImport.jsx        # Import CSV (drag-and-drop + AI)
+│   │   ├── CategoryCharts.jsx   # Wykresy kategorii (Recharts)
+│   │   ├── Budgets.jsx          # Zarządzanie budżetami
 │   │   └── OfflineBanner.jsx    # Banner trybu offline
 │   ├── contexts/
 │   │   └── AuthContext.jsx      # Kontekst autoryzacji (JWT)
@@ -200,10 +210,6 @@ budget-app/
 │   │   └── offlineQueue.js      # Kolejka offline operations
 │   └── utils/
 │       └── calculations.js      # Obliczenia finansowe
-├── components/
-│   ├── CSVImport.jsx            # Import CSV (drag-and-drop + AI)
-│   ├── CategoryCharts.jsx       # Wykresy kategorii (Recharts)
-│   └── Budgets.jsx              # Zarządzanie budżetami
 ├── api/                         # Funkcje serverless (Vercel)
 │   ├── _lib/                    # Wspólne moduły API (auth, walidacja, błędy)
 │   ├── v1/[...route].js         # REST API CRUD (docs/API.md)
@@ -285,15 +291,98 @@ budget-app/
 | `VITE_SUPABASE_ANON_KEY` | ✅ | Klucz anonimowy Supabase |
 | `OPENAI_API_KEY` | ➕ | Klucz OpenAI — **tylko po stronie serwera** (proxy `/api/embeddings`) |
 | `VITE_AI_ENABLED` | ➕ | Flaga `true/false` włączająca kategoryzację AI w UI |
+| `SUPABASE_URL` | ➕ | URL Supabase dla funkcji `/api/*` (domyślnie `VITE_SUPABASE_URL`) |
+| `SUPABASE_ANON_KEY` | ➕ | Klucz anon dla funkcji `/api/*` (domyślnie `VITE_SUPABASE_ANON_KEY`) |
 
 ## Deployment
 
-### Netlify / Vercel
+### Vercel (produkcja)
 
-1. Zbuduj aplikację: `npm run build`
-2. Połącz repozytorium z Netlify lub Vercel
-3. Ustaw wszystkie zmienne środowiskowe w ustawieniach projektu (w tym `OPENAI_API_KEY` — bez prefiksu `VITE_`, by nie trafił do bundle'a)
-4. Dodaj domenę do **Allowed URLs / Redirect URLs** w Supabase (Authentication → URL Configuration)
+1. Połącz repozytorium z Vercel — build: `npm run build`, katalog `dist`, Node 22 (`.nvmrc`).
+2. Ustaw zmienne środowiskowe (w tym `OPENAI_API_KEY` — bez prefiksu `VITE_`, by nie trafił do bundle'a).
+3. Dodaj domenę do **Allowed URLs / Redirect URLs** w Supabase (Authentication → URL Configuration).
+4. Migracje bazy wdraża CI po merge do `main` — patrz niżej.
+
+`vercel.json` ustawia:
+- **region funkcji `dub1`** (Dublin) — ten sam region co baza Supabase (`eu-west-1`);
+  przy przeniesieniu bazy zmień region funkcji, inaczej każde żądanie `/api/*`
+  płaci za podróż przez Atlantyk;
+- **nagłówki bezpieczeństwa**: CSP (połączenia tylko do własnej domeny i
+  `*.supabase.co`), HSTS, `X-Frame-Options: DENY`, `Referrer-Policy`,
+  `Permissions-Policy`. Nowa zewnętrzna usługa wołana z przeglądarki wymaga
+  dopisania jej do `connect-src`;
+- **cache**: `/assets/*` (pliki z hashem) na rok, `sw.js`/`index.html` bez
+  cache — nowa wersja PWA dociera od razu.
+
+### Środowiska preview
+
+Deploye z PR-ów domyślnie dostają te same zmienne co produkcja, czyli łączą
+się z **produkcyjną bazą z prawdziwymi finansami**. Zalecane:
+
+1. Osobny projekt Supabase „budget-app-preview" z migracjami i danymi testowymi.
+2. Vercel → Settings → Environment Variables: `VITE_SUPABASE_URL` /
+   `VITE_SUPABASE_ANON_KEY` w zakresie **Preview** wskazują na projekt preview.
+3. Vercel → Settings → Deployment Protection: **Vercel Authentication** dla Preview.
+
+### Checklista bezpieczeństwa Supabase
+
+- Authentication → Email → **Confirm email = ON** (patrz `docs/SETUP_AUTH_PHASE3.md`).
+- Authentication → **Allow new users to sign up = OFF**, jeśli z aplikacji
+  korzysta tylko rodzina (nowe konta zakłada się wtedy w Dashboardzie).
+  Zamyka to też koszt OpenAI dla obcych kont (`/api/embeddings`).
+- Migracja `015` wdrożona: `SELECT column_name FROM information_schema.column_privileges
+  WHERE table_name = 'profiles' AND grantee = 'authenticated' AND privilege_type = 'UPDATE';`
+  zwraca tylko `display_name`, `updated_at`.
+
+### CI
+
+`.github/workflows/ci.yml` na każdym PR: lint, testy, build,
+`sprawdz_przed_merge.sh`, `npm audit` (prod) i testy migracji SQL na
+Postgresie 16. W ustawieniach repo warto włączyć **branch protection** dla
+`main` z wymaganymi checkami CI.
+
+### Migracje bazy (Supabase CLI)
+
+Darmowa automatyzacja: job `migrations` w `ci.yml`.
+
+| Zdarzenie | Co się dzieje |
+|---|---|
+| PR | testy SQL na Postgresie 16, potem `supabase db push --dry-run` — w logu lista migracji, które wejdą na produkcję |
+| merge do `main` | po zielonych testach `supabase db push` na projekt produkcyjny |
+
+**Nowa migracja:**
+
+```bash
+npx supabase@2.120.0 migration new nazwa_zmiany   # → supabase/migrations/<timestamp>_nazwa_zmiany.sql
+```
+
+- bez `BEGIN;`/`COMMIT;` — CLI wykonuje plik we własnej transakcji (CI to sprawdza);
+- test: `supabase/tests/<timestamp>_nazwa_zmiany.test.sql` (asercje `DO $$ … ASSERT … $$`),
+  opcjonalnie rollback: `supabase/rollbacks/<timestamp>_nazwa_zmiany.sql` — CI sprawdzi
+  migracja → rollback → migracja (`migration/tests/run_sql_tests.sh`);
+- **zgodność wstecz** (expand → contract): Vercel wdraża frontend równolegle z
+  migracją, więc przez chwilę stary kod działa na nowej bazie i odwrotnie.
+  Najpierw dodaj kolumnę/tabelę, w kolejnym PR usuń starą.
+- nie zmieniaj schematu ręcznie w SQL Editorze — CLI o tym nie wie. Jeśli musisz:
+  zapisz to samo jako plik migracji i oznacz go
+  `npx supabase migration repair --status applied <timestamp>`.
+
+**Jednorazowa konfiguracja (sekrety repo → Settings → Secrets and variables → Actions):**
+
+| Sekret | Skąd |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | supabase.com → Account → Access Tokens → *Generate new token* |
+| `SUPABASE_DB_PASSWORD` | Project Settings → Database → hasło bazy (*Reset database password*, jeśli nieznane) |
+
+Bez sekretów job kończy się ostrzeżeniem, a migracje trzeba wdrożyć ręcznie.
+
+**Punkt startowy:** pliki `supabase/migrations/20261011*` z nagłówkiem `BASELINE`
+odpowiadają migracjom 014–016 już wdrożonym na produkcji (są w
+`supabase_migrations.schema_migrations`), więc `db push` je pomija. Starsze
+migracje (001–013) nie są w historii CLI — lokalne `supabase start` nie
+odtworzy pełnego schematu. Żeby to umożliwić, raz wykonaj
+`npx supabase db dump -f supabase/migrations/20260101000000_baseline.sql`
+(schemat produkcji) i `npx supabase migration repair --status applied 20260101000000`.
 
 ## Roadmap
 

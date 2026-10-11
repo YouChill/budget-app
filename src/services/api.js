@@ -1,30 +1,29 @@
 import { supabase } from '../lib/supabase';
 import { DEFAULT_KATEGORIE } from '../data/defaultKategorie';
 import { pozycjaZRekordu, brakMigracji014 } from '../lib/importPozycje';
+import { fetchAll } from '../lib/fetchAll';
 
 // ═══════════════════════════════════════════
 // PROFILE & HOUSEHOLD FUNCTIONS
 // ═══════════════════════════════════════════
 
-/**
- * Pobiera profil zalogowanego użytkownika wraz z household_id.
- *
- * Tworzenie profilu (i przypisanie household) należy wyłącznie do triggera
- * `handle_new_user` po stronie bazy (migracje 006/007) — klient nigdy nie
- * zgaduje household_id, żeby nie dało się przypadkiem trafić do cudzego
- * gospodarstwa przy regresji RLS.
- */
-export async function getUserProfile() {
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+// Profil (household_id) nie zmienia się w trakcie sesji — od migracji 015
+// użytkownik nie może go zmienić — więc pobieramy go raz na użytkownika
+// zamiast 2 round-tripów (auth + profiles) przed każdym zapytaniem.
+// Cache trzyma obietnicę, więc równoległe wywołania (getAllData) dzielą jedno
+// zapytanie. Klucz: id użytkownika z lokalnej sesji — po przelogowaniu na
+// inne konto profil pobiera się od nowa.
+let profileCache = { userId: null, promise: null };
 
-  if (authError || !user) {
-    throw new Error('Użytkownik nie zalogowany');
-  }
+export function clearProfileCache() {
+  profileCache = { userId: null, promise: null };
+}
 
+async function fetchProfile(userId) {
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('id, email, display_name, household_id')
-    .eq('id', user.id)
+    .eq('id', userId)
     .single();
 
   if (profileError) {
@@ -39,17 +38,36 @@ export async function getUserProfile() {
 }
 
 /**
- * Przydziel użytkownika do gospodarstwa (household) — admin operation
+ * Pobiera profil zalogowanego użytkownika wraz z household_id.
+ *
+ * Tworzenie profilu (i przypisanie household) należy wyłącznie do triggera
+ * `handle_new_user` po stronie bazy (migracje 006/007) — klient nigdy nie
+ * zgaduje household_id, żeby nie dało się przypadkiem trafić do cudzego
+ * gospodarstwa przy regresji RLS.
+ *
+ * Sesja z getSession() jest lokalna (bez żądania do Auth); ważność tokenu
+ * i tak weryfikuje PostgREST przy każdym zapytaniu (RLS).
  */
-export async function assignUserToHousehold(userId, householdId) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .update({ household_id: householdId })
-    .eq('id', userId)
-    .select();
+export async function getUserProfile() {
+  const { data, error: authError } = await supabase.auth.getSession();
+  const user = data?.session?.user;
 
-  if (error) throw error;
-  return data[0];
+  if (authError || !user) {
+    clearProfileCache();
+    throw new Error('Użytkownik nie zalogowany');
+  }
+
+  if (profileCache.userId === user.id && profileCache.promise) {
+    return profileCache.promise;
+  }
+
+  const promise = fetchProfile(user.id);
+  profileCache = { userId: user.id, promise };
+  // Błąd (np. chwilowo brak sieci) nie może zostać zapamiętany na całą sesję.
+  promise.catch(() => {
+    if (profileCache.promise === promise) clearProfileCache();
+  });
+  return promise;
 }
 
 /**
@@ -117,13 +135,14 @@ export async function getTransakcje(miesiac, rok) {
     ? `${rok + 1}-01-01`
     : `${rok}-${String(miesiac + 1).padStart(2, '0')}-01`;
 
-  const { data, error } = await supabase
+  const { data, error } = await fetchAll(() => supabase
     .from('transakcje')
-    .select('id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz')
+    .select('id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz', { count: 'exact' })
     .eq('household_id', householdId)
     .gte('data', startDate)
     .lt('data', endDate)
-    .order('data', { ascending: false });
+    .order('data', { ascending: false })
+    .order('id', { ascending: false }));
 
   if (error) {
     handleAuthError(error);
@@ -131,11 +150,18 @@ export async function getTransakcje(miesiac, rok) {
   return data;
 }
 
+/**
+ * Dodaje transakcję. `transakcja.id` (UUID nadany przez klienta) czyni zapis
+ * idempotentnym: kolejka offline ponawia operację, gdy odpowiedź zginęła po
+ * udanym INSERT — konflikt klucza głównego oznacza wtedy „już zapisane",
+ * a nie duplikat.
+ */
 export async function addTransakcja(transakcja) {
   const householdId = await getHouseholdId();
   const { data, error } = await supabase
     .from('transakcje')
     .insert({
+      ...(transakcja.id ? { id: transakcja.id } : {}),
       household_id: householdId,
       data: transakcja.data,
       typ: transakcja.typ,
@@ -149,6 +175,9 @@ export async function addTransakcja(transakcja) {
     .single();
 
   if (error) {
+    if (error.code === '23505' && transakcja.id) {
+      return { success: true, id: transakcja.id, duplicate: true };
+    }
     handleAuthError(error);
   }
   invalidateYearlyCache();
@@ -296,13 +325,17 @@ export async function getKontekstParowania(od, doDaty) {
     supabase.from('kontrahenci_aliasy')
       .select('wzorzec, typ_wzorca, kontrahent')
       .eq('household_id', householdId),
-    supabase.from('transakcje')
-      .select('id, data, typ, kwota, kategoria, podkategoria, komentarz')
-      .eq('household_id', householdId).gte('data', od).lte('data', doDaty),
-    supabase.from('transakcje_dowody')
-      .select('transakcja_id')
+    // Okno wyciągu może mieć ponad 1000 transakcji/dowodów — bez stronicowania
+    // część kandydatów do parowania by zniknęła, a import zrobiłby duplikaty.
+    fetchAll(() => supabase.from('transakcje')
+      .select('id, data, typ, kwota, kategoria, podkategoria, komentarz', { count: 'exact' })
+      .eq('household_id', householdId).gte('data', od).lte('data', doDaty)
+      .order('id')),
+    fetchAll(() => supabase.from('transakcje_dowody')
+      .select('transakcja_id', { count: 'exact' })
       .eq('household_id', householdId).gte('data', shiftDate(od, -40)).lte('data', shiftDate(doDaty, 40))
-      .not('transakcja_id', 'is', null),
+      .not('transakcja_id', 'is', null)
+      .order('id')),
   ]);
   for (const r of [zob, aliasy, tx, dowody]) {
     if (r.error) {
@@ -649,13 +682,15 @@ export async function getTransakcjeForYear(rok) {
   }
 
   const householdId = await getHouseholdId();
-  const { data, error } = await supabase
+  // Rok łatwo przekracza 1000 wierszy (limit PostgREST) — stronicujemy.
+  const { data, error } = await fetchAll(() => supabase
     .from('transakcje')
-    .select('id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz')
+    .select('id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz', { count: 'exact' })
     .eq('household_id', householdId)
     .gte('data', `${rok}-01-01`)
     .lt('data', `${rok + 1}-01-01`)
-    .order('data', { ascending: false });
+    .order('data', { ascending: false })
+    .order('id', { ascending: false }));
 
   if (error) handleAuthError(error);
 

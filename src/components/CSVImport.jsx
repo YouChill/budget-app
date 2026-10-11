@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Papa from 'papaparse';
-import * as api from '../src/services/api';
-import * as categoryAI from '../src/services/categoryAI';
-import ModalShell from '../src/components/ModalShell';
-import ConfirmDialog from '../src/components/ConfirmDialog';
-import Button from '../src/components/Button';
-import { logger } from '../src/utils/logger';
+import * as api from '../services/api';
+import * as categoryAI from '../services/categoryAI';
+import ModalShell from './ModalShell';
+import ConfirmDialog from './ConfirmDialog';
+import Button from './Button';
+import { logger } from '../utils/logger';
 import {
   tylkoCyfry,
   naGrosze,
@@ -17,8 +17,8 @@ import {
   sha256Hex,
   udzialWGroszach,
   znacznikUdzialu,
-} from '../src/lib/odciski';
-import { parujPartie } from '../src/lib/parowanie';
+} from '../lib/odciski';
+import { parujPartie } from '../lib/parowanie';
 
 // ─── Keyword → category mapping ──────────────────────────────────────────────
 const categoryMapping = {
@@ -151,7 +151,7 @@ export const normalizeDateToISO = (dateStr) => {
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     return isValidIsoDate(str) ? str : null;
   }
-  const match = str.match(/^(\d{2})[.\-](\d{2})[.\-](\d{4})$/);
+  const match = str.match(/^(\d{2})[.-](\d{2})[.-](\d{4})$/);
   if (match) {
     const iso = `${match[3]}-${match[2]}-${match[1]}`;
     return isValidIsoDate(iso) ? iso : null;
@@ -266,7 +266,7 @@ const extractMillenniumDescription = (row) => {
 
   // Transfers: recipient + opis (if opis is more than just a reference number)
   if (odbiorca) {
-    const opisIsJustRef = !opis || /^[\d\s/\-]+$/.test(opis);
+    const opisIsJustRef = !opis || /^[\d\s/-]+$/.test(opis);
     return opisIsJustRef ? odbiorca : `${odbiorca} — ${opis}`;
   }
 

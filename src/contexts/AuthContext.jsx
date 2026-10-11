@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { clearProfileCache } from '../services/api';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
@@ -135,6 +136,7 @@ export function AuthProvider({ children }) {
     if (reason === 'expired') setSessionExpired(true);
     await supabase.auth.signOut();
     sessionStorage.clear();
+    clearProfileCache();
   }, []);
 
   useEffect(() => {

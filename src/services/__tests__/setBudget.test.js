@@ -43,8 +43,8 @@ function makeChain(table) {
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     auth: {
-      getUser: vi.fn(() =>
-        Promise.resolve({ data: { user: { id: USER_ID } }, error: null })
+      getSession: vi.fn(() =>
+        Promise.resolve({ data: { session: { user: { id: USER_ID } } }, error: null })
       ),
     },
     from: vi.fn(table => {

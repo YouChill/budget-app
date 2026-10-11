@@ -40,8 +40,19 @@ export function addToQueue(operation) {
   return queue;
 }
 
-export function getQueuedOperations() {
-  return getQueue();
+// Czy operacja należy do danego użytkownika. Wpisy sprzed wprowadzenia
+// userId (stare kolejki) traktujemy jako należące do bieżącego użytkownika.
+function belongsTo(op, userId) {
+  return !op.userId || !userId || op.userId === userId;
+}
+
+/**
+ * Operacje w kolejce. Z `userId` — tylko operacje tego użytkownika: kolejka
+ * leży w localStorage i przeżywa wylogowanie, więc na współdzielonym
+ * urządzeniu może zawierać wpisy innego konta.
+ */
+export function getQueuedOperations(userId) {
+  return getQueue().filter(op => belongsTo(op, userId));
 }
 
 export function clearQueue() {
@@ -60,7 +71,7 @@ export function removeFromQueue(operationId) {
 const MAX_ATTEMPTS = 3;
 
 /**
- * Process all queued operations sequentially via Supabase API.
+ * Process all queued operations of `userId` sequentially via Supabase API.
  *
  * Operacje zakończone sukcesem są usuwane z kolejki. Operacje, które się nie
  * powiodły (np. chwilowy błąd sieci), pozostają w kolejce z inkrementowanym
@@ -70,7 +81,7 @@ const MAX_ATTEMPTS = 3;
  *
  * Returns { succeeded: number, failed: number, dropped: number, errors: string[] }
  */
-export async function processQueue() {
+export async function processQueue(userId) {
   const queue = getQueue();
   if (queue.length === 0) return { succeeded: 0, failed: 0, dropped: 0, errors: [] };
 
@@ -81,6 +92,13 @@ export async function processQueue() {
   const remaining = [];
 
   for (const op of queue) {
+    // Operacje innego konta zostają nietknięte — household_id wyznaczany jest
+    // z zalogowanego użytkownika, więc wysłanie ich teraz zapisałoby cudze
+    // transakcje do bieżącego gospodarstwa.
+    if (!belongsTo(op, userId)) {
+      remaining.push(op);
+      continue;
+    }
     try {
       await processOfflineOperation(op);
       succeeded++;
@@ -98,6 +116,11 @@ export async function processQueue() {
 
   // Zachowaj nieudane (jeszcze ponowialne) operacje; jeśli zapis się nie uda
   // (np. quota), w ostateczności wyczyść, by nie zablokować aplikacji.
+  // Operacje dodane w trakcie synchronizacji (np. połączenie znów zerwane)
+  // nie były w `queue` — dopisz je, zamiast nadpisać.
+  const known = new Set(queue.map(op => op.id));
+  remaining.push(...getQueue().filter(op => !known.has(op.id)));
+
   try {
     if (remaining.length > 0) saveQueue(remaining);
     else clearQueue();

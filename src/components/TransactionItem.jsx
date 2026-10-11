@@ -37,7 +37,6 @@ export default function TransactionItem({
   const { id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz } = transaction;
   
   const isExpense = typ === 'Wydatek';
-  const isIncome = typ === 'Przychód';
 
   const colorClass = isExpense ? 'text-rose-600' : 'text-emerald-600';
   const signSymbol = isExpense ? '-' : '+';

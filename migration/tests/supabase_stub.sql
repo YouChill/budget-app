@@ -16,7 +16,8 @@ CREATE TABLE public.households (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), n
 CREATE TABLE public.profiles (
   id uuid PRIMARY KEY REFERENCES auth.users ON DELETE CASCADE,
   household_id uuid REFERENCES public.households ON DELETE SET NULL,
-  display_name text NOT NULL, email text);
+  display_name text NOT NULL, email text,
+  updated_at timestamptz DEFAULT now());
 CREATE TABLE public.transakcje (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   household_id uuid NOT NULL REFERENCES public.households(id),
@@ -28,6 +29,8 @@ CREATE TABLE public.transakcje (
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY profiles_select_own ON public.profiles FOR SELECT USING (auth.uid() = id);
+-- Jak w 003: update własnego profilu (wszystkie kolumny — to łata 015 zawęża).
+CREATE POLICY profiles_update_own ON public.profiles FOR UPDATE USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 ALTER TABLE public.transakcje ENABLE ROW LEVEL SECURITY;
 CREATE POLICY transakcje_all ON public.transakcje FOR ALL
   USING (household_id IN (SELECT household_id FROM public.profiles WHERE id = auth.uid()))

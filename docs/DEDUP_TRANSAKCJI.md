@@ -9,7 +9,7 @@ Analiza z 2026-10-11 i stan jej wdrożenia. Źródłem prawdy dla schematu jest
 | Etap z planu | Stan | Gdzie |
 |---|---|---|
 | 1. Migracja 014 + RPC + testy SQL | ✅ | `migration/014_…sql`, `rollback_014.sql`, `migration/tests/` |
-| 2. `CSVImport.jsx` na RPC + podgląd „już zaksięgowane” | ✅ | `components/CSVImport.jsx`, `src/services/api.js` |
+| 2. `CSVImport.jsx` na RPC + podgląd „już zaksięgowane” | ✅ | `src/components/CSVImport.jsx`, `src/services/api.js` |
 | 3. Tabela `zobowiazania` + endpoint API | ✅ | `api/v1/[...route].js`, `docs/API.md` |
 | 4. Radar Gmail: zapis i odczyt zobowiązań | ⏳ poza repo | korzysta z `POST/PATCH /api/v1/zobowiazania` |
 | 5. Backfill `kwota_pelna`/`udzial` + data graniczna | ✅ | backfill w 014; data graniczna — patrz §7 |
@@ -177,8 +177,8 @@ z analizy) działa przez RPC: pozycja z `dowod` i `transakcja_id`, bez
 ## 8. Testy
 
 - Vitest: `src/lib/__tests__/dedup.test.js` (odciski, kaskada, udział),
-  `components/__tests__/CSVImport.test.js` (strażnik znaku, rekordy importu),
-  `components/__tests__/CSVImport.dedup.test.jsx` (przepływ w komponencie),
+  `src/components/__tests__/CSVImport.test.js` (strażnik znaku, rekordy importu),
+  `src/components/__tests__/CSVImport.dedup.test.jsx` (przepływ w komponencie),
   `api/__tests__/api-v1.test.js` (idempotentny POST, `/zobowiazania`).
 - SQL: `migration/tests/run_sql_tests.sh` na lokalnym PostgreSQL 15+.
   Uruchamia atrapę Supabase, backfill, dedup, zobowiązania, izolację

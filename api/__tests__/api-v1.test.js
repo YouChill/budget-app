@@ -435,7 +435,7 @@ describe('POST /transakcje z odciskiem', () => {
   });
 
   it('bez zrodlo_id — zwykły INSERT, bez RPC', async () => {
-    const { zrodlo, zrodlo_id, dokument, ...plain } = body;
+    const { zrodlo: _z, zrodlo_id: _zid, dokument: _d, ...plain } = body;
     state.tables.transakcje = { data: [{ id: TX_ID }], error: null };
     const res = await call({ method: 'POST', route: ['transakcje'], body: plain });
     expect(res.statusCode).toBe(201);

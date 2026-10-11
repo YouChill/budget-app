@@ -1,12 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import CategoryCharts from '/components/CategoryCharts';
-import Budgets from '/components/Budgets';
-import CSVImport from '/components/CSVImport';
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import LoginPage from './components/LoginPage';
 import ModalShell from './components/ModalShell';
 import ConfirmDialog from './components/ConfirmDialog';
 import OfflineBanner from './components/OfflineBanner';
-import YearlySummary from './components/YearlySummary';
 import { useAuth } from './contexts/AuthContext';
 import { useToast } from './contexts/ToastContext';
 import { useOffline } from './hooks/useOffline';
@@ -18,6 +14,14 @@ import { addToQueue } from './services/offlineQueue';
 import { supabase } from './lib/supabase';
 import * as api from './services/api';
 import { logger } from './utils/logger';
+
+// Ciężkie widoki (recharts, papaparse, parsery bankowe) w osobnych chunkach —
+// ekran logowania i lista transakcji ładują się bez nich. Service worker
+// precache'uje wszystkie chunki, więc działają też offline.
+const CategoryCharts = lazy(() => import('./components/CategoryCharts'));
+const Budgets = lazy(() => import('./components/Budgets'));
+const CSVImport = lazy(() => import('./components/CSVImport'));
+const YearlySummary = lazy(() => import('./components/YearlySummary'));
 import {
   formatCurrency,
   getMonthName,
@@ -1031,6 +1035,7 @@ export default function BudgetApp() {
   // Offline queue: licznik + auto-sync przy powrocie online
   const { pendingCount, isSyncing, refreshPendingCount } = usePendingOperations({
     isOffline,
+    userId: user?.id,
     onSynced: () => fetchData(false),
     addToast,
   });
@@ -1071,7 +1076,7 @@ export default function BudgetApp() {
             table: 'transakcje',
             filter: `household_id=eq.${householdId}`,
           },
-          (payload) => {
+          () => {
             // Odśwież dane gdy zmienią się transakcje
             fetchDataRef.current(false);
           }
@@ -1089,7 +1094,7 @@ export default function BudgetApp() {
             table: 'kategorie',
             filter: `household_id=eq.${householdId}`,
           },
-          (payload) => {
+          () => {
             // Odśwież dane gdy zmienią się kategorie
             fetchDataRef.current(false);
           }
@@ -1107,7 +1112,7 @@ export default function BudgetApp() {
             table: 'osoby',
             filter: `household_id=eq.${householdId}`,
           },
-          (payload) => {
+          () => {
             // Odśwież dane gdy zmienią się osoby
             fetchDataRef.current(false);
           }
@@ -1133,13 +1138,19 @@ export default function BudgetApp() {
   // Dodawanie transakcji
   const handleAddTransaction = async (transakcja) => {
     if (isOffline) {
-      // Optimistic update + queue
-      const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-      const optimistic = { ...transakcja, id: tempId, _offline: true };
+      // Optimistic update + queue. Docelowe UUID nadajemy już teraz: ponowienie
+      // po zgubionej odpowiedzi nie zrobi duplikatu, a edycja/usunięcie tej
+      // transakcji przed synchronizacją trafi w ten sam rekord.
+      const id = crypto.randomUUID();
+      const optimistic = { ...transakcja, id, _offline: true };
       const noweTransakcje = [...transakcje, optimistic];
       setTransakcje(noweTransakcje);
 
-      addToQueue({ action: 'addTransakcja', payload: { action: 'addTransakcja', transakcja } });
+      addToQueue({
+        action: 'addTransakcja',
+        userId: user?.id,
+        payload: { action: 'addTransakcja', transakcja: { ...transakcja, id } },
+      });
       refreshPendingCount();
 
       setShowForm(false);
@@ -1177,6 +1188,7 @@ export default function BudgetApp() {
 
       addToQueue({
         action: 'updateTransakcja',
+        userId: user?.id,
         payload: { action: 'updateTransakcja', id: editingTransaction.id, transakcja },
       });
       refreshPendingCount();
@@ -1228,11 +1240,9 @@ export default function BudgetApp() {
       const noweTransakcje = transakcje.filter(t => t.id !== id);
       setTransakcje(noweTransakcje);
 
-      // Don't queue delete for temp (not-yet-synced) transactions
-      if (!String(id).startsWith('temp_')) {
-        addToQueue({ action: 'deleteTransakcja', payload: { action: 'deleteTransakcja', id } });
-        refreshPendingCount();
-      }
+      // Także dla transakcji dodanej offline: kolejka wykona add, potem delete.
+      addToQueue({ action: 'deleteTransakcja', userId: user?.id, payload: { action: 'deleteTransakcja', id } });
+      refreshPendingCount();
 
       addToast('Usunięcie zapisane offline — zsynchronizuje się po połączeniu');
       return;
@@ -1532,7 +1542,9 @@ export default function BudgetApp() {
         )}
         
         {activeView === 'yearly' ? (
-          <YearlySummary year={selectedYear} />
+          <Suspense fallback={<div className="py-20 text-center text-gray-400">Ładowanie…</div>}>
+            <YearlySummary year={selectedYear} />
+          </Suspense>
         ) : isLoading ? (
           <div className="flex items-center justify-center py-20">
             <div className="flex items-center gap-3 text-gray-500">
@@ -1565,13 +1577,15 @@ export default function BudgetApp() {
             </div>
 
             {/* Wykresy kategorii */}
-            <CategoryCharts
-              transakcje={transakcje}
-              budgets={budgets}
-              currentPeriod={currentPeriod}
-              selectedCategory={selectedCategory}
-              onSelectCategory={toggleCategory}
-            />
+            <Suspense fallback={<div className="h-72 rounded-3xl bg-white/50 border border-gray-100 animate-pulse" />}>
+              <CategoryCharts
+                transakcje={transakcje}
+                budgets={budgets}
+                currentPeriod={currentPeriod}
+                selectedCategory={selectedCategory}
+                onSelectCategory={toggleCategory}
+              />
+            </Suspense>
 
             {/* Lista transakcji */}
             <div className="rounded-3xl bg-white/50 backdrop-blur border border-gray-100 shadow-sm overflow-hidden">
@@ -1716,13 +1730,13 @@ export default function BudgetApp() {
         />
       )}
 
+      <Suspense fallback={null}>
       {showBudgets && (
         <Budgets
           onClose={() => setShowBudgets(false)}
           kategorie={kategorie}
           month={currentPeriod.month}
           year={currentPeriod.year}
-          budgets={budgets}
           osoby={osoby}
           onSaved={refreshBudgets}
         />
@@ -1739,6 +1753,7 @@ export default function BudgetApp() {
           }}
         />
       )}
+      </Suspense>
       
       {/* Potwierdzenie usunięcia transakcji */}
       {confirmDeleteId !== null && (
