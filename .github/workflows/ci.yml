@@ -17,7 +17,7 @@ jobs:
     name: Lint, testy, build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -52,7 +52,7 @@ jobs:
       PGUSER: postgres
       PGPASSWORD: postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: bash migration/tests/run_sql_tests.sh
 
   # ── Migracje bazy (Supabase CLI, darmowe) ────────────────────────────────
@@ -74,7 +74,7 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       SUPABASE_PROJECT_REF: rrkmtyitoghfntiprcgh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Sprawdź sekrety
         id: secrets
         run: |
