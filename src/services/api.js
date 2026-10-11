@@ -7,25 +7,23 @@ import { fetchAll } from '../lib/fetchAll';
 // PROFILE & HOUSEHOLD FUNCTIONS
 // ═══════════════════════════════════════════
 
-/**
- * Pobiera profil zalogowanego użytkownika wraz z household_id.
- *
- * Tworzenie profilu (i przypisanie household) należy wyłącznie do triggera
- * `handle_new_user` po stronie bazy (migracje 006/007) — klient nigdy nie
- * zgaduje household_id, żeby nie dało się przypadkiem trafić do cudzego
- * gospodarstwa przy regresji RLS.
- */
-export async function getUserProfile() {
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+// Profil (household_id) nie zmienia się w trakcie sesji — od migracji 015
+// użytkownik nie może go zmienić — więc pobieramy go raz na użytkownika
+// zamiast 2 round-tripów (auth + profiles) przed każdym zapytaniem.
+// Cache trzyma obietnicę, więc równoległe wywołania (getAllData) dzielą jedno
+// zapytanie. Klucz: id użytkownika z lokalnej sesji — po przelogowaniu na
+// inne konto profil pobiera się od nowa.
+let profileCache = { userId: null, promise: null };
 
-  if (authError || !user) {
-    throw new Error('Użytkownik nie zalogowany');
-  }
+export function clearProfileCache() {
+  profileCache = { userId: null, promise: null };
+}
 
+async function fetchProfile(userId) {
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('id, email, display_name, household_id')
-    .eq('id', user.id)
+    .eq('id', userId)
     .single();
 
   if (profileError) {
@@ -37,6 +35,39 @@ export async function getUserProfile() {
   }
 
   return profile;
+}
+
+/**
+ * Pobiera profil zalogowanego użytkownika wraz z household_id.
+ *
+ * Tworzenie profilu (i przypisanie household) należy wyłącznie do triggera
+ * `handle_new_user` po stronie bazy (migracje 006/007) — klient nigdy nie
+ * zgaduje household_id, żeby nie dało się przypadkiem trafić do cudzego
+ * gospodarstwa przy regresji RLS.
+ *
+ * Sesja z getSession() jest lokalna (bez żądania do Auth); ważność tokenu
+ * i tak weryfikuje PostgREST przy każdym zapytaniu (RLS).
+ */
+export async function getUserProfile() {
+  const { data, error: authError } = await supabase.auth.getSession();
+  const user = data?.session?.user;
+
+  if (authError || !user) {
+    clearProfileCache();
+    throw new Error('Użytkownik nie zalogowany');
+  }
+
+  if (profileCache.userId === user.id && profileCache.promise) {
+    return profileCache.promise;
+  }
+
+  const promise = fetchProfile(user.id);
+  profileCache = { userId: user.id, promise };
+  // Błąd (np. chwilowo brak sieci) nie może zostać zapamiętany na całą sesję.
+  promise.catch(() => {
+    if (profileCache.promise === promise) clearProfileCache();
+  });
+  return promise;
 }
 
 /**

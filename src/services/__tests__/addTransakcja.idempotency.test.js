@@ -16,7 +16,7 @@ vi.mock('../../lib/supabase', () => {
   };
   return {
     supabase: {
-      auth: { getUser: () => Promise.resolve({ data: { user: { id: 'u1' } }, error: null }) },
+      auth: { getSession: () => Promise.resolve({ data: { session: { user: { id: 'u1' } } }, error: null }) },
       from: (table) => (table === 'profiles' ? profileChain : txChain),
     },
   };
