@@ -287,15 +287,55 @@ budget-app/
 | `VITE_SUPABASE_ANON_KEY` | ✅ | Klucz anonimowy Supabase |
 | `OPENAI_API_KEY` | ➕ | Klucz OpenAI — **tylko po stronie serwera** (proxy `/api/embeddings`) |
 | `VITE_AI_ENABLED` | ➕ | Flaga `true/false` włączająca kategoryzację AI w UI |
+| `SUPABASE_URL` | ➕ | URL Supabase dla funkcji `/api/*` (domyślnie `VITE_SUPABASE_URL`) |
+| `SUPABASE_ANON_KEY` | ➕ | Klucz anon dla funkcji `/api/*` (domyślnie `VITE_SUPABASE_ANON_KEY`) |
 
 ## Deployment
 
-### Netlify / Vercel
+### Vercel (produkcja)
 
-1. Zbuduj aplikację: `npm run build`
-2. Połącz repozytorium z Netlify lub Vercel
-3. Ustaw wszystkie zmienne środowiskowe w ustawieniach projektu (w tym `OPENAI_API_KEY` — bez prefiksu `VITE_`, by nie trafił do bundle'a)
-4. Dodaj domenę do **Allowed URLs / Redirect URLs** w Supabase (Authentication → URL Configuration)
+1. Połącz repozytorium z Vercel — build: `npm run build`, katalog `dist`, Node 22 (`.nvmrc`).
+2. Ustaw zmienne środowiskowe (w tym `OPENAI_API_KEY` — bez prefiksu `VITE_`, by nie trafił do bundle'a).
+3. Dodaj domenę do **Allowed URLs / Redirect URLs** w Supabase (Authentication → URL Configuration).
+4. Uruchom nowe migracje w Supabase SQL Editor **przed** deployem kodu, który ich wymaga.
+
+`vercel.json` ustawia:
+- **region funkcji `dub1`** (Dublin) — ten sam region co baza Supabase (`eu-west-1`);
+  przy przeniesieniu bazy zmień region funkcji, inaczej każde żądanie `/api/*`
+  płaci za podróż przez Atlantyk;
+- **nagłówki bezpieczeństwa**: CSP (połączenia tylko do własnej domeny i
+  `*.supabase.co`), HSTS, `X-Frame-Options: DENY`, `Referrer-Policy`,
+  `Permissions-Policy`. Nowa zewnętrzna usługa wołana z przeglądarki wymaga
+  dopisania jej do `connect-src`;
+- **cache**: `/assets/*` (pliki z hashem) na rok, `sw.js`/`index.html` bez
+  cache — nowa wersja PWA dociera od razu.
+
+### Środowiska preview
+
+Deploye z PR-ów domyślnie dostają te same zmienne co produkcja, czyli łączą
+się z **produkcyjną bazą z prawdziwymi finansami**. Zalecane:
+
+1. Osobny projekt Supabase „budget-app-preview" z migracjami i danymi testowymi.
+2. Vercel → Settings → Environment Variables: `VITE_SUPABASE_URL` /
+   `VITE_SUPABASE_ANON_KEY` w zakresie **Preview** wskazują na projekt preview.
+3. Vercel → Settings → Deployment Protection: **Vercel Authentication** dla Preview.
+
+### Checklista bezpieczeństwa Supabase
+
+- Authentication → Email → **Confirm email = ON** (patrz `docs/SETUP_AUTH_PHASE3.md`).
+- Authentication → **Allow new users to sign up = OFF**, jeśli z aplikacji
+  korzysta tylko rodzina (nowe konta zakłada się wtedy w Dashboardzie).
+  Zamyka to też koszt OpenAI dla obcych kont (`/api/embeddings`).
+- Migracja `015` wdrożona: `SELECT column_name FROM information_schema.column_privileges
+  WHERE table_name = 'profiles' AND grantee = 'authenticated' AND privilege_type = 'UPDATE';`
+  zwraca tylko `display_name`, `updated_at`.
+
+### CI
+
+`.github/workflows/ci.yml` na każdym PR: lint, testy, build,
+`sprawdz_przed_merge.sh`, `npm audit` (prod) i testy migracji SQL na
+Postgresie 16. W ustawieniach repo warto włączyć **branch protection** dla
+`main` z wymaganymi checkami CI.
 
 ## Roadmap
 
