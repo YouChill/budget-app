@@ -47,7 +47,7 @@ numer dokumentu w tytule.
 - **Źródło `csv`** dla plików z ręcznym mapowaniem kolumn. Odcisk liczony jest z
   daty, kwoty, opisu i salda (jeśli plik je ma). Identyczne wiersze w jednym pliku
   dostają sufiks `#2`, `#3`.
-- **Wykrywanie formatu Revolut** w `CSVImport.jsx`. Operacje `PENDING` są
+- **Wykrywanie formatu Revolut** w `src/lib/csvImport/banki.js`. Operacje `PENDING` są
   pomijane: nie mają salda, więc po zaksięgowaniu dostałyby inny odcisk.
 - **„Do weryfikacji” bez kontrahenta tylko przy zgodnej kwocie.** Plan każe
   oznaczać tak każdy wiersz bez kontrahenta. To byłby co drugi zakup kartą,

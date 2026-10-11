@@ -29,7 +29,7 @@
 - **UI**: Select boxes do wyboru które kolumny CSV zawierają jakie dane
 
 ### 5. ✅ Automatyczne przypisywanie kategorii
-- **Logika**: `categorizeDescription()` w `CSVImport.jsx`
+- **Logika**: `categorizeDescription()` w `src/lib/csvImport/kategoryzacja.js`
 - **Słownik**: `categoryMapping` - 70+ słów kluczowych
 - **Kategorie pokryte**:
   - Jedzenie (Zakupy, Restauracje, Kawa)
@@ -71,7 +71,9 @@
 ### React Components
 ```
 components/
-└── CSVImport.jsx          ← Główny komponent (4 kroki importu)
+└── CSVImport.jsx          ← Główny komponent (4 kroki importu, stan i akcje)
+    csvImport/             ← kroki UI (UploadStep, MappingStep, PreviewStep, SuccessStep) i hooki
+src/lib/csvImport/         ← logika: banki.js, parsowanie.js, kategoryzacja.js, przygotowanie.js, zaksiegowane.js
 ```
 
 ### Dokumentacja
@@ -171,7 +173,7 @@ npm install papaparse
 
 ### Dodawanie nowych słów kluczowych
 
-Edytuj `categoryMapping` w `CSVImport.jsx`:
+Edytuj `categoryMapping` w `src/lib/csvImport/kategoryzacja.js`:
 ```javascript
 const categoryMapping = {
   'nowe_slowo': { kategoria: 'Nazwa', podkategoria: 'Podkategoria' },
@@ -180,7 +182,7 @@ const categoryMapping = {
 
 ### Zmiana formatu daty
 
-Zmień `prepareTransactions()` w `CSVImport.jsx`:
+Zmień `przygotujTransakcje()` w `src/lib/csvImport/przygotowanie.js`:
 ```javascript
 // Przed: data = row[columnMapping.data]
 // Po: data = convertDate(row[columnMapping.data])
@@ -190,7 +192,7 @@ Zmień `prepareTransactions()` w `CSVImport.jsx`:
 
 Aktualnie: liczby ujemne traktowane jako wydatki
 ```javascript
-// W CSVImport - funkcja prepareTransactions
+// src/lib/csvImport/przygotowanie.js — przygotujTransakcje
 typ: Math.abs(kwota) < 0 ? 'Wydatek' : 'Przychód' // ← typ na podstawie znaku
 ```
 

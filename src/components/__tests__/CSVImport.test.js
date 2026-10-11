@@ -11,15 +11,10 @@ vi.mock('../../services/categoryAI', () => ({
   saveCategoryRulesBatch: vi.fn(),
 }));
 
-import {
-  normalizeDateToISO,
-  categorizeDescription,
-  validateCategoryExists,
-  parseKwota,
-  zastosujParowanie,
-  rekordyImportu,
-  zrodloMillennium,
-} from '../CSVImport';
+import { normalizeDateToISO, parseKwota } from '../../lib/csvImport/parsowanie';
+import { categorizeDescription, validateCategoryExists } from '../../lib/csvImport/kategoryzacja';
+import { zastosujParowanie, rekordyImportu } from '../../lib/csvImport/przygotowanie';
+import { zrodloMillennium } from '../../lib/csvImport/banki';
 
 // ─── normalizeDateToISO ────────────────────────────────────────────────────────
 
