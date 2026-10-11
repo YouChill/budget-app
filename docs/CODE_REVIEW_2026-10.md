@@ -269,3 +269,37 @@ pojawiły się ponownie od lipca.
 6. **D2** `vercel.json` (nagłówki, region), **D4** osobna baza dla Preview.
 7. **D3** migracje przez Supabase CLI.
 8. Refaktor Q1/Q2/Q4 (podział `App.jsx`/`CSVImport.jsx`, lazy loading).
+
+---
+
+## Status wdrożenia poprawek
+
+Stan produkcji sprawdzony tylko do odczytu (Supabase `budget-app`, eu-west-1)
+11.10.2026:
+
+- **K1 potwierdzone:** rola `authenticated` ma UPDATE na wszystkich kolumnach `profiles`.
+- **W1 potwierdzone:** jedno gospodarstwo ma 1039 transakcji w jednym roku,
+  więc widok „Rok” już obcinał dane.
+- Security Advisor: `match_category_rules` i `handle_new_user` wykonywalne
+  przez `anon` (przez grant `PUBLIC`), więc dodano migrację 016.
+  *Leaked password protection* jest wyłączone.
+- Migracja 014 nie jest wdrożona na produkcji (kod obsługuje jej brak).
+
+| # | Status | Zmiana |
+|---|---|---|
+| K1 | ✅ kod / ⏳ prod | `migration/015_profiles_household_lock.sql` + test SQL + rollback; usunięte `assignUserToHousehold` |
+| — | ✅ kod / ⏳ prod | `migration/016_revoke_public_execute.sql` (z Security Advisora) + test SQL + rollback |
+| W1 | ✅ | `src/lib/fetchAll.js`: stronicowanie rok/miesiąc/parowanie importu, z testami |
+| W2 | ✅ | kolejka offline z `userId`, synchronizacja tylko własnych operacji, także po zalogowaniu |
+| W3 | ✅ | UUID transakcji nadawane offline, ponowienie = konflikt PK = sukces; edycja i usunięcie przed synchronizacją działają |
+| S1 | ⏳ Dashboard | wyłączenie rejestracji: decyzja i ustawienie w Supabase |
+| S2 / D2 | ✅ | `vercel.json`: CSP (sprawdzone w Chromium), HSTS, nagłówki, cache, region `dub1` |
+| S3 | ✅ | profil cache'owany per użytkownik, `getSession` zamiast `getUser` |
+| Q2 / Q4 | ✅ | `src/components`, `React.lazy`: główny chunk 959 kB → 454 kB |
+| Q3 | ✅ | ESLint działa (0 błędów, 28 ostrzeżeń: `set-state-in-effect`, Fast Refresh) |
+| Q7 | ✅ | `.gitignore`, `package.json` |
+| D1 | ✅ | `.github/workflows/ci.yml` (lint, testy, build, audyt, testy SQL), Dependabot |
+| D4 | ✅ docs / ⏳ Vercel | `.nvmrc`, `engines`; README: baza dla preview, Deployment Protection, checklista Supabase |
+| D3 | ⏳ decyzja | migracje przez Supabase CLI: produkcja nie ma historii migracji (`supabase_migrations` puste), potrzebny baseline |
+| Q1 | ⏳ | podział `App.jsx` / `CSVImport.jsx`: osobny, większy refaktor |
+| D5 | ⏳ | Sentry, backup `pg_dump` |
