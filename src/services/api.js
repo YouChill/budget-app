@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { DEFAULT_KATEGORIE } from '../data/defaultKategorie';
+import { pozycjaZRekordu, brakMigracji014 } from '../lib/importPozycje';
 
 // ═══════════════════════════════════════════
 // PROFILE & HOUSEHOLD FUNCTIONS
@@ -219,6 +220,110 @@ export async function addTransakcjeBatch(transakcje) {
   }
   invalidateYearlyCache();
   return { success: true, count: data.length, ids: data.map(d => d.id) };
+}
+
+// ═══════════════════════════════════════════
+// IMPORT Z ODCISKAMI (migracja 014)
+// ═══════════════════════════════════════════
+
+// RPC przyjmuje do 2000 pozycji; odciski wysyłamy partiami, bo każdy to 64 znaki.
+const IMPORT_CHUNK = 1000;
+const ODCISKI_CHUNK = 500;
+
+/**
+ * Zapis importu przez RPC importuj_transakcje: dowody ON CONFLICT DO NOTHING,
+ * transakcje tylko dla nowych dowodów, zamknięcie dopasowanych zobowiązań.
+ * Rekordy w formacie pozycjaZRekordu() (src/lib/importPozycje.js).
+ *
+ * Zwraca { success, dodane, pominiete, polaczone, dolaczone, do_weryfikacji, wyniki }.
+ * Błąd z kodem brakującej funkcji/tabeli ma ustawione `brakMigracji = true`.
+ */
+export async function importujTransakcje(rekordy) {
+  const suma = { dodane: 0, pominiete: 0, polaczone: 0, dolaczone: 0, do_weryfikacji: 0, wyniki: [] };
+  for (let i = 0; i < rekordy.length; i += IMPORT_CHUNK) {
+    const pozycje = rekordy.slice(i, i + IMPORT_CHUNK).map(pozycjaZRekordu);
+    const { data, error } = await supabase.rpc('importuj_transakcje', { p: { pozycje } });
+    if (error) {
+      if (brakMigracji014(error)) {
+        const err = new Error('Baza nie ma jeszcze migracji 014 (odciski importu)');
+        err.brakMigracji = true;
+        throw err;
+      }
+      handleAuthError(error);
+    }
+    for (const k of ['dodane', 'pominiete', 'polaczone', 'dolaczone', 'do_weryfikacji']) suma[k] += data[k] || 0;
+    suma.wyniki.push(...(data.wyniki || []));
+  }
+  invalidateYearlyCache();
+  return { success: true, ...suma };
+}
+
+/**
+ * Które odciski danego źródła są już w bazie.
+ * Zwraca Map<zrodlo_id, transakcja_id | null> (null = transakcję usunięto).
+ */
+export async function sprawdzOdciski(zrodlo, ids) {
+  const wynik = new Map();
+  const unikalne = [...new Set(ids.filter(Boolean))];
+  for (let i = 0; i < unikalne.length; i += ODCISKI_CHUNK) {
+    const { data, error } = await supabase.rpc('istniejace_odciski', {
+      p_zrodlo: zrodlo,
+      p_ids: unikalne.slice(i, i + ODCISKI_CHUNK),
+    });
+    if (error) {
+      if (brakMigracji014(error)) return null;
+      handleAuthError(error);
+    }
+    for (const row of data) wynik.set(row.zrodlo_id, row.transakcja_id);
+  }
+  return wynik;
+}
+
+/**
+ * Dane do parowania wierszy wyciągu (src/lib/parowanie.js): otwarte
+ * zobowiązania, aliasy kontrahentów i transakcje bez dowodu w oknie dat
+ * (wpisy ręczne oraz wszystko sprzed wprowadzenia odcisków).
+ * Zwraca null, gdy baza nie ma migracji 014.
+ */
+export async function getKontekstParowania(od, doDaty) {
+  const householdId = await getHouseholdId();
+  const [zob, aliasy, tx, dowody] = await Promise.all([
+    supabase.from('zobowiazania')
+      .select('id, kontrahent, dokument, kwota_pelna, data_wystawienia, termin, sposob, kategoria, podkategoria, udzial, status, transakcja_id')
+      .eq('household_id', householdId)
+      // otwarte + opłacone mailem, które jeszcze nie mają transakcji z banku
+      .or('status.eq.otwarte,and(status.eq.oplacone,transakcja_id.is.null)'),
+    supabase.from('kontrahenci_aliasy')
+      .select('wzorzec, typ_wzorca, kontrahent')
+      .eq('household_id', householdId),
+    supabase.from('transakcje')
+      .select('id, data, typ, kwota, kategoria, podkategoria, komentarz')
+      .eq('household_id', householdId).gte('data', od).lte('data', doDaty),
+    supabase.from('transakcje_dowody')
+      .select('transakcja_id')
+      .eq('household_id', householdId).gte('data', shiftDate(od, -40)).lte('data', shiftDate(doDaty, 40))
+      .not('transakcja_id', 'is', null),
+  ]);
+  for (const r of [zob, aliasy, tx, dowody]) {
+    if (r.error) {
+      if (brakMigracji014(r.error)) return null;
+      handleAuthError(r.error);
+    }
+  }
+  const zDowodem = new Set(dowody.data.map(d => d.transakcja_id));
+  return {
+    zobowiazania: zob.data,
+    aliasy: aliasy.data,
+    bezDowodu: tx.data.filter(t => !zDowodem.has(t.id)),
+  };
+}
+
+// Data dowodu może odbiegać od daty transakcji (np. faktura vs przelew),
+// więc dowody pobieramy z zapasem wokół okna.
+function shiftDate(iso, days) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 // ═══════════════════════════════════════════

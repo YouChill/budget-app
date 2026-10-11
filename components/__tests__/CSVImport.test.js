@@ -16,6 +16,9 @@ import {
   categorizeDescription,
   validateCategoryExists,
   parseKwota,
+  zastosujParowanie,
+  rekordyImportu,
+  zrodloMillennium,
 } from '../CSVImport';
 
 // ─── normalizeDateToISO ────────────────────────────────────────────────────────
@@ -306,5 +309,97 @@ describe('validateCategoryExists', () => {
   it('obsługuje Przychód', () => {
     const result = validateCategoryExists('Pensja', '', mockKategorie, 'Przychód');
     expect(result).toEqual({ kategoria: 'Pensja', podkategoria: '' });
+  });
+});
+
+// ─── Strażnik znaku ───────────────────────────────────────────────────────────
+
+describe('strażnik znaku (validateCategoryExists dla przychodów)', () => {
+  const kategorie = {
+    Wydatek: { Jedzenie: ['Zakupy domowe'], Inne: ['Nieprzewidziane'] },
+    Przychód: { 'Inne przychody': ['Zwroty', 'Rozliczenia rodzinne'], Wynagrodzenie: ['Paweł'] },
+  };
+
+  it('przychód „jajka" nie dostaje kategorii wydatkowej', () => {
+    const rules = [{ keyword: 'jajka', kategoria: 'Jedzenie', podkategoria: 'Zakupy domowe' }];
+    const kat = categorizeDescription('jajka', rules, 'Przychód');
+    const wynik = validateCategoryExists(kat.kategoria, kat.podkategoria, kategorie, 'Przychód', 'jajka');
+    expect(wynik).toEqual({ kategoria: 'Inne przychody', podkategoria: 'Zwroty' });
+  });
+
+  it('tytuł wskazujący rodzinę → Rozliczenia rodzinne', () => {
+    expect(validateCategoryExists('Jedzenie', 'Zakupy domowe', kategorie, 'Przychód', 'Zwrot za jajka - Mama'))
+      .toEqual({ kategoria: 'Inne przychody', podkategoria: 'Rozliczenia rodzinne' });
+  });
+
+  it('wydatek bez zmian: Inne / Nieprzewidziane', () => {
+    expect(validateCategoryExists('Nieznana', '', kategorie, 'Wydatek', 'jajka'))
+      .toEqual({ kategoria: 'Inne', podkategoria: 'Nieprzewidziane' });
+  });
+});
+
+// ─── Rozpoznawanie zaksięgowanych w podglądzie ───────────────────────────────
+
+describe('zastosujParowanie / rekordyImportu', () => {
+  const kategorie = { Wydatek: { Rachunki: ['Telefon'], Jedzenie: ['Kawa'] }, Przychód: {} };
+  const tx = (over = {}) => ({
+    data: '2026-10-04', kwota: -119.98, opis: 'PLAY F/60345080/09/26', typ: 'Wydatek',
+    kategoria: 'Inne', podkategoria: 'Nieprzewidziane',
+    _dedup: { zrodlo: 'millennium', zrodlo_id: 'h3', surowe: { konto: '7777' }, istniejacaTransakcja: null },
+    ...over,
+  });
+  const play = {
+    id: 'z-play', kontrahent: 'play', dokument: 'F/60345080/09/26', kwota_pelna: 119.98,
+    kategoria: 'Rachunki', podkategoria: 'Telefon', udzial: '1/2',
+  };
+
+  it('połączenie z fakturą podstawia kategorię, udział i ślad w opisie', () => {
+    const [w] = zastosujParowanie([tx()], [{ status: 'polaczona', zobowiazanie: play, reczne: [] }], kategorie);
+    expect(w.kategoria).toBe('Rachunki');
+    expect(w.podkategoria).toBe('Telefon');
+    expect(w.kwota).toBe(-59.99);
+    expect(w.opis).toContain('[udział 1/2 z 119,98 zł]');
+    expect(w._dedup).toMatchObject({ status: 'polaczona', kwotaPelna: 119.98, udzial: '1/2', wybrana: true });
+  });
+
+  it('już zaksięgowane — domyślnie odznaczone i pomijane w imporcie', () => {
+    const lista = zastosujParowanie(
+      [tx(), tx({ _dedup: { zrodlo: 'millennium', zrodlo_id: 'h4' } })],
+      [{ status: 'zaksiegowana', reczne: [] }, { status: 'nowa', reczne: [] }],
+      kategorie
+    );
+    expect(lista[0]._dedup.wybrana).toBe(false);
+    const rekordy = rekordyImportu(lista, 'Paweł');
+    expect(rekordy.map(r => r.zrodlo_id)).toEqual(['h4']);
+  });
+
+  it('rekord importu niesie dowód, zobowiązanie i udział', () => {
+    const lista = zastosujParowanie([tx()], [{ status: 'polaczona', zobowiazanie: play, reczne: [] }], kategorie);
+    const [r] = rekordyImportu(lista, 'Paweł');
+    expect(r).toMatchObject({
+      zrodlo: 'millennium', zrodlo_id: 'h3', zobowiazanie_id: 'z-play',
+      kwota: -59.99, kwota_pelna: 119.98, udzial: '1/2', osoba: 'Paweł', dokument: 'F/60345080/09/26',
+    });
+  });
+
+  it('„dołącz do wpisu ręcznego" wysyła transakcja_id zamiast nowej transakcji', () => {
+    const lista = [tx({ _dedup: { zrodlo: 'millennium', zrodlo_id: 'h5', status: 'nowa', akcja: 'dolacz', dolaczDo: 't-judo' } })];
+    expect(rekordyImportu(lista, 'Paweł')[0].transakcja_id).toBe('t-judo');
+  });
+});
+
+describe('zrodloMillennium', () => {
+  const row = ['11 2222 3333 4444 5555 6666 7777', '2026-10-01', '2026-10-02', 'ZAKUP - FIZ. UŻYCIE KARTY', '',
+    '', 'ŻABKA Z1234  WARSZAWA POL 2026-10-01', '-12,50', '', '1 000,00', 'PLN'];
+
+  it('data rozliczenia nie wpływa na odcisk', () => {
+    const inny = [...row]; inny[2] = '2026-10-05';
+    expect(zrodloMillennium(row).klucz).toBe(zrodloMillennium(inny).klucz);
+  });
+
+  it('surowe nie zawiera pełnego numeru konta', () => {
+    const { surowe } = zrodloMillennium(row);
+    expect(JSON.stringify(surowe)).not.toContain('2222');
+    expect(surowe.konto).toBe('7777');
   });
 });

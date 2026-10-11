@@ -9,7 +9,14 @@
  *   PUT    /api/v1/transakcje/:id          — pełna aktualizacja
  *   PATCH  /api/v1/transakcje/:id          — częściowa aktualizacja
  *   DELETE /api/v1/transakcje/:id          — usunięcie
- *   (analogicznie: /kategorie, /osoby, /budzety)
+ *   (analogicznie: /kategorie, /osoby, /budzety, /zobowiazania)
+ *
+ * Idempotentny import (migracja 014):
+ *   POST /transakcje z polami zrodlo + zrodlo_id zapisuje dowód operacji przez
+ *   RPC importuj_transakcje. Ponowne wysłanie tego samego zrodlo_id nie tworzy
+ *   duplikatu — odpowiedź 200 z `skipped` zamiast 201.
+ *   POST /zobowiazania to upsert po (kontrahent, dokument) — radar Gmail może
+ *   wysyłać tę samą fakturę wielokrotnie.
  *
  * Bezpieczeństwo:
  *   - Każde żądanie wymaga JWT sesji Supabase (Authorization: Bearer …).
@@ -24,15 +31,19 @@
  *     (brak wycieku informacji o cudzych danych).
  */
 import { createAuthContext } from '../_lib/auth.js';
+import { pozycjaZRekordu } from '../../src/lib/importPozycje.js';
 import { ApiError, badRequest, notFound, fromDbError, sendError } from '../_lib/errors.js';
 import {
   isUuid,
   validateTransakcja,
+  validateTransakcjaZDowodem,
+  validateZobowiazanie,
   validateKategoria,
   validateOsoba,
   validateBudzet,
   TYPY,
   ZAKRESY,
+  STATUSY_ZOBOWIAZAN,
 } from '../_lib/validate.js';
 
 const MAX_BATCH = 500;
@@ -105,8 +116,9 @@ function assertValid({ values, errors }) {
 const RESOURCES = {
   transakcje: {
     table: 'transakcje',
-    columns: 'id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz',
+    columns: 'id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz, kwota_pelna, udzial',
     validate: validateTransakcja,
+    create: createTransakcje,
     order: [['data', { ascending: false }], ['id', { ascending: false }]],
     filters(query, builder) {
       const rok = parseIntParam(query.rok, 1970, 2100, 'rok');
@@ -157,6 +169,27 @@ const RESOURCES = {
     validate: validateOsoba,
     order: [['nazwa', {}]],
     filters: (query, builder) => builder,
+  },
+  zobowiazania: {
+    table: 'zobowiazania',
+    columns: 'id, kontrahent, dokument, kwota_pelna, data_wystawienia, termin, sposob, kategoria, podkategoria, udzial, status, transakcja_id, gmail_thread, created_at, updated_at',
+    validate: validateZobowiazanie,
+    create: upsertZobowiazania,
+    order: [['termin', { ascending: false, nullsFirst: false }], ['id', { ascending: false }]],
+    filters(query, builder) {
+      if (query.status !== undefined) {
+        if (!STATUSY_ZOBOWIAZAN.includes(query.status)) {
+          throw badRequest(`Parametr "status" musi być jednym z: ${STATUSY_ZOBOWIAZAN.join(', ')}`);
+        }
+        builder = builder.eq('status', query.status);
+      }
+      if (query.kontrahent !== undefined) builder = builder.eq('kontrahent', String(query.kontrahent).toLowerCase());
+      const od = parseDateParam(query.od, 'od');
+      const doDate = parseDateParam(query.do, 'do');
+      if (od) builder = builder.gte('termin', od);
+      if (doDate) builder = builder.lte('termin', doDate);
+      return builder;
+    },
   },
   budzety: {
     table: 'budzety',
@@ -210,7 +243,7 @@ async function getRecord(ctx, resource, id, res) {
   return res.status(200).json(data);
 }
 
-async function createRecords(ctx, resource, req, res) {
+function readBatch(req) {
   const body = req.body;
   const isBatch = Array.isArray(body);
   const inputs = isBatch ? body : [body];
@@ -219,6 +252,11 @@ async function createRecords(ctx, resource, req, res) {
   if (inputs.length > MAX_BATCH) {
     throw new ApiError(413, `Zbyt wiele rekordów — maksymalnie ${MAX_BATCH} na żądanie`);
   }
+  return { isBatch, inputs };
+}
+
+async function createRecords(ctx, resource, req, res) {
+  const { isBatch, inputs } = readBatch(req);
 
   const rows = inputs.map((input, i) => {
     const { values, errors } = resource.validate(input);
@@ -239,6 +277,90 @@ async function createRecords(ctx, resource, req, res) {
 
   if (error) throw fromDbError(error);
   return res.status(201).json(isBatch ? { items: data, count: data.length } : data[0]);
+}
+
+/**
+ * POST /transakcje. Bez zrodlo_id — zwykły INSERT (jak dotąd). Gdy choć jeden
+ * rekord ma zrodlo_id, całe żądanie idzie przez RPC importuj_transakcje
+ * (jedna transakcja bazy, RLS, household z profilu): dowód z tym samym
+ * (zrodlo, zrodlo_id) zapisany wcześniej → rekord pominięty, bez błędu.
+ */
+async function createTransakcje(ctx, resource, req, res) {
+  const { isBatch, inputs } = readBatch(req);
+
+  const parsed = inputs.map((input, i) => {
+    const { values, dowod, errors } = validateTransakcjaZDowodem(input);
+    if (errors.length > 0) {
+      throw badRequest(
+        isBatch ? `Nieprawidłowe dane wejściowe (rekord ${i})` : 'Nieprawidłowe dane wejściowe',
+        errors
+      );
+    }
+    return { values, dowod };
+  });
+
+  if (!parsed.some(p => p.dowod)) return createRecords(ctx, resource, req, res);
+
+  const pozycje = parsed.map(({ values, dowod }) => pozycjaZRekordu({ ...values, ...(dowod ?? {}) }));
+  const { data: raport, error } = await ctx.supabase.rpc('importuj_transakcje', { p: { pozycje } });
+  if (error) throw fromDbError(error);
+
+  const ids = raport.wyniki.filter(w => w.status === 'dodana').map(w => w.transakcja_id);
+  let created = [];
+  if (ids.length > 0) {
+    const { data, error: selError } = await ctx.supabase
+      .from(resource.table)
+      .select(resource.columns)
+      .eq('household_id', ctx.householdId)
+      .in('id', ids);
+    if (selError) throw fromDbError(selError);
+    // Kolejność odpowiedzi = kolejność wejścia
+    const byId = new Map(data.map(r => [r.id, r]));
+    created = ids.map(id => byId.get(id)).filter(Boolean);
+  }
+
+  const status = raport.dodane > 0 ? 201 : 200;
+  if (!isBatch) {
+    const [wynik] = raport.wyniki;
+    if (wynik.status === 'pominieta') {
+      return res.status(200).json({ skipped: true, id: wynik.transakcja_id });
+    }
+    return res.status(status).json(created[0]);
+  }
+  return res.status(status).json({
+    items: created,
+    count: created.length,
+    skipped: raport.pominiete,
+    polaczone: raport.polaczone,
+  });
+}
+
+/**
+ * POST /zobowiazania — upsert po (household_id, kontrahent, dokument).
+ * defaultToNull: false — pola nieprzysłane NIE nadpisują istniejących,
+ * więc ponowne wysłanie faktury nie cofa statusu „oplacone" na „otwarte".
+ */
+async function upsertZobowiazania(ctx, resource, req, res) {
+  const { isBatch, inputs } = readBatch(req);
+
+  const rows = inputs.map((input, i) => {
+    const { values, errors } = resource.validate(input);
+    if (errors.length > 0) {
+      throw badRequest(
+        isBatch ? `Nieprawidłowe dane wejściowe (rekord ${i})` : 'Nieprawidłowe dane wejściowe',
+        errors
+      );
+    }
+    return { ...values, household_id: ctx.householdId };
+  });
+
+  const { data, error } = await ctx.supabase
+    .from(resource.table)
+    .upsert(rows, { onConflict: 'household_id,kontrahent,dokument', defaultToNull: false })
+    .select(resource.columns);
+
+  if (error) throw fromDbError(error);
+  return res.status(200).json(isBatch ? { items: data, count: data.length } : data[0]);
 }
 
 async function updateRecord(ctx, resource, id, req, res) {
@@ -277,9 +399,8 @@ async function handleResource(ctx, resource, segments, req, res) {
 
   if (id === undefined) {
     assertMethod(req, ['GET', 'POST'], res);
-    return req.method === 'GET'
-      ? listRecords(ctx, resource, req, res)
-      : createRecords(ctx, resource, req, res);
+    if (req.method === 'GET') return listRecords(ctx, resource, req, res);
+    return (resource.create ?? createRecords)(ctx, resource, req, res);
   }
 
   assertMethod(req, ['GET', 'PUT', 'PATCH', 'DELETE'], res);

@@ -17,12 +17,14 @@ const state = {
   profile: null,
   tables: {},
   chains: {},
+  rpc: null,
+  rpcCalls: [],
 };
 
 function makeChain(table) {
   const response = () => state.tables[table] ?? { data: [], error: null, count: 0 };
   const chain = { calls: [] };
-  const methods = ['select', 'insert', 'update', 'delete', 'upsert', 'eq', 'gte', 'lt', 'lte', 'is', 'order'];
+  const methods = ['select', 'insert', 'update', 'delete', 'upsert', 'eq', 'gte', 'lt', 'lte', 'is', 'in', 'order'];
   for (const m of methods) {
     chain[m] = vi.fn((...args) => {
       chain.calls.push([m, ...args]);
@@ -47,6 +49,10 @@ vi.mock('@supabase/supabase-js', () => ({
         )
       ),
     },
+    rpc: vi.fn((name, args) => {
+      state.rpcCalls.push([name, args]);
+      return Promise.resolve(state.rpc ?? { data: null, error: null });
+    }),
     from: vi.fn(table => {
       const chain = makeChain(table);
       state.chains[table] = chain;
@@ -70,6 +76,8 @@ beforeEach(() => {
     profiles: { data: state.profile, error: null },
   };
   state.chains = {};
+  state.rpc = null;
+  state.rpcCalls = [];
 });
 
 function mockReq({ method = 'GET', route = [], query = {}, body, token = 'valid-token' } = {}) {
@@ -383,5 +391,102 @@ describe('operacje CRUD', () => {
     state.tables.transakcje = { data: null, error: { code: 'PGRST301', message: 'JWT expired' } };
     const res = await call({ route: ['transakcje'] });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+// ── IDEMPOTENTNY IMPORT (migracja 014) ──────────────────────────────────────
+
+describe('POST /transakcje z odciskiem', () => {
+  const TX_ID = '12345678-1234-1234-1234-123456789012';
+  const body = {
+    data: '2026-10-04', typ: 'Wydatek', kwota: 59.99, kategoria: 'Rachunki', podkategoria: 'Telefon',
+    osoba: 'Paweł', kwota_pelna: 119.98, udzial: '1/2',
+    zrodlo: 'millennium', zrodlo_id: 'abc123', dokument: 'F/60345080/09/26',
+    household_id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+  };
+
+  it('idzie przez RPC importuj_transakcje z dowodem i bez household_id z body', async () => {
+    state.rpc = { data: { dodane: 1, pominiete: 0, polaczone: 0, wyniki: [{ status: 'dodana', transakcja_id: TX_ID }] }, error: null };
+    state.tables.transakcje = { data: [{ id: TX_ID, kwota: 59.99 }], error: null };
+    const res = await call({ method: 'POST', route: ['transakcje'], body });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.body).toMatchObject({ id: TX_ID });
+    const [name, args] = state.rpcCalls[0];
+    expect(name).toBe('importuj_transakcje');
+    const [poz] = args.p.pozycje;
+    expect(poz.dowod).toMatchObject({ zrodlo: 'millennium', zrodlo_id: 'abc123', kwota_pelna: -119.98 });
+    expect(poz.transakcja).toMatchObject({ kwota: 59.99, udzial: '1/2' });
+    expect(JSON.stringify(args)).not.toContain('ffffffff');
+  });
+
+  it('ponowne wysłanie tego samego zrodlo_id → 200 skipped, bez błędu', async () => {
+    state.rpc = { data: { dodane: 0, pominiete: 1, polaczone: 0, wyniki: [{ status: 'pominieta', transakcja_id: TX_ID }] }, error: null };
+    const res = await call({ method: 'POST', route: ['transakcje'], body });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ skipped: true, id: TX_ID });
+  });
+
+  it('batch raportuje liczbę pominiętych', async () => {
+    state.rpc = { data: { dodane: 0, pominiete: 2, polaczone: 0, wyniki: [{ status: 'pominieta' }, { status: 'pominieta' }] }, error: null };
+    const res = await call({ method: 'POST', route: ['transakcje'], body: [body, { ...body, zrodlo_id: 'abc124' }] });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ count: 0, skipped: 2 });
+  });
+
+  it('bez zrodlo_id — zwykły INSERT, bez RPC', async () => {
+    const { zrodlo, zrodlo_id, dokument, ...plain } = body;
+    state.tables.transakcje = { data: [{ id: TX_ID }], error: null };
+    const res = await call({ method: 'POST', route: ['transakcje'], body: plain });
+    expect(res.statusCode).toBe(201);
+    expect(state.rpcCalls).toHaveLength(0);
+  });
+
+  it('zrodlo_id bez zrodlo → 400', async () => {
+    const res = await call({ method: 'POST', route: ['transakcje'], body: { ...body, zrodlo: undefined } });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('nieprawidłowy udział → 400', async () => {
+    const res = await call({ method: 'POST', route: ['transakcje'], body: { ...body, udzial: '3/2' } });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('/zobowiazania', () => {
+  it('POST to upsert po (household, kontrahent, dokument) bez nadpisywania pól nieprzysłanych', async () => {
+    state.tables.zobowiazania = { data: [{ id: ROW_ID }], error: null };
+    const res = await call({
+      method: 'POST',
+      route: ['zobowiazania'],
+      body: { kontrahent: ' Play ', dokument: 'F/60345080/09/26', kwota_pelna: 119.98, termin: '2026-10-05', udzial: '1/2', household_id: 'x' },
+    });
+    expect(res.statusCode).toBe(200);
+    const upsert = state.chains.zobowiazania.calls.find(c => c[0] === 'upsert');
+    expect(upsert[1][0]).toMatchObject({ kontrahent: 'play', household_id: HOUSEHOLD_ID });
+    expect(upsert[1][0]).not.toHaveProperty('status');
+    expect(upsert[2]).toEqual({ onConflict: 'household_id,kontrahent,dokument', defaultToNull: false });
+  });
+
+  it('GET filtruje po statusie i household', async () => {
+    state.tables.zobowiazania = { data: [], error: null, count: 0 };
+    const res = await call({ route: ['zobowiazania'], query: { status: 'otwarte' } });
+    expect(res.statusCode).toBe(200);
+    const calls = state.chains.zobowiazania.calls;
+    expect(calls).toContainEqual(['eq', 'household_id', HOUSEHOLD_ID]);
+    expect(calls).toContainEqual(['eq', 'status', 'otwarte']);
+  });
+
+  it('nieznany status → 400', async () => {
+    const res = await call({ route: ['zobowiazania'], query: { status: 'zaplacone' } });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('PATCH zmienia status', async () => {
+    state.tables.zobowiazania = { data: { id: ROW_ID, status: 'oplacone' }, error: null };
+    const res = await call({ method: 'PATCH', route: ['zobowiazania', ROW_ID], body: { status: 'oplacone' } });
+    expect(res.statusCode).toBe(200);
+    const update = state.chains.zobowiazania.calls.find(c => c[0] === 'update');
+    expect(update[1]).toEqual({ status: 'oplacone' });
   });
 });
