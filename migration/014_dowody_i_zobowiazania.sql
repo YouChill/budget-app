@@ -334,9 +334,9 @@ GRANT EXECUTE ON FUNCTION public.istniejace_odciski(text, text[]) TO authenticat
 -- Tylko wiersze jeszcze nieuzupełnione — ponowne uruchomienie niczego nie zmienia.
 UPDATE public.transakcje t
 SET udzial      = m[1],
-    kwota_pelna = replace(regexp_replace(m[2], '[[:space:] ]', '', 'g'), ',', '.')::numeric
+    kwota_pelna = replace(regexp_replace(m[2], '[[:space:]\u00a0]', '', 'g'), ',', '.')::numeric
 FROM (
-  SELECT id, regexp_match(komentarz, '\[udział (\d+/\d+) z ([\d[:space:] ]+,\d{2}) zł\]') AS m
+  SELECT id, regexp_match(komentarz, '\[udział (\d+/\d+) z ([\d[:space:]\u00a0]+,\d{2}) zł\]') AS m
   FROM public.transakcje
   WHERE komentarz LIKE '%[udział %' AND kwota_pelna IS NULL
 ) s

@@ -7,6 +7,7 @@ DO $$ BEGIN
   ASSERT (SELECT udzial || ' ' || kwota_pelna FROM transakcje WHERE id = '00000000-0000-0000-0000-0000000000a1') = '1/2 265.47', 'backfill 1/2';
   ASSERT (SELECT udzial || ' ' || kwota_pelna FROM transakcje WHERE id = '00000000-0000-0000-0000-0000000000a2') = '4/6 1200.00', 'backfill z separatorem tysięcy';
   ASSERT (SELECT udzial FROM transakcje WHERE id = '00000000-0000-0000-0000-0000000000a3') IS NULL, 'bez śladu → NULL';
+  ASSERT (SELECT udzial || ' ' || kwota_pelna FROM transakcje WHERE id = '00000000-0000-0000-0000-0000000000a4') = '1/2 1200.00', 'backfill z twardą spacją (NBSP)';
 END $$;
 
 SET ROLE authenticated;
