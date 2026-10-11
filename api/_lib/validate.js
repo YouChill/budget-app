@@ -91,6 +91,19 @@ function validate(body, schema, { partial = false } = {}) {
 
 // ── TRANSAKCJE ──────────────────────────────────────────────────────────────
 
+const UDZIAL_RE = /^[1-9]\d*\/[1-9]\d*$/;
+const ZRODLA_API = ['reczne', 'millennium', 'pko', 'revolut', 'csv', 'gmail', 'allegro'];
+
+const udzialField = {
+  required: false,
+  clean: v => {
+    if (typeof v !== 'string' || !UDZIAL_RE.test(v)) return null;
+    const [l, m] = v.split('/').map(Number);
+    return l <= m ? v : null;
+  },
+  message: 'Pole "udzial" musi być ułamkiem w postaci "1/2" (licznik ≤ mianownik)',
+};
+
 const transakcjaSchema = {
   data: {
     required: true,
@@ -131,10 +144,127 @@ const transakcjaSchema = {
     clean: v => cleanString(v, { max: MAX_NOTE }),
     message: `Pole "komentarz" musi być tekstem (maks. ${MAX_NOTE} znaków)`,
   },
+  // Podział z rodzicami (migracja 014): kwota przed podziałem i klucz.
+  kwota_pelna: {
+    required: false,
+    clean: v => {
+      const num = cleanNumber(v, { max: MAX_KWOTA });
+      return num === null || num === 0 ? null : Math.abs(num);
+    },
+    message: `Pole "kwota_pelna" musi być liczbą różną od zera (maks. ${MAX_KWOTA})`,
+  },
+  udzial: udzialField,
+};
+
+// Pola dowodu — nie są kolumnami transakcji; trafiają do RPC importuj_transakcje.
+const dowodSchema = {
+  zrodlo: {
+    required: false,
+    clean: v => (ZRODLA_API.includes(v) ? v : null),
+    message: `Pole "zrodlo" musi być jednym z: ${ZRODLA_API.join(', ')}`,
+  },
+  zrodlo_id: {
+    required: false,
+    clean: v => cleanString(String(v), { max: 200 }),
+    message: 'Pole "zrodlo_id" musi być niepustym tekstem (maks. 200 znaków)',
+  },
+  dokument: {
+    required: false,
+    clean: v => cleanString(v),
+    message: `Pole "dokument" musi być tekstem (maks. ${MAX_TEXT} znaków)`,
+  },
+  kontrahent: {
+    required: false,
+    clean: v => cleanString(v),
+    message: `Pole "kontrahent" musi być tekstem (maks. ${MAX_TEXT} znaków)`,
+  },
+  zobowiazanie_id: {
+    required: false,
+    clean: v => (isUuid(v) ? v : null),
+    message: 'Pole "zobowiazanie_id" musi być poprawnym UUID',
+  },
 };
 
 export function validateTransakcja(body, opts) {
   return validate(body, transakcjaSchema, opts);
+}
+
+/**
+ * Transakcja + opcjonalny dowód (POST /transakcje z zrodlo_id).
+ * Zwraca { values, dowod, errors } — `dowod` jest pusty, gdy nie przysłano zrodlo_id.
+ */
+export function validateTransakcjaZDowodem(body) {
+  const tx = validate(body, transakcjaSchema);
+  const dw = validate(body, dowodSchema, { partial: true });
+  const errors = [...tx.errors, ...dw.errors];
+  const dowod = dw.values.zrodlo_id ? dw.values : null;
+  if (dowod && !dowod.zrodlo) errors.push('Pole "zrodlo" jest wymagane razem z "zrodlo_id"');
+  return { values: tx.values, dowod, errors };
+}
+
+// ── ZOBOWIĄZANIA ────────────────────────────────────────────────────────────
+
+export const STATUSY_ZOBOWIAZAN = ['otwarte', 'oplacone', 'anulowane'];
+export const SPOSOBY_PLATNOSCI = ['przelew', 'auto_karta'];
+
+const optionalDate = (name) => ({
+  required: false,
+  clean: v => (isValidDate(v) ? v : null),
+  message: `Pole "${name}" musi mieć format YYYY-MM-DD`,
+});
+
+const zobowiazanieSchema = {
+  kontrahent: {
+    required: true,
+    // Klucz kontrahenta jak w aliasach: małe litery, bez spacji na brzegach
+    clean: v => cleanString(v)?.toLowerCase() ?? null,
+    message: `Pole "kontrahent" musi być niepustym tekstem (maks. ${MAX_TEXT} znaków)`,
+  },
+  dokument: {
+    required: true,
+    clean: v => cleanString(v),
+    message: `Pole "dokument" musi być niepustym tekstem (maks. ${MAX_TEXT} znaków)`,
+  },
+  kwota_pelna: {
+    required: false,
+    clean: v => {
+      const num = cleanNumber(v, { min: 0, max: MAX_KWOTA });
+      return num === null || num === 0 ? null : num;
+    },
+    message: `Pole "kwota_pelna" musi być liczbą > 0 (maks. ${MAX_KWOTA})`,
+  },
+  data_wystawienia: optionalDate('data_wystawienia'),
+  termin: optionalDate('termin'),
+  sposob: {
+    required: false,
+    clean: v => (SPOSOBY_PLATNOSCI.includes(v) ? v : null),
+    message: `Pole "sposob" musi być jednym z: ${SPOSOBY_PLATNOSCI.join(', ')}`,
+  },
+  kategoria: {
+    required: false,
+    clean: v => cleanString(v),
+    message: `Pole "kategoria" musi być tekstem (maks. ${MAX_TEXT} znaków)`,
+  },
+  podkategoria: {
+    required: false,
+    clean: v => cleanString(v),
+    message: `Pole "podkategoria" musi być tekstem (maks. ${MAX_TEXT} znaków)`,
+  },
+  udzial: udzialField,
+  status: {
+    required: false,
+    clean: v => (STATUSY_ZOBOWIAZAN.includes(v) ? v : null),
+    message: `Pole "status" musi być jednym z: ${STATUSY_ZOBOWIAZAN.join(', ')}`,
+  },
+  gmail_thread: {
+    required: false,
+    clean: v => cleanString(v, { max: 200 }),
+    message: 'Pole "gmail_thread" musi być tekstem (maks. 200 znaków)',
+  },
+};
+
+export function validateZobowiazanie(body, opts) {
+  return validate(body, zobowiazanieSchema, opts);
 }
 
 // ── KATEGORIE ───────────────────────────────────────────────────────────────

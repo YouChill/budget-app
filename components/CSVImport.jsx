@@ -6,6 +6,19 @@ import ModalShell from '../src/components/ModalShell';
 import ConfirmDialog from '../src/components/ConfirmDialog';
 import Button from '../src/components/Button';
 import { logger } from '../src/utils/logger';
+import {
+  tylkoCyfry,
+  naGrosze,
+  kluczMillennium,
+  kluczPko,
+  kluczRevolut,
+  kluczCsv,
+  rozroznijPowtorzenia,
+  sha256Hex,
+  udzialWGroszach,
+  znacznikUdzialu,
+} from '../src/lib/odciski';
+import { parujPartie } from '../src/lib/parowanie';
 
 // ─── Keyword → category mapping ──────────────────────────────────────────────
 const categoryMapping = {
@@ -84,9 +97,30 @@ export const categorizeDescription = (description, userRules = [], typ = 'Wydate
   return null;
 };
 
-export const validateCategoryExists = (kategoria, podkategoria, kategorieProp, typ) => {
+// Tytuł przelewu wskazujący rodzinę — zwrot od rodziców to rozliczenie, nie zwrot zakupu.
+const RODZINA_RE = /\b(mama|mamy|mamo|tata|taty|tato|rodzice|rodzic[oó]w)\b/i;
+
+/**
+ * Strażnik znaku (skill rozliczenia-budzetu): reguły tekstowe nie patrzą na
+ * znak kwoty, więc przychód potrafi dostać kategorię wydatkową („jajka" →
+ * Jedzenie). Para spoza słownika TEGO typu jest przekierowywana — dla
+ * przychodu do „Inne przychody", bo „Inne / Nieprzewidziane" istnieje tylko
+ * po stronie wydatków.
+ */
+const fallbackKategorii = (kategorieProp, typ, opis) => {
+  const inne = kategorieProp?.[typ]?.['Inne przychody'];
+  if (typ === 'Przychód' && inne) {
+    if (RODZINA_RE.test(opis || '') && inne.includes('Rozliczenia rodzinne')) {
+      return { kategoria: 'Inne przychody', podkategoria: 'Rozliczenia rodzinne' };
+    }
+    return { kategoria: 'Inne przychody', podkategoria: inne.includes('Zwroty') ? 'Zwroty' : '' };
+  }
+  return { kategoria: 'Inne', podkategoria: 'Nieprzewidziane' };
+};
+
+export const validateCategoryExists = (kategoria, podkategoria, kategorieProp, typ, opis = '') => {
   const catExists = kategorieProp?.[typ]?.[kategoria];
-  if (!catExists) return { kategoria: 'Inne', podkategoria: 'Nieprzewidziane' };
+  if (!catExists) return fallbackKategorii(kategorieProp, typ, opis);
   const subExists = catExists.includes(podkategoria);
   return { kategoria, podkategoria: subExists ? podkategoria : '' };
 };
@@ -239,6 +273,148 @@ const extractMillenniumDescription = (row) => {
   return opis || rodzaj;
 };
 
+// ─── Revolut format detection ────────────────────────────────────────────────
+// Headers: Type,Product,Started Date,Completed Date,Description,Amount,Fee,Currency,State,Balance
+const detectRevolutFormat = (firstRow) => {
+  if (!firstRow || !Array.isArray(firstRow)) return false;
+  const h = firstRow.map(c => c?.trim());
+  return ['Started Date', 'Description', 'Amount', 'Balance'].every(n => h.includes(n));
+};
+
+// ─── Dane do odcisku (docs/DEDUP_TRANSAKCJI.md, sekcja 4) ────────────────────
+// Liczone z SUROWEGO wiersza banku, zanim użytkownik cokolwiek edytuje —
+// odcisk ma identyfikować operację w wyciągu, nie jej opis w aplikacji.
+// Pełny numer konta nigdy nie trafia do `surowe` (tylko 4 ostatnie cyfry).
+const ostatnie4 = (nr) => tylkoCyfry(nr).slice(-4) || null;
+
+export const zrodloMillennium = (row) => ({
+  zrodlo: 'millennium',
+  klucz: kluczMillennium({
+    nrRachunku: row[0],
+    dataTransakcji: normalizeDateToISO(row[1]) || (row[1] || '').trim(),
+    obciazenia: (row[7] || '').trim(),
+    uznania: (row[8] || '').trim(),
+    saldo: row[9],
+    opis: row[6],
+  }),
+  rachunek: row[4] || '',
+  tytul: row[6] || '',
+  surowe: { konto: ostatnie4(row[0]), kontrahent_konto: ostatnie4(row[4]), rodzaj: (row[3] || '').trim() || null },
+});
+
+export const zrodloPko = (row) => {
+  const extra = row.slice(6).filter(v => v && v.trim());
+  const pole = (re) => extra.map(c => c.match(re)?.[1]?.trim()).find(Boolean) || '';
+  const rachunek = pole(/Rachunek (?:odbiorcy|nadawcy):\s*([\d\s]+)/i);
+  return {
+    zrodlo: 'pko',
+    klucz: kluczPko({
+      dataOperacji: normalizeDateToISO(row[0]) || (row[0] || '').trim(),
+      kwota: row[3],
+      saldo: row[5],
+      opis: extra.join(' | '),
+    }),
+    rachunek,
+    tytul: pole(/Tytuł:\s*(.+)/i),
+    surowe: { kontrahent_konto: ostatnie4(rachunek), rodzaj: (row[2] || '').trim() || null },
+  };
+};
+
+export const zrodloRevolut = (obj) => ({
+  zrodlo: 'revolut',
+  klucz: kluczRevolut({
+    startedDate: obj['Started Date'],
+    amount: obj['Amount'],
+    balance: obj['Balance'],
+    description: obj['Description'],
+  }),
+  rachunek: '',
+  tytul: obj['Description'] || '',
+  surowe: { rodzaj: obj['Type'] || null, waluta: obj['Currency'] || null },
+});
+
+export const przesunDate = (iso, dni) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dni);
+  return d.toISOString().slice(0, 10);
+};
+
+const wybierz = (obj, pola) => Object.fromEntries(pola.map(p => [p, obj[p] ?? null]));
+
+/**
+ * Nakłada wynik parowania (src/lib/parowanie.js) na transakcje podglądu.
+ * Wiersz połączony z zobowiązaniem dostaje jego kategorię i udział — kwota
+ * w podglądzie to już udział gospodarstwa, brutto zostaje w _dedup.kwotaPelna,
+ * a w opisie ślad „[udział 1/2 z 265,47 zł]" (skill rozliczenia-budzetu).
+ */
+export const zastosujParowanie = (lista, wyniki, kategorie) =>
+  lista.map((tx, i) => {
+    const w = wyniki[i];
+    const dedup = {
+      ...tx._dedup,
+      status: w.status,
+      powod: w.powod ?? null,
+      kontrahent: w.kontrahent ?? null,
+      // Już zaksięgowane domyślnie odznaczone; pozostałe — do importu.
+      wybrana: w.status !== 'zaksiegowana',
+      akcja: 'nowa',
+      reczne: (w.reczne || []).map(t => wybierz(t, ['id', 'data', 'kwota', 'kategoria', 'komentarz'])),
+      kandydaci: (w.kandydaci || []).map(z => wybierz(z, ['id', 'kontrahent', 'dokument', 'kwota_pelna', 'termin'])),
+    };
+    if (w.status !== 'polaczona') return { ...tx, _dedup: dedup };
+
+    const z = w.zobowiazanie;
+    const next = { ...tx };
+    dedup.zobowiazanie = wybierz(z, ['id', 'kontrahent', 'dokument', 'kwota_pelna', 'termin', 'udzial']);
+    dedup.kontrahent = z.kontrahent;
+    dedup.dokument = z.dokument;
+    if (z.kategoria) {
+      Object.assign(next, validateCategoryExists(z.kategoria, z.podkategoria || '', kategorie, tx.typ, tx.opis));
+    }
+    if (z.udzial) {
+      const bruttoGr = Math.abs(naGrosze(tx.kwota));
+      const udzialGr = udzialWGroszach(bruttoGr, z.udzial);
+      next.kwota = (tx.typ === 'Wydatek' ? -udzialGr : udzialGr) / 100;
+      next.opis = `${tx.opis || ''} ${znacznikUdzialu(z.udzial, bruttoGr)}`.trim();
+      dedup.kwotaPelna = bruttoGr / 100;
+      dedup.udzial = z.udzial;
+    }
+    return { ...next, _dedup: dedup };
+  });
+
+/**
+ * Rekordy dla api.importujTransakcje() z transakcji podglądu. Pomija wiersze
+ * odznaczone; zaznaczony „już zaksięgowany" wiersz idzie z `wymus` — RPC
+ * utworzy go ponownie tylko wtedy, gdy poprzednią transakcję usunięto.
+ */
+export const rekordyImportu = (lista, osoba) =>
+  lista
+    .filter(tx => tx._dedup?.wybrana !== false)
+    .map(tx => {
+      const kwota = parseKwota(tx.kwota);
+      const d = tx._dedup || {};
+      return {
+        data: tx.data,
+        typ: tx.typ || (kwota < 0 ? 'Wydatek' : 'Przychód'),
+        kwota,
+        kategoria: tx.kategoria,
+        podkategoria: tx.podkategoria,
+        osoba,
+        komentarz: tx.opis,
+        zrodlo: d.zrodlo,
+        zrodlo_id: d.zrodlo_id,
+        surowe: d.surowe ?? null,
+        kontrahent: d.kontrahent ?? null,
+        dokument: d.dokument ?? null,
+        kwota_pelna: d.kwotaPelna ?? null,
+        udzial: d.udzial ?? null,
+        zobowiazanie_id: d.zobowiazanie?.id ?? null,
+        transakcja_id: d.akcja === 'dolacz' ? d.dolaczDo : null,
+        do_weryfikacji: d.status === 'do_weryfikacji',
+        wymus: d.status === 'zaksiegowana',
+      };
+    });
+
 // ─── Ikony (SVG zamiast emoji — spójny rendering i czytniki ekranu) ──────────
 const SparkleIcon = ({ size = 16 }) => (
   <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -263,6 +439,82 @@ const ListIcon = () => (
     <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
   </svg>
 );
+
+// ─── Grupy w podglądzie importu ───────────────────────────────────────────────
+const FILTRY_STATUSU = [
+  { id: 'wszystkie', label: 'Wszystkie' },
+  { id: 'nowa', label: 'Nowe' },
+  { id: 'polaczona', label: 'Pasuje do faktury' },
+  { id: 'do_weryfikacji', label: 'Do weryfikacji' },
+  { id: 'zaksiegowana', label: 'Już zaksięgowane' },
+];
+
+const pasujeDoFiltra = (tx, filtr) =>
+  filtr === 'wszystkie' || (tx._dedup?.status ?? 'nowa') === filtr;
+
+const formatZl = (n) =>
+  `${Math.abs(Number(n)).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`;
+
+/** Odznaka statusu pod opisem wiersza + wybór dla możliwego duplikatu wpisu ręcznego. */
+function DedupInfo({ dedup, onChange }) {
+  const { status } = dedup;
+  const badge = 'inline-block text-[11px] leading-tight px-2 py-0.5 rounded-full border mt-1 mr-1';
+
+  if (status === 'zaksiegowana') {
+    return (
+      <div>
+        <span className={`${badge} bg-gray-100 border-gray-200 text-gray-600`}>Już zaksięgowane</span>
+        {dedup.istniejacaTransakcja === null && (
+          <span className="text-[11px] text-gray-500">transakcję usunięto — zaznacz, aby dodać ponownie</span>
+        )}
+      </div>
+    );
+  }
+
+  const reczny = dedup.reczne?.[0];
+  return (
+    <div>
+      {status === 'polaczona' && dedup.zobowiazanie && (
+        <span className={`${badge} bg-emerald-50 border-emerald-200 text-emerald-700`}>
+          Faktura {dedup.zobowiazanie.kontrahent} {dedup.zobowiazanie.dokument}
+          {dedup.udzial && ` · udział ${dedup.udzial}`}
+        </span>
+      )}
+      {status === 'do_weryfikacji' && (
+        <span
+          className={`${badge} bg-amber-50 border-amber-200 text-amber-700`}
+          title={dedup.kandydaci.map(z => `${z.kontrahent} ${z.dokument}`).join(', ')}
+        >
+          Do weryfikacji: {dedup.kandydaci.length === 1
+            ? `może to ${dedup.kandydaci[0].kontrahent} ${dedup.kandydaci[0].dokument}`
+            : `${dedup.kandydaci.length} faktury o tej kwocie`}
+        </span>
+      )}
+      {reczny && (
+        <div className="mt-1">
+          <span className={`${badge} bg-orange-50 border-orange-200 text-orange-700`}>
+            Możliwy duplikat wpisu z {reczny.data}: {reczny.komentarz || reczny.kategoria} {formatZl(reczny.kwota)}
+          </span>
+          <select
+            aria-label="Co zrobić z możliwym duplikatem"
+            value={dedup.wybrana === false ? 'pomin' : dedup.akcja}
+            onChange={e => {
+              const v = e.target.value;
+              if (v === 'pomin') onChange({ wybrana: false });
+              else if (v === 'dolacz') onChange({ wybrana: true, akcja: 'dolacz', dolaczDo: reczny.id });
+              else onChange({ wybrana: true, akcja: 'nowa', dolaczDo: null });
+            }}
+            className="mt-1 border border-gray-200 rounded-lg px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300"
+          >
+            <option value="nowa">Dodaj jako nową</option>
+            <option value="dolacz">To ten sam wpis — tylko zapisz dowód</option>
+            <option value="pomin">Pomiń wiersz</option>
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Step indicator component ─────────────────────────────────────────────────
 function StepIndicator({ current }) {
@@ -326,6 +578,10 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
   const [isLoading, setIsLoading] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
   const [error, setError] = useState(null);
+  // { dostepny: bool, powod?: 'migracja' | 'blad' } — czy rozpoznawanie
+  // zaksięgowanych zadziałało; null przed krokiem 3.
+  const [dedupInfo, setDedupInfo] = useState(null);
+  const [importRaport, setImportRaport] = useState(null);
 
   // File drag state
   const [isDragging, setIsDragging] = useState(false);
@@ -346,6 +602,9 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
   const [ruleForm, setRuleForm] = useState({ keyword: '', kategoria: '', podkategoria: '', typ: 'Wydatek' });
   const [ruleNotification, setRuleNotification] = useState(null);
   const [showRulesList, setShowRulesList] = useState(false);
+
+  // Filtr grup w podglądzie: wszystkie / nowe / zaksięgowane / z faktury / do weryfikacji
+  const [filtrStatusu, setFiltrStatusu] = useState('wszystkie');
 
   // Details column
   const [showDetailsColumn, setShowDetailsColumn] = useState(false);
@@ -368,9 +627,9 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
       const saved = localStorage.getItem(STORAGE_KEY);
       if (!saved) return;
       const parsed = JSON.parse(saved);
-      const { timestamp, transactions: savedTx, txMeta: savedMeta, step: savedStep } = parsed;
+      const { timestamp, transactions: savedTx, txMeta: savedMeta, step: savedStep, dedupInfo: savedDedup, osoba: savedOsoba } = parsed;
       if (Date.now() - timestamp < 24 * 60 * 60 * 1000 && savedTx?.length > 0) {
-        setRestorePrompt({ savedTx, savedMeta, savedStep });
+        setRestorePrompt({ savedTx, savedMeta, savedStep, savedDedup, savedOsoba });
       } else {
         localStorage.removeItem(STORAGE_KEY);
       }
@@ -380,9 +639,11 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
   }, []);
 
   const handleRestoreProgress = () => {
-    const { savedTx, savedMeta, savedStep } = restorePrompt;
+    const { savedTx, savedMeta, savedStep, savedDedup, savedOsoba } = restorePrompt;
     setTransactions(savedTx);
     if (savedMeta) setTxMeta(savedMeta);
+    setDedupInfo(savedDedup ?? null);
+    if (savedOsoba) setSelectedOsoba(savedOsoba);
     setStep(savedStep || 3);
     setRestorePrompt(null);
   };
@@ -395,11 +656,11 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
   useEffect(() => {
     if (step === 3 && transactions.length > 0) {
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ timestamp: Date.now(), transactions, txMeta, step }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ timestamp: Date.now(), transactions, txMeta, step, dedupInfo, osoba: selectedOsoba }));
         setLastSaved(new Date());
       } catch { /* ignore */ }
     }
-  }, [transactions, txMeta, step]);
+  }, [transactions, txMeta, step, dedupInfo, selectedOsoba]);
 
   useEffect(() => {
     if (!ruleNotification) return;
@@ -442,7 +703,8 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
               aiResults[i].kategoria,
               aiResults[i].podkategoria,
               kategorie,
-              tx.typ
+              tx.typ,
+              tx.opis
             );
             if (validated.kategoria !== 'Inne') matched++;
             return { ...tx, ...validated };
@@ -492,6 +754,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
             'Saldo po transakcji': row[5] || '',
             'Opis (wyodrębniony)': extractPkoBpDescription(row),
             'Opis oryginalny': row.slice(6).filter(v => v && v.trim()).join(' | '),
+            __zrodlo: zrodloPko(row),
           }));
           setCsvData(processed);
           setHeaders(['Data operacji', 'Data waluty', 'Typ transakcji', 'Kwota', 'Waluta', 'Saldo po transakcji', 'Opis (wyodrębniony)', 'Opis oryginalny']);
@@ -511,11 +774,33 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
             'Saldo': row[9] || '',
             'Waluta': row[10] || '',
             'Opis (wyodrębniony)': extractMillenniumDescription(row),
+            __zrodlo: zrodloMillennium(row),
           }));
           setCsvData(processed);
           setHeaders(['Data transakcji', 'Rodzaj transakcji', 'Na konto/Z konta', 'Odbiorca/Zleceniodawca', 'Opis', 'Obciążenia', 'Uznania', 'Saldo', 'Waluta', 'Opis (wyodrębniony)']);
           setDetectedFormat('millennium');
           setColumnMapping({ data: 'Data transakcji', kwota: 'Obciążenia', uznania: 'Uznania', opis: 'Opis (wyodrębniony)' });
+          setStep(2);
+        } else if (detectRevolutFormat(firstRow)) {
+          const h = firstRow.map(c => c?.trim());
+          const processed = results.data.slice(1)
+            .map(row => Object.fromEntries(h.map((name, i) => [name, row[i] || ''])))
+            // PENDING nie ma jeszcze salda — po zaksięgowaniu dostałby inny
+            // odcisk i wszedłby drugi raz. REVERTED/DECLINED to nie przepływ.
+            .filter(obj => !obj['State'] || obj['State'].trim().toUpperCase() === 'COMPLETED')
+            .map(obj => ({
+              'Data': (obj['Started Date'] || '').slice(0, 10),
+              'Kwota': obj['Amount'],
+              'Opis': obj['Description'],
+              'Typ': obj['Type'] || '',
+              'Waluta': obj['Currency'] || '',
+              'Saldo': obj['Balance'] || '',
+              __zrodlo: zrodloRevolut(obj),
+            }));
+          setCsvData(processed);
+          setHeaders(['Data', 'Kwota', 'Opis', 'Typ', 'Waluta', 'Saldo']);
+          setDetectedFormat('revolut');
+          setColumnMapping({ data: 'Data', kwota: 'Kwota', uznania: null, opis: 'Opis' });
           setStep(2);
         } else {
           const looksLikeHeaders = firstRow.some(cell =>
@@ -587,7 +872,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
 
   // ── Prepare transactions (step 2 → 3) ────────────────────────────────────────
 
-  const prepareTransactions = () => {
+  const prepareTransactions = async () => {
     if (!columnMapping.data || (!columnMapping.kwota && !columnMapping.uznania)) {
       setError('Musisz zmapować co najmniej kolumnę daty i kwoty');
       return false;
@@ -598,6 +883,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
     }
 
     const hasSplitColumns = columnMapping.uznania;
+    const saldoHeader = headers.find(h => /^(saldo|balance)/i.test(h || ''));
     let skipped = 0;
 
     // Buduj transakcję wraz z jej metadanymi w jednym obiekcie, a meta zindeksuj
@@ -638,10 +924,11 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
         const categoryData = categorizeDescription(opis, recognitionRules, typ);
         const rawKategoria = categoryData?.kategoria || 'Inne';
         const rawPodkategoria = categoryData?.podkategoria || 'Nieprzewidziane';
-        const validated = validateCategoryExists(rawKategoria, rawPodkategoria, kategorie, typ);
+        const validated = validateCategoryExists(rawKategoria, rawPodkategoria, kategorie, typ, opis);
 
         const csvRawFields = {};
         for (const [key, value] of Object.entries(row)) {
+          if (key.startsWith('__')) continue; // pola techniczne odcisku
           if (key !== columnMapping.data && key !== columnMapping.kwota && key !== columnMapping.opis) {
             csvRawFields[key] = value;
           }
@@ -653,8 +940,23 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
           return null;
         }
 
+        // Formaty rozpoznane (Millennium/PKO/Revolut) mają odcisk z parsowania;
+        // dowolny CSV dostaje odcisk z zmapowanych kolumn (+ saldo, jeśli jest).
+        const zrodlo = row.__zrodlo || {
+          zrodlo: 'csv',
+          klucz: kluczCsv({
+            data: isoDate,
+            kwota: kwotaNum,
+            saldo: saldoHeader ? row[saldoHeader] : '',
+            opis,
+          }),
+          rachunek: '',
+          tytul: opis,
+          surowe: null,
+        };
+
         return {
-          tx: { data: isoDate, kwota: kwotaNum, opis, kategoria: validated.kategoria, podkategoria: validated.podkategoria, typ },
+          tx: { data: isoDate, kwota: kwotaNum, opis, kategoria: validated.kategoria, podkategoria: validated.podkategoria, typ, _zrodlo: zrodlo },
           meta: { _originalOpis: opis, _csvRaw: csvRawFields },
         };
       })
@@ -672,11 +974,84 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
       setError(`Pominięto ${skipped} ${skipped === 1 ? 'wiersz' : 'wierszy'} z nieprawidłową datą.`);
     }
 
-    setTransactions(processed);
+    setIsLoading(true);
+    let oznaczone = processed;
+    try {
+      oznaczone = await oznaczZaksiegowane(processed);
+    } finally {
+      setIsLoading(false);
+    }
+
+    setTransactions(oznaczone);
     setTxMeta(meta);
     setCsvData(null);
     setStep(3);
     return true;
+  };
+
+  // ── Rozpoznawanie już zaksięgowanych (step 2 → 3) ─────────────────────────────
+  // Odciski → zapytanie o istniejące → parowanie z zobowiązaniami i wpisami
+  // bez dowodu. Błąd sieci lub brak migracji 014 nie blokuje importu —
+  // podgląd pokazuje wtedy ostrzeżenie, a zapis idzie starą ścieżką.
+  const oznaczZaksiegowane = async (lista) => {
+    const bezKlucza = (tx) => {
+      const { _zrodlo, ...reszta } = tx;
+      return reszta;
+    };
+    try {
+      const klucze = rozroznijPowtorzenia(lista.map(tx => tx._zrodlo.klucz));
+      const odciski = await Promise.all(klucze.map(k => sha256Hex(k)));
+      const zrodlo = lista[0]._zrodlo.zrodlo;
+
+      const istniejace = await api.sprawdzOdciski(zrodlo, odciski);
+      if (istniejace === null) {
+        setDedupInfo({ dostepny: false, powod: 'migracja' });
+        return lista.map(bezKlucza);
+      }
+
+      const daty = lista.map(tx => tx.data).sort();
+      const kontekst = await api.getKontekstParowania(przesunDate(daty[0], -2), przesunDate(daty[daty.length - 1], 2));
+      if (kontekst === null) {
+        setDedupInfo({ dostepny: false, powod: 'migracja' });
+        return lista.map(bezKlucza);
+      }
+
+      const wiersze = lista.map((tx, i) => ({
+        zrodloId: odciski[i],
+        data: tx.data,
+        typ: tx.typ,
+        kwotaGr: Math.abs(naGrosze(tx.kwota)),
+        opis: tx.opis,
+        tytul: tx._zrodlo.tytul,
+        rachunek: tx._zrodlo.rachunek,
+      }));
+      const wyniki = parujPartie(wiersze, {
+        istniejace: new Set(istniejace.keys()),
+        zobowiazania: kontekst.zobowiazania,
+        aliasy: kontekst.aliasy,
+        bezDowodu: kontekst.bezDowodu,
+      });
+
+      setDedupInfo({ dostepny: true });
+      return zastosujParowanie(
+        lista.map((tx, i) => ({
+          ...bezKlucza(tx),
+          _dedup: {
+            zrodlo,
+            zrodlo_id: odciski[i],
+            surowe: tx._zrodlo.surowe,
+            // null = dowód jest, ale jego transakcję usunięto
+            istniejacaTransakcja: istniejace.get(odciski[i]) ?? null,
+          },
+        })),
+        wyniki,
+        kategorie
+      );
+    } catch (err) {
+      logger.error('CSVImport', 'rozpoznawanie zaksięgowanych nie powiodło się:', err);
+      setDedupInfo({ dostepny: false, powod: 'blad' });
+      return lista.map(bezKlucza);
+    }
   };
 
   // ── Recognition rules ─────────────────────────────────────────────────────────
@@ -729,37 +1104,33 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
   // ── Import ────────────────────────────────────────────────────────────────────
 
   const handleImport = async () => {
-    if (transactions.length === 0) { setError('Brak transakcji do importu'); return; }
+    const doImportu = transactions.filter(tx => tx._dedup?.wybrana !== false);
+    if (doImportu.length === 0) { setError('Brak zaznaczonych transakcji do importu'); return; }
 
     setIsLoading(true);
     try {
-      const normalizedTransactions = transactions.map(tx => {
-        // tx.kwota jest już liczbą (z przygotowania lub onBlur); parseKwota
-        // przepuszcza liczby bez zmian, więc nie psuje wartości typu 1.234.
-        const kwota = parseKwota(tx.kwota);
-        return {
-          data: tx.data,
-          kwota,
-          opis: tx.opis,
-          kategoria: tx.kategoria,
-          podkategoria: tx.podkategoria,
-          // Preferuj typ ustalony w podglądzie (zsynchronizowany ze znakiem),
-          // a tylko w razie braku wyprowadź ze znaku kwoty.
-          typ: tx.typ || (kwota < 0 ? 'Wydatek' : 'Przychód'),
-          osoba: selectedOsoba,
-        };
-      });
+      // tx.kwota jest już liczbą (z przygotowania lub onBlur); parseKwota
+      // przepuszcza liczby bez zmian, więc nie psuje wartości typu 1.234.
+      const rekordy = rekordyImportu(transactions, selectedOsoba);
+      let raport;
+      if (dedupInfo?.dostepny) {
+        raport = await api.importujTransakcje(rekordy);
+      } else {
+        // Baza bez migracji 014 albo nieudane sprawdzenie — stara ścieżka,
+        // bez ochrony przed podwójnym importem (podgląd o tym ostrzegał).
+        const data = await api.addTransakcjeBatch(rekordy.map(r => ({ ...r, opis: r.komentarz })));
+        raport = { success: data.success, dodane: data.count, pominiete: 0, polaczone: 0, dolaczone: 0 };
+      }
 
-      const data = await api.addTransakcjeBatch(normalizedTransactions);
-
-      if (data.success) {
+      if (raport.success) {
         localStorage.removeItem(STORAGE_KEY);
+        setImportRaport(raport);
         setStep(4);
         if (onSaved) onSaved();
 
         // Save AI category rules in background (non-blocking)
         if (aiEnabled) {
-          categoryAI.saveCategoryRulesBatch(normalizedTransactions)
+          categoryAI.saveCategoryRulesBatch(rekordy.map(r => ({ ...r, opis: r.komentarz })))
             .catch(err => logger.error('CSVImport', 'saveCategoryRulesBatch failed:', err));
         }
       }
@@ -769,6 +1140,13 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
       setIsLoading(false);
     }
   };
+
+  // Wybór wiersza i akcja dla możliwego duplikatu wpisu ręcznego.
+  const handleDedupChange = useCallback((index, zmiany) => {
+    setTransactions(prev => prev.map((tx, i) =>
+      i === index && tx._dedup ? { ...tx, _dedup: { ...tx._dedup, ...zmiany } } : tx
+    ));
+  }, []);
 
   // ── Edit / delete transactions ────────────────────────────────────────────────
 
@@ -821,6 +1199,13 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
 
   const ruleCategories = Object.keys(kategorie?.[ruleForm.typ] || {});
   const ruleSubcategories = kategorie?.[ruleForm.typ]?.[ruleForm.kategoria] || [];
+  const liczbaDoImportu = transactions.filter(tx => tx._dedup?.wybrana !== false).length;
+  const liczbyStatusow = transactions.reduce((acc, tx) => {
+    const st = tx._dedup?.status ?? 'nowa';
+    acc[st] = (acc[st] || 0) + 1;
+    acc.wszystkie = (acc.wszystkie || 0) + 1;
+    return acc;
+  }, {});
   const unmappedCount = transactions.filter(
     tx => tx.kategoria === 'Inne' && tx.podkategoria === 'Nieprzewidziane'
   ).length;
@@ -976,6 +1361,15 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                   <div>
                     <p className="text-sm font-semibold text-emerald-800">Wykryto format Bank Millennium</p>
                     <p className="text-xs text-emerald-600 mt-0.5">Kolumny Obciążenia/Uznania zmapowane automatycznie. Opisy transakcji kartą oczyszczone z dat i kodów krajów.</p>
+                  </div>
+                </div>
+              )}
+              {detectedFormat === 'revolut' && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-start gap-3">
+                  <span className="text-emerald-500 text-xl mt-0.5">✓</span>
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-800">Wykryto format Revolut</p>
+                    <p className="text-xs text-emerald-600 mt-0.5">Pominięto operacje w toku i anulowane. Kwoty są w walucie konta — sprawdź przeliczenie przed importem.</p>
                   </div>
                 </div>
               )}
@@ -1138,11 +1532,45 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                 </div>
               )}
 
+              {/* Rozpoznawanie już zaksięgowanych */}
+              {dedupInfo && !dedupInfo.dostepny && (
+                <div role="alert" className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+                  <strong>Nie sprawdzono duplikatów.</strong>{' '}
+                  {dedupInfo.powod === 'migracja'
+                    ? 'Baza nie ma jeszcze migracji 014 — import zapisze wszystkie wiersze, także te już wgrane.'
+                    : 'Nie udało się połączyć z bazą w celu sprawdzenia odcisków. Upewnij się, że ten wyciąg nie był już importowany.'}
+                </div>
+              )}
+              {dedupInfo?.dostepny && (
+                <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filtr wierszy importu">
+                  {FILTRY_STATUSU.map(({ id, label }) => (
+                    <button
+                      key={id}
+                      role="tab"
+                      aria-selected={filtrStatusu === id}
+                      onClick={() => setFiltrStatusu(id)}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                        filtrStatusu === id
+                          ? 'bg-indigo-600 border-indigo-600 text-white'
+                          : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {label} <span className="opacity-75">({liczbyStatusow[id] ?? 0})</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* Transactions table */}
               <div className="overflow-auto border border-gray-200 rounded-xl max-h-[38vh]">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 sticky top-0 z-[1]">
                     <tr>
+                      {dedupInfo?.dostepny && (
+                        <th className="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                          <span className="sr-only">Importuj</span>✓
+                        </th>
+                      )}
                       <th className="px-3 py-2.5 text-left whitespace-nowrap text-xs font-semibold text-gray-500 uppercase tracking-wide">Data</th>
                       <th className="px-3 py-2.5 text-right whitespace-nowrap text-xs font-semibold text-gray-500 uppercase tracking-wide">Kwota</th>
                       <th className="px-3 py-2.5 text-left whitespace-nowrap text-xs font-semibold text-gray-500 uppercase tracking-wide">Opis</th>
@@ -1155,13 +1583,28 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {transactions.map((tx, idx) => (
+                    {transactions.map((tx, idx) => pasujeDoFiltra(tx, filtrStatusu) && (
                       <React.Fragment key={idx}>
                         <tr className={`hover:bg-gray-50/70 transition-colors ${
-                          tx.kategoria === 'Inne' && tx.podkategoria === 'Nieprzewidziane'
+                          tx._dedup?.wybrana === false
+                            ? 'opacity-50'
+                            : tx.kategoria === 'Inne' && tx.podkategoria === 'Nieprzewidziane'
                             ? 'bg-amber-50/40'
                             : ''
                         }`}>
+                          {dedupInfo?.dostepny && (
+                            <td className="px-3 py-2 text-center">
+                              <input
+                                type="checkbox"
+                                checked={tx._dedup?.wybrana !== false}
+                                // Zaksięgowana z żywą transakcją: RPC i tak by ją pominęło.
+                                disabled={tx._dedup?.status === 'zaksiegowana' && tx._dedup?.istniejacaTransakcja !== null}
+                                onChange={e => handleDedupChange(idx, { wybrana: e.target.checked })}
+                                aria-label={`Importuj wiersz ${idx + 1}`}
+                                className="w-4 h-4 accent-indigo-600"
+                              />
+                            </td>
+                          )}
                           <td className="px-3 py-2">
                             <input
                               type="date"
@@ -1193,6 +1636,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                               onChange={e => handleEditTransaction(idx, 'opis', e.target.value)}
                               className="border border-gray-200 rounded-lg px-2 py-1 w-full text-sm min-w-[120px] focus:outline-none focus:ring-1 focus:ring-indigo-300"
                             />
+                            {tx._dedup && <DedupInfo dedup={tx._dedup} onChange={zmiany => handleDedupChange(idx, zmiany)} />}
                           </td>
                           <td className="px-3 py-2">
                             <select
@@ -1250,7 +1694,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                         </tr>
                         {showDetailsColumn && expandedRows.has(idx) && (
                           <tr className="md:hidden border-t bg-gray-50">
-                            <td colSpan={7} className="px-4 py-2 text-xs text-gray-500 space-y-1">
+                            <td colSpan={dedupInfo?.dostepny ? 8 : 7} className="px-4 py-2 text-xs text-gray-500 space-y-1">
                               {txMeta[idx]?._originalOpis && txMeta[idx]._originalOpis !== tx.opis && (
                                 <div><span className="font-medium text-gray-600">Oryginalny opis:</span> {txMeta[idx]._originalOpis}</div>
                               )}
@@ -1410,7 +1854,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
                       Importuję…
                     </>
                   ) : (
-                    `Importuj ${transactions.length} transakcji`
+                    `Importuj ${liczbaDoImportu} transakcji`
                   )}
                 </Button>
               </div>
@@ -1428,8 +1872,15 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
               <div>
                 <h3 className="text-2xl font-bold text-gray-800">Import zakończony!</h3>
                 <p className="text-gray-400 mt-1">
-                  Zaimportowano <strong className="text-gray-600">{transactions.length}</strong> transakcji
+                  Zaimportowano <strong className="text-gray-600">{importRaport?.dodane ?? 0}</strong> transakcji
                 </p>
+                {importRaport && (importRaport.pominiete > 0 || importRaport.polaczone > 0 || importRaport.dolaczone > 0) && (
+                  <ul className="text-sm text-gray-500 mt-2 space-y-0.5">
+                    {importRaport.polaczone > 0 && <li>Połączono z fakturami: <strong>{importRaport.polaczone}</strong></li>}
+                    {importRaport.dolaczone > 0 && <li>Dołączono do istniejących wpisów: <strong>{importRaport.dolaczone}</strong></li>}
+                    {importRaport.pominiete > 0 && <li>Pominięto jako już zaksięgowane: <strong>{importRaport.pominiete}</strong></li>}
+                  </ul>
+                )}
                 {aiEnabled && (
                   <p className="text-xs text-violet-500 mt-2 flex items-center justify-center gap-1">
                     <SparkleIcon size={12} /> Kategorie zapisane w bazie wektorowej AI

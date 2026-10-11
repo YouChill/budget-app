@@ -68,7 +68,15 @@ Zwraca kontekst zalogowanego użytkownika:
 
 Parametry listy: `rok` (1970–2100), `miesiac` (1–12, wymaga `rok`), `od`/`do` (`YYYY-MM-DD`), `typ` (`Wydatek`/`Przychód`), `kategoria`, `osoba`, `limit` (domyślnie 100, maks. 500), `offset`.
 
-Pola zapisu: `data`* (`YYYY-MM-DD`), `typ`* (`Wydatek`/`Przychód`), `kwota`* (liczba ≠ 0 — zapisywana jako wartość bezwzględna, znak wynika z `typ`), `kategoria`*, `podkategoria`, `osoba`, `komentarz`. (* — wymagane przy POST/PUT)
+Pola zapisu: `data`* (`YYYY-MM-DD`), `typ`* (`Wydatek`/`Przychód`), `kwota`* (liczba ≠ 0 — zapisywana jako wartość bezwzględna, znak wynika z `typ`), `kategoria`*, `podkategoria`, `osoba`, `komentarz`, `kwota_pelna` (kwota przed podziałem z rodzicami), `udzial` (np. `1/2`, `4/6`). (* — wymagane przy POST/PUT)
+
+**Idempotentny zapis (migracja 014).** POST przyjmuje też pola dowodu: `zrodlo` (`reczne`/`millennium`/`pko`/`revolut`/`csv`/`gmail`/`allegro`), `zrodlo_id` (odcisk operacji w obrębie źródła, maks. 200 znaków), `dokument`, `kontrahent`, `zobowiazanie_id`. Gdy rekord ma `zrodlo_id`, zapis idzie przez RPC `importuj_transakcje`:
+
+- ten sam `(zrodlo, zrodlo_id)` wysłany drugi raz nie tworzy duplikatu: pojedynczy rekord → `200 {"skipped": true, "id": "<istniejąca transakcja>"}`, batch → `{"items": [...], "count": n, "skipped": k, "polaczone": m}` (`201`, jeśli cokolwiek dodano, inaczej `200`),
+- `zobowiazanie_id` zamyka otwarte zobowiązanie jako `oplacone` i wiąże je z nową transakcją,
+- cały batch to jedna transakcja bazy — błąd w dowolnym rekordzie wycofuje wszystkie.
+
+Jak liczyć odcisk dla każdego źródła: [`DEDUP_TRANSAKCJI.md`](DEDUP_TRANSAKCJI.md#4-odciski-per-źródło) i `src/lib/odciski.js`.
 
 Przykład:
 
@@ -94,6 +102,27 @@ Te same metody CRUD. Parametry listy: `rok`, `miesiac`, `zakres` (`monthly`/`yea
 Pola zapisu: `kategoria`*, `limit_kwota`* (≥ 0), `zakres`* (`monthly`/`yearly`), `rok`* (1970–2100), `miesiac` (1–12; **wymagany** przy `zakres=monthly`, wymuszany na `null` przy `yearly`), `osoba`, `notatki`.
 
 Duplikat kombinacji `(kategoria, osoba, zakres, rok, miesiac)` zwraca `409` (unikalny indeks w bazie).
+
+### Zobowiązania — `/api/v1/zobowiazania`
+
+Faktury i odnowienia znalezione przez radar Gmail, które czekają na wyjście pieniędzy z konta. Import wyciągu paruje z nimi wiersze i zamyka je jako `oplacone`.
+
+Metody jak wyżej, z jedną różnicą: **POST to upsert** po `(kontrahent, dokument)` — ponowne wysłanie tej samej faktury aktualizuje rekord i zwraca `200`. Pola nieprzysłane nie są nadpisywane, więc radar nie cofnie statusu `oplacone` na `otwarte`.
+
+Parametry listy: `status` (`otwarte`/`oplacone`/`anulowane`), `kontrahent`, `od`/`do` (po `termin`).
+
+Pola zapisu: `kontrahent`* (klucz z aliasów, zapisywany małymi literami: `play`, `apple`, `pwik`), `dokument`* (np. `F/60345080/09/26`), `kwota_pelna` (brutto; brak = kwota nieznana z maila), `data_wystawienia`, `termin` (dla `auto_karta` — dzień odnowienia), `sposob` (`przelew`/`auto_karta`), `kategoria`, `podkategoria`, `udzial`, `status`, `gmail_thread`.
+
+```bash
+curl -X POST https://twoja-domena/api/v1/zobowiazania \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"kontrahent":"play","dokument":"F/60345080/09/26","kwota_pelna":119.98,"termin":"2026-10-05","kategoria":"Rachunki","podkategoria":"Telefon","udzial":"1/2"}'
+
+# dowód wpłaty z maila: zamknij bez tworzenia transakcji (tę utworzy wyciąg)
+curl -X PATCH https://twoja-domena/api/v1/zobowiazania/$ID -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"status":"oplacone"}'
+```
 
 ## Kody odpowiedzi
 
@@ -130,7 +159,7 @@ api/
 │   ├── errors.js          # ApiError, mapowanie błędów Postgres → HTTP
 │   └── validate.js        # walidatory payloadów (biała lista pól)
 ├── v1/
-│   └── [...route].js      # router REST: transakcje, kategorie, osoby, budzety, me
+│   └── [...route].js      # router REST: transakcje, kategorie, osoby, budzety, zobowiazania, me
 ├── __tests__/
 │   └── api-v1.test.js     # testy: autoryzacja, izolacja household, walidacja, CRUD
 └── embeddings.js          # istniejący proxy OpenAI (bez zmian)
