@@ -19,7 +19,7 @@ export const ZRODLA = ['reczne', 'millennium', 'pko', 'revolut', 'csv', 'gmail',
 export const tylkoCyfry = (s) => String(s ?? '').replace(/\D/g, '');
 
 export const normalizujOpis = (s) =>
-  String(s ?? '').replace(/[\s ]+/g, ' ').trim().toUpperCase();
+  String(s ?? '').replace(/[\s\u00a0]+/g, ' ').trim().toUpperCase();
 
 /**
  * Kwota z wyciągu → grosze (liczba całkowita). Przyjmuje formaty bankowe:
@@ -31,7 +31,7 @@ export function naGrosze(wartosc) {
   if (typeof wartosc === 'number') {
     return Number.isFinite(wartosc) ? Math.round(wartosc * 100) : null;
   }
-  let s = String(wartosc).replace(/[\s ]/g, '').replace(/(PLN|EUR|USD|GBP|ZŁ)$/i, '');
+  let s = String(wartosc).replace(/[\s\u00a0]/g, '').replace(/(PLN|EUR|USD|GBP|ZŁ)$/i, '');
   if (!s) return null;
   // "1.234,56" → separator tysięcy kropka, dziesiętny przecinek
   if (/\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '').replace(',', '.');
@@ -52,7 +52,7 @@ export const normalizujKwote = (wartosc) => groszeNaTekst(naGrosze(wartosc));
 
 /** Numer dokumentu do porównań: wielkie litery, bez spacji. */
 export const normalizujDokument = (s) =>
-  String(s ?? '').replace(/[\s ]+/g, '').toUpperCase();
+  String(s ?? '').replace(/[\s\u00a0]+/g, '').toUpperCase();
 
 // ── Klucze odcisku per źródło ───────────────────────────────────────────────
 // Każda funkcja zwraca tekst PRZED haszowaniem. Trzymamy je osobno od sha256,
@@ -112,7 +112,7 @@ export const odcisk = (klucz) => sha256Hex(klucz);
 
 // ── Podział z rodzicami ─────────────────────────────────────────────────────
 
-export const UDZIAL_RE = /\[udział (\d+\/\d+) z ([\d\s ]+,\d{2}) zł\]/;
+export const UDZIAL_RE = /\[udział (\d+\/\d+) z ([\d\s\u00a0]+,\d{2}) zł\]/;
 
 /** "1/2" → [1, 2]; null dla braku lub błędnego zapisu. */
 export function parsujUlamek(udzial) {

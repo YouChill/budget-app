@@ -356,7 +356,6 @@ describe('getAllData - obsługa błędów częściowych (Promise.allSettled)', (
 
   it('zwraca puste osoby gdy getOsoby zawiedzie', async () => {
     const txResult = { status: 'fulfilled', value: [] };
-    const katResult = { status: 'fulfilled', value: { Wydatek: {}, Przychód: {} } };
     const osobyResult = { status: 'rejected', reason: new Error('Osoby error') };
 
     if (txResult.status === 'rejected') throw txResult.reason;

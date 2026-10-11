@@ -19,7 +19,7 @@ const MONTH_NAMES = [
   'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień'
 ];
 
-export default function Budgets({ onClose, kategorie = {}, month, year, budgets = [], onSaved, osoby = [] }) {
+export default function Budgets({ onClose, kategorie = {}, month, year, onSaved, osoby = [] }) {
   const expenseCats = Object.keys(kategorie['Wydatek'] || {});
   const { addToast } = useToast();
 

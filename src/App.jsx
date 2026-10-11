@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import CategoryCharts from '/components/CategoryCharts';
 import Budgets from '/components/Budgets';
 import CSVImport from '/components/CSVImport';
@@ -1071,7 +1071,7 @@ export default function BudgetApp() {
             table: 'transakcje',
             filter: `household_id=eq.${householdId}`,
           },
-          (payload) => {
+          () => {
             // Odśwież dane gdy zmienią się transakcje
             fetchDataRef.current(false);
           }
@@ -1089,7 +1089,7 @@ export default function BudgetApp() {
             table: 'kategorie',
             filter: `household_id=eq.${householdId}`,
           },
-          (payload) => {
+          () => {
             // Odśwież dane gdy zmienią się kategorie
             fetchDataRef.current(false);
           }
@@ -1107,7 +1107,7 @@ export default function BudgetApp() {
             table: 'osoby',
             filter: `household_id=eq.${householdId}`,
           },
-          (payload) => {
+          () => {
             // Odśwież dane gdy zmienią się osoby
             fetchDataRef.current(false);
           }

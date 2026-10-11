@@ -151,7 +151,7 @@ export const normalizeDateToISO = (dateStr) => {
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     return isValidIsoDate(str) ? str : null;
   }
-  const match = str.match(/^(\d{2})[.\-](\d{2})[.\-](\d{4})$/);
+  const match = str.match(/^(\d{2})[.-](\d{2})[.-](\d{4})$/);
   if (match) {
     const iso = `${match[3]}-${match[2]}-${match[1]}`;
     return isValidIsoDate(iso) ? iso : null;
@@ -266,7 +266,7 @@ const extractMillenniumDescription = (row) => {
 
   // Transfers: recipient + opis (if opis is more than just a reference number)
   if (odbiorca) {
-    const opisIsJustRef = !opis || /^[\d\s/\-]+$/.test(opis);
+    const opisIsJustRef = !opis || /^[\d\s/-]+$/.test(opis);
     return opisIsJustRef ? odbiorca : `${odbiorca} — ${opis}`;
   }
 

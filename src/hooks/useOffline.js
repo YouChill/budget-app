@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 
 export function useOffline() {
   const [isOffline, setIsOffline] = useState(!navigator.onLine);

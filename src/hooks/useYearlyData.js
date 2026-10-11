@@ -72,11 +72,13 @@ export function useYearlyData(year) {
   const avgMonthlyExpense = totalExpenses / 12;
 
   const cumulativeSavings = useMemo(() => {
+    const result = [];
     let cum = 0;
-    return monthlyData.map(m => {
-      cum += (m.przychody - m.wydatki);
-      return { month: m.month, savings: Math.round(cum * 100) / 100 };
-    });
+    for (const m of monthlyData) {
+      cum += m.przychody - m.wydatki;
+      result.push({ month: m.month, savings: Math.round(cum * 100) / 100 });
+    }
+    return result;
   }, [monthlyData]);
 
   const categoryData = useMemo(() => aggregateByCategory(yearData, 'Wydatek'), [yearData]);
