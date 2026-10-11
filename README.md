@@ -99,6 +99,7 @@ migration/012_kategorie_zwierzeta_licencje.sql ← kategorie: zwierzęta + licen
 migration/013_budzety_unique_nulls_not_distinct.sql ← fix duplikatów budżetów (NULL-e w osoba/miesiac)
 migration/014_dowody_i_zobowiazania.sql ← odciski importu, zobowiązania, aliasy kontrahentów
 migration/015_profiles_household_lock.sql ← bezpieczeństwo: blokada zmiany household_id przez użytkownika
+migration/016_revoke_public_execute.sql ← bezpieczeństwo: funkcje SECURITY DEFINER niedostępne dla anon
 ```
 
 > Przed uruchomieniem migracji 004 włącz rozszerzenie **pgvector** w Supabase Dashboard → Database → Extensions.

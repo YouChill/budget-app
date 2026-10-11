@@ -22,4 +22,5 @@ run ../015_profiles_household_lock.sql  # idempotencja
 run 015_profiles.test.sql
 run ../rollback_015.sql
 run ../015_profiles_household_lock.sql  # rollback → ponowne wdrożenie
+run 016_revoke.test.sql
 echo "OK: migracja, idempotencja i rollback"
