@@ -81,6 +81,10 @@ Szczegółowa instrukcja Supabase: [docs/SETUP_SUPABASE.md](./docs/SETUP_SUPABAS
 
 ### 4. Uruchom migracje bazy danych
 
+> **Od 2026-10-11 nowe migracje idą przez Supabase CLI i CI** — patrz
+> [Migracje bazy](#migracje-bazy-supabase-cli). Poniższa lista to historia
+> (001–016), potrzebna tylko przy stawianiu nowej bazy od zera.
+
 W panelu Supabase → SQL Editor uruchom kolejno:
 
 ```
@@ -297,7 +301,7 @@ budget-app/
 1. Połącz repozytorium z Vercel — build: `npm run build`, katalog `dist`, Node 22 (`.nvmrc`).
 2. Ustaw zmienne środowiskowe (w tym `OPENAI_API_KEY` — bez prefiksu `VITE_`, by nie trafił do bundle'a).
 3. Dodaj domenę do **Allowed URLs / Redirect URLs** w Supabase (Authentication → URL Configuration).
-4. Uruchom nowe migracje w Supabase SQL Editor **przed** deployem kodu, który ich wymaga.
+4. Migracje bazy wdraża CI po merge do `main` — patrz niżej.
 
 `vercel.json` ustawia:
 - **region funkcji `dub1`** (Dublin) — ten sam region co baza Supabase (`eu-west-1`);
@@ -336,6 +340,49 @@ się z **produkcyjną bazą z prawdziwymi finansami**. Zalecane:
 `sprawdz_przed_merge.sh`, `npm audit` (prod) i testy migracji SQL na
 Postgresie 16. W ustawieniach repo warto włączyć **branch protection** dla
 `main` z wymaganymi checkami CI.
+
+### Migracje bazy (Supabase CLI)
+
+Darmowa automatyzacja: job `migrations` w `ci.yml`.
+
+| Zdarzenie | Co się dzieje |
+|---|---|
+| PR | testy SQL na Postgresie 16, potem `supabase db push --dry-run` — w logu lista migracji, które wejdą na produkcję |
+| merge do `main` | po zielonych testach `supabase db push` na projekt produkcyjny |
+
+**Nowa migracja:**
+
+```bash
+npx supabase@2.120.0 migration new nazwa_zmiany   # → supabase/migrations/<timestamp>_nazwa_zmiany.sql
+```
+
+- bez `BEGIN;`/`COMMIT;` — CLI wykonuje plik we własnej transakcji (CI to sprawdza);
+- test: `supabase/tests/<timestamp>_nazwa_zmiany.test.sql` (asercje `DO $$ … ASSERT … $$`),
+  opcjonalnie rollback: `supabase/rollbacks/<timestamp>_nazwa_zmiany.sql` — CI sprawdzi
+  migracja → rollback → migracja (`migration/tests/run_sql_tests.sh`);
+- **zgodność wstecz** (expand → contract): Vercel wdraża frontend równolegle z
+  migracją, więc przez chwilę stary kod działa na nowej bazie i odwrotnie.
+  Najpierw dodaj kolumnę/tabelę, w kolejnym PR usuń starą.
+- nie zmieniaj schematu ręcznie w SQL Editorze — CLI o tym nie wie. Jeśli musisz:
+  zapisz to samo jako plik migracji i oznacz go
+  `npx supabase migration repair --status applied <timestamp>`.
+
+**Jednorazowa konfiguracja (sekrety repo → Settings → Secrets and variables → Actions):**
+
+| Sekret | Skąd |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | supabase.com → Account → Access Tokens → *Generate new token* |
+| `SUPABASE_DB_PASSWORD` | Project Settings → Database → hasło bazy (*Reset database password*, jeśli nieznane) |
+
+Bez sekretów job kończy się ostrzeżeniem, a migracje trzeba wdrożyć ręcznie.
+
+**Punkt startowy:** pliki `supabase/migrations/20261011*` z nagłówkiem `BASELINE`
+odpowiadają migracjom 014–016 już wdrożonym na produkcji (są w
+`supabase_migrations.schema_migrations`), więc `db push` je pomija. Starsze
+migracje (001–013) nie są w historii CLI — lokalne `supabase start` nie
+odtworzy pełnego schematu. Żeby to umożliwić, raz wykonaj
+`npx supabase db dump -f supabase/migrations/20260101000000_baseline.sql`
+(schemat produkcji) i `npx supabase migration repair --status applied 20260101000000`.
 
 ## Roadmap
 

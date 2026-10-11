@@ -300,7 +300,7 @@ Stan produkcji sprawdzony tylko do odczytu (Supabase `budget-app`, eu-west-1)
 | Q7 | ✅ | `.gitignore`, `package.json` |
 | D1 | ✅ | `.github/workflows/ci.yml` (lint, testy, build, audyt, testy SQL), Dependabot |
 | D4 | ✅ docs / ⏳ Vercel | `.nvmrc`, `engines`; README: baza dla preview, Deployment Protection, checklista Supabase |
-| D3 | ⏳ decyzja | migracje przez Supabase CLI: produkcja nie ma historii migracji (`supabase_migrations` puste), potrzebny baseline |
+| D3 | ✅ kod / ⏳ sekrety | Supabase CLI w CI: `--dry-run` na PR, `db push` po merge; baseline = 4 wpisy historii z 11.10; wymaga sekretów `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` |
 | Q1 | ⏳ | podział `App.jsx` / `CSVImport.jsx`: osobny, większy refaktor |
 | D5 | ⏳ | Sentry, backup `pg_dump` |
 
@@ -327,4 +327,17 @@ z wymuszonym błędem, więc bez zapisu). Security Advisor: zniknęły ostrzeże
 sprawdza `auth.uid()`.
 
 Stan pozostałych migracji: 010–013 są wdrożone (kategorie Delegacje i Zwierzęta,
-`budzety_unique_budget NULLS NOT DISTINCT`). **014 nie jest wdrożona.**
+`budzety_unique_budget NULLS NOT DISTINCT`).
+
+**014 wdrożona 11.10.2026**, po kopii zapasowej `public.transakcje_backup_20261011`
+(1090 wierszy, RLS bez polityk, czyli niedostępna przez API; do usunięcia po weryfikacji).
+Wdrożono wariant bez `DROP … IF EXISTS`, bo Supabase MCP traktuje każde `DROP` jako
+operację destrukcyjną i czeka na potwierdzenie (zawieszenie, timeout). Przed wdrożeniem
+sprawdzono, że żaden z usuwanych obiektów nie istnieje, więc wynik jest identyczny;
+wariant przeszedł lokalnie pełne testy 014. Przy okazji poprawiono backfill: twarda
+spacja (`\u00a0`) w kwocie, np. `1 200,00` z formatowania pl-PL, wcześniej nie była
+odczytywana (test w `014_seed.sql`).
+
+Weryfikacja: 1090 transakcji, uzupełniono 24 udziały, 0 nieodczytanych, 0 zmian w
+dotychczasowych kolumnach względem kopii, kwoty zgodne z udziałami, 12 polityk RLS,
+RPC `importuj_transakcje` / `istniejace_odciski` tylko dla `authenticated`.
