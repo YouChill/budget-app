@@ -187,7 +187,7 @@ W kroku podglądu panel „Reguły rozpoznawania" pozwala:
 ```
 budget-app/
 ├── src/
-│   ├── App.jsx                  # Główna aplikacja React
+│   ├── App.jsx                  # Złożenie widoku (stan okresu, modale)
 │   ├── main.jsx                 # Punkt wejścia
 │   ├── components/
 │   │   ├── LoginPage.jsx        # Strona logowania (email + hasło, reset hasła)
@@ -195,14 +195,23 @@ budget-app/
 │   │   ├── TransactionItem.jsx  # Pojedyncza transakcja (swipe)
 │   │   ├── YearlySummary.jsx    # Podsumowanie roczne z wykresami
 │   │   ├── CSVImport.jsx        # Import CSV (drag-and-drop + AI)
+│   │   ├── csvImport/           # Kroki importu CSV i ich hooki
+│   │   ├── settings/            # Panel ustawień (kategorie, osoby)
+│   │   ├── AppHeader.jsx        # Nagłówek i nawigacja okresu
+│   │   ├── TransactionList.jsx  # Lista transakcji z wyszukiwaniem
 │   │   ├── CategoryCharts.jsx   # Wykresy kategorii (Recharts)
 │   │   ├── Budgets.jsx          # Zarządzanie budżetami
 │   │   └── OfflineBanner.jsx    # Banner trybu offline
 │   ├── contexts/
 │   │   └── AuthContext.jsx      # Kontekst autoryzacji (JWT)
 │   ├── hooks/
+│   │   ├── useMonthlyData.js    # Dane miesiąca (transakcje, kategorie, osoby)
+│   │   ├── useTransactionActions.js # Dodawanie/edycja/usuwanie + kolejka offline
+│   │   ├── useTransactionFilters.js # Wyszukiwanie, filtr kategorii, grupy dni
+│   │   ├── useRealtimeSync.js   # Subskrypcje realtime Supabase
 │   │   └── useOffline.js        # Hook offline mode
 │   ├── lib/
+│   │   ├── csvImport/           # Parsowanie wyciągów, kategoryzacja, rekordy importu
 │   │   └── supabase.js          # Klient Supabase
 │   ├── services/
 │   │   ├── api.js               # API do Supabase

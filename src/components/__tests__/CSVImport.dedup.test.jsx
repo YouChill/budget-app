@@ -21,7 +21,8 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('../../services/api', () => api);
 
-import CSVImport, { zrodloMillennium } from '../CSVImport';
+import CSVImport from '../CSVImport';
+import { zrodloMillennium } from '../../lib/csvImport/banki';
 
 const NAGLOWEK = '"Numer rachunku/karty","Data transakcji","Data rozliczenia","Rodzaj transakcji","Na konto/Z konta","Odbiorca/Zleceniodawca","Opis","Obciążenia","Uznania","Saldo","Waluta"';
 const W1 = ['11 2222 3333 4444 5555 6666 7777', '2026-10-01', '2026-10-02', 'ZAKUP - FIZ. UŻYCIE KARTY', '', '', 'ŻABKA Z1  WARSZAWA POL 2026-10-01', '-12,50', '', '1000,00', 'PLN'];

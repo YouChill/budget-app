@@ -1,434 +1,192 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import TransactionItem from '../TransactionItem';
 import TransactionForm from '../TransactionForm';
 
-describe('TransactionItem Component', () => {
-  const mockTransaction = {
-    id: '1',
-    data: '2026-02-13',
-    typ: 'Wydatek',
-    kwota: 100.50,
-    kategoria: 'Jedzenie',
-    podkategoria: 'Zakupy',
-    osoba: 'Jan',
-    komentarz: 'Promocja w Lidlu'
-  };
+// Testy komponentów faktycznie używanych przez aplikację (wydzielonych
+// z App.jsx). Wcześniejsze testy dotyczyły nieużywanych kopii tych komponentów.
 
-  const mockOnDelete = vi.fn();
-  const mockOnEdit = vi.fn();
+const wydatek = {
+  id: 'tx-1',
+  data: '2026-02-13',
+  typ: 'Wydatek',
+  kwota: 125.5,
+  kategoria: 'Jedzenie',
+  podkategoria: 'Restauracje',
+  osoba: 'Paweł',
+  komentarz: 'Obiad',
+};
+
+describe('TransactionItem', () => {
+  let onDelete;
+  let onEdit;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    onDelete = vi.fn();
+    onEdit = vi.fn();
   });
 
-  describe('Rendering', () => {
-    it('renderuje kategorię, podkategorię, kwotę, datę, osobę', () => {
-      render(
-        <TransactionItem 
-          transaction={mockTransaction} 
-          onDelete={mockOnDelete}
-          onEdit={mockOnEdit}
-        />
-      );
-
-      expect(screen.getByText('Jedzenie')).toBeInTheDocument();
-      expect(screen.getByText(/Zakupy/)).toBeInTheDocument();
-      expect(screen.getByText('Jan')).toBeInTheDocument();
-      // Data może być w różnych formatach, szukamy po częściowym dopasowaniu
-      const dateText = screen.queryAllByText(/2026/)[0];
-      expect(dateText).toBeInTheDocument();
-    });
-
-    it('wyświetla komentarz gdy obecny', () => {
-      render(
-        <TransactionItem 
-          transaction={mockTransaction} 
-          onDelete={mockOnDelete}
-        />
-      );
-
-      expect(screen.getByText('Promocja w Lidlu')).toBeInTheDocument();
-    });
-
-    it('ukrywa komentarz gdy brak', () => {
-      const transactionNoComment = { ...mockTransaction, komentarz: null };
-      render(
-        <TransactionItem 
-          transaction={transactionNoComment} 
-          onDelete={mockOnDelete}
-        />
-      );
-
-      expect(screen.queryByText(/Promocja/)).not.toBeInTheDocument();
-    });
+  it('renderuje kategorię, podkategorię, datę, osobę i komentarz', () => {
+    render(<TransactionItem transaction={wydatek} onDelete={onDelete} onEdit={onEdit} />);
+    expect(screen.getByText('Jedzenie')).toBeInTheDocument();
+    expect(screen.getByText('/ Restauracje')).toBeInTheDocument();
+    expect(screen.getByText('13.02.2026')).toBeInTheDocument();
+    expect(screen.getByText('Paweł')).toBeInTheDocument();
+    expect(screen.getByText('Obiad')).toBeInTheDocument();
   });
 
-  describe('Styling - Expense vs Income', () => {
-    it('wyświetla - i czerwony kolor dla wydatków', () => {
-      const { container } = render(
-        <TransactionItem 
-          transaction={mockTransaction} 
-          onDelete={mockOnDelete}
-        />
-      );
-
-      const element = container.querySelector('[data-transaction-type="Wydatek"]');
-      expect(element).toHaveClass('bg-rose-50');
-      expect(screen.getByText(/- 100,50 zł/)).toBeInTheDocument();
-    });
-
-    it('wyświetla + i zielony kolor dla przychodów', () => {
-      const incomeTransaction = { ...mockTransaction, typ: 'Przychód' };
-      const { container } = render(
-        <TransactionItem 
-          transaction={incomeTransaction} 
-          onDelete={mockOnDelete}
-        />
-      );
-
-      const element = container.querySelector('[data-transaction-type="Przychód"]');
-      expect(element).toHaveClass('bg-emerald-50');
-      expect(screen.getByText(/\+ 100,50 zł/)).toBeInTheDocument();
-    });
+  it('bez podkategorii i komentarza nie renderuje ich', () => {
+    const tx = { ...wydatek, podkategoria: null, komentarz: null };
+    render(<TransactionItem transaction={tx} onDelete={onDelete} onEdit={onEdit} />);
+    expect(screen.queryByText(/^\/ /)).not.toBeInTheDocument();
+    expect(screen.queryByText('Obiad')).not.toBeInTheDocument();
   });
 
-  describe('Actions', () => {
-    it('wywołuje onDelete z poprawnym ID po kliknięciu przycisku usuwania', async () => {
-      render(
-        <TransactionItem 
-          transaction={mockTransaction} 
-          onDelete={mockOnDelete}
-        />
-      );
+  it('wydatek: minus i kolor czerwony', () => {
+    render(<TransactionItem transaction={wydatek} onDelete={onDelete} onEdit={onEdit} />);
+    const kwota = screen.getByText(/^-/);
+    expect(kwota.textContent).toMatch(/125,50/);
+    expect(kwota.className).toContain('text-rose-600');
+  });
 
-      const deleteButton = screen.getByTestId('delete-1');
-      fireEvent.click(deleteButton);
+  it('przychód: plus i kolor zielony', () => {
+    const tx = { ...wydatek, typ: 'Przychód', kwota: 5000 };
+    render(<TransactionItem transaction={tx} onDelete={onDelete} onEdit={onEdit} />);
+    const kwota = screen.getByText(/^\+/);
+    expect(kwota.className).toContain('text-emerald-600');
+  });
 
-      expect(mockOnDelete).toHaveBeenCalledWith('1');
-    });
+  it('usuwanie przekazuje id, edycja — całą transakcję', async () => {
+    const user = userEvent.setup();
+    render(<TransactionItem transaction={wydatek} onDelete={onDelete} onEdit={onEdit} />);
 
-    it('wywołuje onEdit z ID po kliknięciu edycji', async () => {
-      render(
-        <TransactionItem 
-          transaction={mockTransaction} 
-          onDelete={mockOnDelete}
-          onEdit={mockOnEdit}
-        />
-      );
+    await user.click(screen.getByRole('button', { name: /Usuń transakcję Jedzenie z 13\.02\.2026/ }));
+    expect(onDelete).toHaveBeenCalledWith('tx-1');
 
-      const editButton = screen.getByTestId('edit-1');
-      fireEvent.click(editButton);
-
-      expect(mockOnEdit).toHaveBeenCalledWith('1');
-    });
-
-    it('nie wyświetla przycisku edycji gdy onEdit nie podany', () => {
-      render(
-        <TransactionItem 
-          transaction={mockTransaction} 
-          onDelete={mockOnDelete}
-        />
-      );
-
-      expect(screen.queryByTestId('edit-1')).not.toBeInTheDocument();
-    });
+    await user.click(screen.getByRole('button', { name: /Edytuj transakcję Jedzenie/ }));
+    expect(onEdit).toHaveBeenCalledWith(wydatek);
   });
 });
 
-describe('TransactionForm Component', () => {
-  const mockKategorie = {
-    Wydatek: {
-      'Jedzenie': ['Zakupy', 'Restauracja'],
-      'Transport': []
-    },
-    Przychód: {
-      'Pensja': [],
-      'Bonusy': []
-    }
+describe('TransactionForm', () => {
+  const kategorie = {
+    Wydatek: { Jedzenie: ['Restauracje', 'Zakupy'], Transport: [] },
+    Przychód: { Wynagrodzenie: ['Pensja'] },
   };
-
-  const mockOsoby = ['Jan', 'Anna'];
-  const mockOnSubmit = vi.fn();
-  const mockOnClose = vi.fn();
+  const osoby = ['Paweł', 'Ania'];
+  let onSubmit;
+  let onClose;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    onSubmit = vi.fn();
+    onClose = vi.fn();
   });
 
-  describe('Rendering', () => {
-    it('renderuje pola: data, typ, kwota, kategoria, podkategoria, osoba, komentarz', () => {
-      render(
-        <TransactionForm
-          kategorie={mockKategorie}
-          osoby={mockOsoby}
-          onSubmit={mockOnSubmit}
-          onClose={mockOnClose}
-        />
-      );
+  const renderForm = (props = {}) =>
+    render(
+      <TransactionForm
+        onSubmit={onSubmit}
+        onClose={onClose}
+        kategorie={kategorie}
+        osoby={osoby}
+        isLoading={false}
+        editData={null}
+        {...props}
+      />
+    );
 
-      expect(screen.getByTestId('field-data')).toBeInTheDocument();
-      expect(screen.getByTestId('field-typ')).toBeInTheDocument();
-      expect(screen.getByTestId('field-kwota')).toBeInTheDocument();
-      expect(screen.getByTestId('field-kategoria')).toBeInTheDocument();
-      expect(screen.getByTestId('field-osoba')).toBeInTheDocument();
-      expect(screen.getByTestId('field-komentarz')).toBeInTheDocument();
-    });
+  const optionValues = (select) =>
+    within(select).getAllByRole('option').map(o => o.value).filter(Boolean);
 
-    it('presetuję domyślne wartości', () => {
-      render(
-        <TransactionForm
-          kategorie={mockKategorie}
-          osoby={mockOsoby}
-          onSubmit={mockOnSubmit}
-          onClose={mockOnClose}
-        />
-      );
-
-      expect(screen.getByTestId('field-typ')).toHaveValue('Wydatek');
-      expect(screen.getByTestId('field-kwota')).toHaveValue(null);
-    });
+  it('nowa transakcja: tytuł, domyślnie Wydatek i pierwsza osoba', () => {
+    renderForm();
+    expect(screen.getByRole('heading', { name: 'Nowa transakcja' })).toBeInTheDocument();
+    expect(optionValues(screen.getByLabelText('Kategoria'))).toEqual(['Jedzenie', 'Transport']);
+    expect(screen.getByRole('button', { name: 'Paweł' }).className).toContain('bg-indigo-500');
+    expect(screen.getByLabelText('Data').value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  describe('Type and Category Change', () => {
-    it('zmiana typu (Wydatek/Przychód) aktualizuje listę kategorii', async () => {
-      render(
-        <TransactionForm
-          kategorie={mockKategorie}
-          osoby={mockOsoby}
-          onSubmit={mockOnSubmit}
-          onClose={mockOnClose}
-        />
-      );
+  it('zmiana typu podmienia listę kategorii i zeruje wybór', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.selectOptions(screen.getByLabelText('Kategoria'), 'Jedzenie');
+    await user.click(screen.getByRole('button', { name: 'Przychód' }));
 
-      const typSelect = screen.getByTestId('field-typ');
-      fireEvent.change(typSelect, { target: { value: 'Przychód' } });
+    const kategoria = screen.getByLabelText('Kategoria');
+    expect(optionValues(kategoria)).toEqual(['Wynagrodzenie']);
+    expect(kategoria.value).toBe('');
+  });
 
-      await waitFor(() => {
-        const kategSelect = screen.getByTestId('field-kategoria');
-        expect(kategSelect.textContent).toContain('Pensja');
-        expect(kategSelect.textContent).toContain('Bonusy');
-        expect(kategSelect.textContent).not.toContain('Transport');
-      });
-    });
+  it('podkategorie zależą od kategorii; bez kategorii pole wyłączone', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    expect(screen.getByLabelText('Podkategoria')).toBeDisabled();
 
-    it('wybór kategorii aktualizuje listę podkategorii', async () => {
-      render(
-        <TransactionForm
-          kategorie={mockKategorie}
-          osoby={mockOsoby}
-          onSubmit={mockOnSubmit}
-          onClose={mockOnClose}
-        />
-      );
+    await user.selectOptions(screen.getByLabelText('Kategoria'), 'Jedzenie');
+    expect(optionValues(screen.getByLabelText('Podkategoria'))).toEqual(['Restauracje', 'Zakupy']);
 
-      const kategSelect = screen.getByTestId('field-kategoria');
-      fireEvent.change(kategSelect, { target: { value: 'Jedzenie' } });
+    await user.selectOptions(screen.getByLabelText('Kategoria'), 'Transport');
+    expect(optionValues(screen.getByLabelText('Podkategoria'))).toEqual([]);
+  });
 
-      await waitFor(() => {
-        expect(screen.getByTestId('field-podkategoria')).toBeInTheDocument();
-        const podkategSelect = screen.getByTestId('field-podkategoria');
-        expect(podkategSelect.textContent).toContain('Zakupy');
-        expect(podkategSelect.textContent).toContain('Restauracja');
-      });
-    });
+  it('przycisk zapisu nieaktywny bez kwoty i kategorii', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const submit = screen.getByRole('button', { name: /Dodaj transakcję/ });
+    expect(submit).toBeDisabled();
 
-    it('nie wyświetla podkategorii gdy kategoria nie ma podziału', async () => {
-      render(
-        <TransactionForm
-          kategorie={mockKategorie}
-          osoby={mockOsoby}
-          onSubmit={mockOnSubmit}
-          onClose={mockOnClose}
-        />
-      );
+    await user.type(screen.getByLabelText('Kwota (PLN)'), '10');
+    expect(submit).toBeDisabled();
 
-      const kategSelect = screen.getByTestId('field-kategoria');
-      fireEvent.change(kategSelect, { target: { value: 'Transport' } });
+    await user.selectOptions(screen.getByLabelText('Kategoria'), 'Transport');
+    expect(submit).toBeEnabled();
+  });
 
-      await waitFor(() => {
-        expect(screen.queryByTestId('field-podkategoria')).not.toBeInTheDocument();
-      });
+  it('wysyła dane z kwotą jako liczbą', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.clear(screen.getByLabelText('Data'));
+    await user.type(screen.getByLabelText('Data'), '2026-03-05');
+    await user.type(screen.getByLabelText('Kwota (PLN)'), '42.50');
+    await user.selectOptions(screen.getByLabelText('Kategoria'), 'Jedzenie');
+    await user.selectOptions(screen.getByLabelText('Podkategoria'), 'Zakupy');
+    await user.click(screen.getByRole('button', { name: 'Ania' }));
+    await user.type(screen.getByLabelText('Komentarz (opcjonalnie)'), 'Biedronka');
+    await user.click(screen.getByRole('button', { name: /Dodaj transakcję/ }));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      data: '2026-03-05',
+      typ: 'Wydatek',
+      kwota: 42.5,
+      kategoria: 'Jedzenie',
+      podkategoria: 'Zakupy',
+      osoba: 'Ania',
+      komentarz: 'Biedronka',
     });
   });
 
-  describe('Validation', () => {
-    it('nie submituje z pustymi wymaganymi polami', async () => {
-      const user = userEvent.setup();
-      render(
-        <TransactionForm
-          kategorie={mockKategorie}
-          osoby={mockOsoby}
-          onSubmit={mockOnSubmit}
-          onClose={mockOnClose}
-        />
-      );
-
-      const submitButton = screen.getByTestId('button-submit');
-      await user.click(submitButton);
-
-      expect(mockOnSubmit).not.toHaveBeenCalled();
-      expect(screen.getByText(/Kategoria jest wymagana/)).toBeInTheDocument();
-      expect(screen.getByText(/Osoba jest wymagana/)).toBeInTheDocument();
-    });
-
-    it('waliduje kwotę > 0', async () => {
-      const user = userEvent.setup();
-      render(
-        <TransactionForm
-          kategorie={mockKategorie}
-          osoby={mockOsoby}
-          onSubmit={mockOnSubmit}
-          onClose={mockOnClose}
-        />
-      );
-
-      const kwotaField = screen.getByTestId('field-kwota');
-      await user.clear(kwotaField);
-      await user.type(kwotaField, '0');
-
-      const submitButton = screen.getByTestId('button-submit');
-      await user.click(submitButton);
-
-      expect(mockOnSubmit).not.toHaveBeenCalled();
-      expect(screen.getByText(/Kwota musi być większa od 0/)).toBeInTheDocument();
-    });
-
-    it('akceptuje poprawny formularz', async () => {
-      const user = userEvent.setup();
-      render(
-        <TransactionForm
-          kategorie={mockKategorie}
-          osoby={mockOsoby}
-          onSubmit={mockOnSubmit}
-          onClose={mockOnClose}
-        />
-      );
-
-      const kategSelect = screen.getByTestId('field-kategoria');
-      await user.selectOptions(kategSelect, 'Jedzenie');
-
-      const osobaSelect = screen.getByTestId('field-osoba');
-      await user.selectOptions(osobaSelect, 'Jan');
-
-      const kwotaField = screen.getByTestId('field-kwota');
-      await user.clear(kwotaField);
-      await user.type(kwotaField, '100.50');
-
-      const submitButton = screen.getByTestId('button-submit');
-      await user.click(submitButton);
-
-      await waitFor(() => {
-        expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({
-          typ: 'Wydatek',
-          kwota: 100.50,
-          kategoria: 'Jedzenie',
-          osoba: 'Jan'
-        }));
-      });
-    });
+  it('tryb edycji: dane wstępnie wypełnione, data znormalizowana', () => {
+    renderForm({ editData: { ...wydatek, data: '2026-02-13T00:00:00Z' } });
+    expect(screen.getByRole('heading', { name: 'Edytuj transakcję' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Data').value).toBe('2026-02-13');
+    expect(screen.getByLabelText('Kwota (PLN)').value).toBe('125.5');
+    expect(screen.getByLabelText('Kategoria').value).toBe('Jedzenie');
+    expect(screen.getByLabelText('Podkategoria').value).toBe('Restauracje');
+    expect(screen.getByLabelText('Komentarz (opcjonalnie)').value).toBe('Obiad');
+    expect(screen.getByRole('button', { name: /Zapisz zmiany/ })).toBeEnabled();
   });
 
-  describe('Submit and Close', () => {
-    it('wywołuje onSubmit z poprawnymi danymi', async () => {
-      const user = userEvent.setup();
-      render(
-        <TransactionForm
-          kategorie={mockKategorie}
-          osoby={mockOsoby}
-          onSubmit={mockOnSubmit}
-          onClose={mockOnClose}
-        />
-      );
-
-      const kategSelect = screen.getByTestId('field-kategoria');
-      await user.selectOptions(kategSelect, 'Jedzenie');
-
-      const osobaSelect = screen.getByTestId('field-osoba');
-      await user.selectOptions(osobaSelect, 'Jan');
-
-      const kwotaField = screen.getByTestId('field-kwota');
-      await user.clear(kwotaField);
-      await user.type(kwotaField, '150.75');
-
-      const kommentarzField = screen.getByTestId('field-komentarz');
-      await user.type(kommentarzField, 'Test komentarz');
-
-      const submitButton = screen.getByTestId('button-submit');
-      await user.click(submitButton);
-
-      await waitFor(() => {
-        expect(mockOnSubmit).toHaveBeenCalledWith(expect.objectContaining({
-          kwota: 150.75,
-          komentarz: 'Test komentarz'
-        }));
-      });
-    });
-
-    it('wywołuje onClose po kliknięciu anuluj', async () => {
-      const user = userEvent.setup();
-      render(
-        <TransactionForm
-          kategorie={mockKategorie}
-          osoby={mockOsoby}
-          onSubmit={mockOnSubmit}
-          onClose={mockOnClose}
-        />
-      );
-
-      const closeButton = screen.getByTestId('button-close');
-      await user.click(closeButton);
-
-      expect(mockOnClose).toHaveBeenCalled();
-    });
+  it('w trakcie zapisu przycisk pokazuje „Zapisywanie" i jest nieaktywny', () => {
+    renderForm({ isLoading: true, editData: wydatek });
+    const submit = screen.getByRole('button', { name: /Zapisywanie/ });
+    expect(submit).toBeDisabled();
   });
 
-  describe('Loading State', () => {
-    it('wyświetla stan ładowania (isLoading)', () => {
-      render(
-        <TransactionForm
-          kategorie={mockKategorie}
-          osoby={mockOsoby}
-          onSubmit={mockOnSubmit}
-          onClose={mockOnClose}
-          isLoading={true}
-        />
-      );
-
-      expect(screen.getByTestId('field-data')).toBeDisabled();
-      expect(screen.getByTestId('field-typ')).toBeDisabled();
-      expect(screen.getByTestId('field-kwota')).toBeDisabled();
-      expect(screen.getByTestId('button-submit')).toBeDisabled();
-    });
-  });
-
-  describe('Editing', () => {
-    it('presetuję dane do edycji z initialTransaction', () => {
-      const initialTransaction = {
-        data: '2026-02-13',
-        typ: 'Przychód',
-        kwota: 500,
-        kategoria: 'Pensja',
-        podkategoria: '',
-        osoba: 'Anna',
-        komentarz: 'Pensja za styczeń'
-      };
-
-      render(
-        <TransactionForm
-          kategorie={mockKategorie}
-          osoby={mockOsoby}
-          initialTransaction={initialTransaction}
-          onSubmit={mockOnSubmit}
-          onClose={mockOnClose}
-        />
-      );
-
-      expect(screen.getByTestId('field-data')).toHaveValue('2026-02-13');
-      expect(screen.getByTestId('field-typ')).toHaveValue('Przychód');
-      expect(screen.getByTestId('field-kwota')).toHaveValue(500);
-      expect(screen.getByTestId('field-komentarz')).toHaveValue('Pensja za styczeń');
-    });
+  it('przycisk zamknięcia woła onClose', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByRole('button', { name: 'Zamknij formularz' }));
+    expect(onClose).toHaveBeenCalled();
   });
 });

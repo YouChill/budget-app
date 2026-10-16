@@ -1,103 +1,63 @@
-import React from 'react';
 import { formatCurrency } from '../utils/calculations';
+import { formatDate } from '../utils/format';
+import { Icons } from './Icons';
 
-// UWAGA: ten komponent NIE jest używany przez aplikację — App.jsx ma własną,
-// inaczej wyglądającą implementację pozycji transakcji. Plik istnieje wyłącznie
-// pod testy jednostkowe; przy zmianach UI edytuj wersję w App.jsx.
-
-// Format daty specyficzny dla UI (kropki pl-PL, np. "13.02.2026").
-const formatDate = (dateString) => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('pl-PL', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-};
-
-/**
- * Komponent wyświetlający pojedynczą transakcję
- * @param {Object} transaction - Dane transakcji
- * @param {string} transaction.id - ID transakcji
- * @param {string} transaction.data - Data transakcji (format ISO)
- * @param {string} transaction.typ - Typ transakcji ("Wydatek" lub "Przychód")
- * @param {number} transaction.kwota - Kwota transakcji
- * @param {string} transaction.kategoria - Kategoria
- * @param {string} [transaction.podkategoria] - Podkategoria (opcjonalne)
- * @param {string} transaction.osoba - Osoba odpowiedzialna
- * @param {string} [transaction.komentarz] - Komentarz (opcjonalne)
- * @param {Function} onDelete - Callback po kliknięciu usuwania
- * @param {Function} [onEdit] - Callback po kliknięciu edycji
- */
-export default function TransactionItem({ 
-  transaction, 
-  onDelete, 
-  onEdit = null 
-}) {
-  const { id, data, typ, kwota, kategoria, podkategoria, osoba, komentarz } = transaction;
-  
-  const isExpense = typ === 'Wydatek';
-
-  const colorClass = isExpense ? 'text-rose-600' : 'text-emerald-600';
-  const signSymbol = isExpense ? '-' : '+';
-  const bgColorClass = isExpense 
-    ? 'bg-rose-50 hover:bg-rose-100' 
-    : 'bg-emerald-50 hover:bg-emerald-100';
+// Komponent pojedynczej transakcji.
+// Edycja i usuwanie działają także offline — handlery w BudgetApp kolejkują
+// operacje do synchronizacji po odzyskaniu połączenia.
+export default function TransactionItem({ transaction, onDelete, onEdit }) {
+  const isExpense = transaction.typ === 'Wydatek';
 
   return (
-    <div 
-      className={`p-4 rounded-lg ${bgColorClass} transition-colors cursor-pointer border border-gray-100`}
-      data-testid={`transaction-${id}`}
-      data-transaction-type={typ}
-    >
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <h3 className="font-semibold text-gray-800 truncate">
-              {kategoria}
-              {podkategoria && <span className="text-gray-600 text-sm"> / {podkategoria}</span>}
-            </h3>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span>{osoba}</span>
-            <span>•</span>
-            <span>{formatDate(data)}</span>
-          </div>
-          {komentarz && (
-            <p className="text-sm text-gray-600 mt-1 truncate">{komentarz}</p>
-          )}
+    <div className="group flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 rounded-2xl bg-white p-3 sm:p-4 shadow-sm hover:bg-gray-50 transition-colors border border-gray-100">
+      {/* Icon + Info */}
+      <div className="flex items-start gap-3 flex-1 min-w-0">
+        <div className={`rounded-xl p-2.5 sm:p-3 shrink-0 ${isExpense ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+          {isExpense ? <Icons.TrendingDown /> : <Icons.TrendingUp />}
         </div>
-
-        <div className="flex items-center gap-2 ml-4">
-          <div className={`text-right min-w-max ${colorClass} font-semibold`}>
-            <div>{signSymbol} {formatCurrency(kwota)}</div>
-          </div>
-          
-          <div className="flex items-center gap-1 ml-2">
-            {onEdit && (
-              <button
-                onClick={() => onEdit(id)}
-                className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                title="Edytuj"
-                data-testid={`edit-${id}`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path>
-                </svg>
-              </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-medium text-gray-800">{transaction.kategoria}</p>
+            {transaction.podkategoria && (
+              <span className="text-sm text-gray-500 truncate">/ {transaction.podkategoria}</span>
             )}
-            <button
-              onClick={() => onDelete(id)}
-              className="p-2 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
-              title="Usuń"
-              data-testid={`delete-${id}`}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
-            </button>
           </div>
+          <div className="flex items-center gap-x-2 gap-y-0.5 mt-1 flex-wrap">
+            <span className="text-sm text-gray-500 whitespace-nowrap">{formatDate(transaction.data)}</span>
+            <span className="text-gray-300">•</span>
+            <span className="text-sm text-gray-500 whitespace-nowrap">{transaction.osoba}</span>
+            {transaction.komentarz && (
+              <>
+                <span className="text-gray-300 hidden sm:inline">•</span>
+                <span className="text-sm text-gray-500 truncate max-w-[200px] sm:max-w-[150px] basis-full sm:basis-auto">{transaction.komentarz}</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Amount + Action buttons */}
+      <div className="flex items-center gap-2 sm:gap-3 justify-between sm:justify-end pl-[52px] sm:pl-0">
+        <p className={`text-base sm:text-lg font-semibold whitespace-nowrap ${isExpense ? 'text-rose-600' : 'text-emerald-600'}`}>
+          {isExpense ? '-' : '+'}{formatCurrency(transaction.kwota)}
+        </p>
+        <div className="flex items-center gap-1 sm:gap-2">
+          <button
+            onClick={() => onEdit(transaction)}
+            className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 w-10 h-10 sm:w-8 sm:h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:bg-indigo-100 hover:text-indigo-600 transition-[opacity,colors]"
+            title="Edytuj"
+            aria-label={`Edytuj transakcję ${transaction.kategoria} z ${formatDate(transaction.data)}`}
+          >
+            <Icons.Edit />
+          </button>
+          <button
+            onClick={() => onDelete(transaction.id)}
+            className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 w-10 h-10 sm:w-8 sm:h-8 flex-shrink-0 flex items-center justify-center rounded-lg text-gray-400 hover:bg-rose-100 hover:text-rose-600 transition-[opacity,colors]"
+            title="Usuń"
+            aria-label={`Usuń transakcję ${transaction.kategoria} z ${formatDate(transaction.data)}`}
+          >
+            <Icons.Trash />
+          </button>
         </div>
       </div>
     </div>

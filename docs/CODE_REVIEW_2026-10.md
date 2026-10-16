@@ -301,7 +301,7 @@ Stan produkcji sprawdzony tylko do odczytu (Supabase `budget-app`, eu-west-1)
 | D1 | ✅ | `.github/workflows/ci.yml` (lint, testy, build, audyt, testy SQL), Dependabot |
 | D4 | ✅ docs / ⏳ Vercel | `.nvmrc`, `engines`; README: baza dla preview, Deployment Protection, checklista Supabase |
 | D3 | ✅ kod / ⏳ sekrety | Supabase CLI w CI: `--dry-run` na PR, `db push` po merge; baseline = 4 wpisy historii z 11.10; wymaga sekretów `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD` |
-| Q1 | ⏳ | podział `App.jsx` / `CSVImport.jsx`: osobny, większy refaktor |
+| Q1 | ✅ | `App.jsx` 1783 → 344 linie, `CSVImport.jsx` 1911 → 339; logika importu w `src/lib/csvImport/`, kroki UI w `components/csvImport/`; testy zgodności przechodzą na wersji przed i po podziale |
 | D5 | ⏳ | Sentry, backup `pg_dump` |
 
 ### Wdrożenie na produkcję (11.10.2026)
