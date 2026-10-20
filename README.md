@@ -366,6 +366,14 @@ npx supabase@2.120.0 migration new nazwa_zmiany   # → supabase/migrations/<tim
 ```
 
 - bez `BEGIN;`/`COMMIT;` — CLI wykonuje plik we własnej transakcji (CI to sprawdza);
+- **nowa tabela w `public` = jawny `GRANT` w tej samej migracji** — od 2026-10-30
+  Supabase nie nadaje rolom API dostępu automatycznie, a bez niego supabase-js
+  dostaje „permission denied” (CI to sprawdza):
+  ```sql
+  GRANT SELECT, INSERT, UPDATE, DELETE ON public.nowa_tabela TO authenticated, service_role;
+  ```
+  `anon` tylko gdy tabela ma być czytelna bez logowania. Tabela celowo
+  niewystawiona przez API: komentarz `-- BEZ_DATA_API: nowa_tabela` w migracji;
 - test: `supabase/tests/<timestamp>_nazwa_zmiany.test.sql` (asercje `DO $$ … ASSERT … $$`),
   opcjonalnie rollback: `supabase/rollbacks/<timestamp>_nazwa_zmiany.sql` — CI sprawdzi
   migracja → rollback → migracja (`migration/tests/run_sql_tests.sh`);
