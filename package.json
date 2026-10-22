@@ -13,7 +13,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.95.3",
+    "@supabase/supabase-js": "^2.118.0",
     "papaparse": "^5.5.3",
     "react": "19.2.9",
     "react-dom": "19.2.9",
