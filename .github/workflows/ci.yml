@@ -34,6 +34,10 @@ jobs:
         run: bash sprawdz_przed_merge.sh
       - name: Podatności w zależnościach produkcyjnych
         run: npm audit --omit=dev --audit-level=high
+      # Narzędzia dev (vite, vitest) nie trafiają na produkcję, ale działają
+      # lokalnie z dostępem do repo i przeglądarki — też ich pilnujemy.
+      - name: Podatności w zależnościach deweloperskich
+        run: npm audit --include=dev --audit-level=high
 
   sql:
     name: Testy migracji SQL
