@@ -65,10 +65,16 @@ export function pozycjaZRekordu(r) {
   return pozycja;
 }
 
-/** Kody błędów, po których wiadomo, że migracji 014 jeszcze nie wdrożono. */
-export function brakMigracji014(error) {
+/**
+ * Kody błędów brakującej funkcji/tabeli — migracji jeszcze nie wdrożono.
+ * `nazwa` (funkcja RPC albo tabela) dopasowuje też komunikat PostgREST.
+ */
+export function brakMigracji(error, nazwa) {
   if (!error) return false;
   if (['PGRST202', 'PGRST205', '42883', '42P01'].includes(error.code)) return true;
   const msg = String(error.message || '').toLowerCase();
-  return msg.includes('importuj_transakcje') && msg.includes('could not find');
+  return msg.includes(nazwa) && msg.includes('could not find');
 }
+
+/** Kody błędów, po których wiadomo, że migracji 014 jeszcze nie wdrożono. */
+export const brakMigracji014 = (error) => brakMigracji(error, 'importuj_transakcje');

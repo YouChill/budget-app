@@ -18,6 +18,7 @@ import { useMonthlyData } from './hooks/useMonthlyData';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { useTransactionActions } from './hooks/useTransactionActions';
 import { useTransactionFilters } from './hooks/useTransactionFilters';
+import { useKolejkaLicznik } from './hooks/useKolejkaLicznik';
 import {
   getCurrentMonth,
   calculateIncome,
@@ -33,6 +34,7 @@ const CategoryCharts = lazy(() => import('./components/CategoryCharts'));
 const Budgets = lazy(() => import('./components/Budgets'));
 const CSVImport = lazy(() => import('./components/CSVImport'));
 const YearlySummary = lazy(() => import('./components/YearlySummary'));
+const Kolejka = lazy(() => import('./components/kolejka/Kolejka'));
 
 // ============================================
 // GŁÓWNA APLIKACJA
@@ -72,12 +74,29 @@ export default function BudgetApp() {
     enabled: isAuthenticated && !isRecoveringPassword,
   });
 
-  // Yearly summary view state
-  const [activeView, setActiveView] = useState('monthly');
+  // Widok: 'monthly' | 'yearly' | 'kolejka' (Do rozliczenia)
+  const [activeView, setActiveViewRaw] = useState('monthly');
   const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
+  // Widok kolejki z niezatwierdzonymi edycjami — wyjście wymaga potwierdzenia
+  // (edycje żyją tylko w pamięci, bez localStorage).
+  const [kolejkaDirty, setKolejkaDirty] = useState(false);
+  const [pendingView, setPendingView] = useState(null);
+  const setActiveView = (view) => {
+    if (activeView === 'kolejka' && view !== 'kolejka' && kolejkaDirty) {
+      setPendingView(view);
+      return;
+    }
+    setActiveViewRaw(view);
+  };
 
   // Budżety dla bieżącego okresu — własny hook, niezależny od fetchData
   const { budgets, refresh: refreshBudgets } = useBudgets({
+    month: currentPeriod.month,
+    year: currentPeriod.year,
+    enabled: isAuthenticated && !isRecoveringPassword && !isOffline,
+  });
+
+  const kolejka = useKolejkaLicznik({
     month: currentPeriod.month,
     year: currentPeriod.year,
     enabled: isAuthenticated && !isRecoveringPassword && !isOffline,
@@ -179,6 +198,8 @@ export default function BudgetApp() {
         onLogout={logout}
         isOffline={isOffline}
         onOpenImport={() => setShowCSVImport(true)}
+        kolejkaLiczba={kolejka.wszystkie}
+        onOpenKolejka={() => setActiveView('kolejka')}
         onOpenBudgets={() => setShowBudgets(true)}
         onOpenSettings={() => setShowSettings(true)}
         activeView={activeView}
@@ -209,7 +230,19 @@ export default function BudgetApp() {
           </div>
         )}
 
-        {activeView === 'yearly' ? (
+        {activeView === 'kolejka' && !isOffline ? (
+          <Suspense fallback={<div className="py-20 text-center text-gray-400">Ładowanie…</div>}>
+            <Kolejka
+              kategorie={kategorie}
+              osoby={osoby}
+              onDirtyChange={setKolejkaDirty}
+              onZmiana={() => {
+                kolejka.refresh();
+                fetchData(false);
+              }}
+            />
+          </Suspense>
+        ) : activeView === 'yearly' ? (
           <Suspense fallback={<div className="py-20 text-center text-gray-400">Ładowanie…</div>}>
             <YearlySummary year={selectedYear} />
           </Suspense>
@@ -222,6 +255,17 @@ export default function BudgetApp() {
           </div>
         ) : (
           <>
+            {kolejka.wMiesiacu > 0 && (
+              <div role="status" className="rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  {kolejka.wMiesiacu} {kolejka.wMiesiacu === 1 ? 'operacja' : 'operacji'} z tego miesiąca czeka na rozliczenie — sumy są niepełne
+                </span>
+                <button onClick={() => setActiveView('kolejka')} className="font-medium text-amber-900 hover:underline">
+                  Rozlicz
+                </button>
+              </div>
+            )}
+
             {/* Karty podsumowania */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <SummaryCard
@@ -305,12 +349,9 @@ export default function BudgetApp() {
       {showCSVImport && (
         <CSVImport
           onClose={() => setShowCSVImport(false)}
-          kategorie={kategorie}
           osoby={osoby}
-          onSaved={() => {
-            setShowCSVImport(false);
-            fetchData();
-          }}
+          onSaved={kolejka.refresh}
+          onOpenKolejka={() => setActiveView('kolejka')}
         />
       )}
       </Suspense>
@@ -326,6 +367,23 @@ export default function BudgetApp() {
             deleteTransaction(id);
           }}
           onCancel={() => setConfirmDeleteId(null)}
+        />
+      )}
+
+      {/* Wyjście z kolejki z niezatwierdzonymi zmianami */}
+      {pendingView !== null && (
+        <ConfirmDialog
+          title="Porzucić niezatwierdzone zmiany?"
+          message="Kategorie i inne zmiany w kolejce, których nie zatwierdzono, nie są nigdzie zapisywane."
+          confirmLabel="Porzuć"
+          cancelLabel="Zostań"
+          isWarning
+          onConfirm={() => {
+            setKolejkaDirty(false);
+            setActiveViewRaw(pendingView);
+            setPendingView(null);
+          }}
+          onCancel={() => setPendingView(null)}
         />
       )}
 

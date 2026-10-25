@@ -5,7 +5,7 @@
  * Klient Supabase jest mockowany — testy sprawdzają kontrakt HTTP oraz to,
  * jakie zapytania API buduje (w szczególności jawne filtry household_id).
  */
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 
 const HOUSEHOLD_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const USER_ID = '11111111-2222-3333-4444-555555555555';
@@ -488,5 +488,78 @@ describe('/zobowiazania', () => {
     expect(res.statusCode).toBe(200);
     const update = state.chains.zobowiazania.calls.find(c => c[0] === 'update');
     expect(update[1]).toEqual({ status: 'oplacone' });
+  });
+});
+
+// ── HMAC RACHUNKÓW (#130) ───────────────────────────────────────────────────
+
+describe('POST /rachunki/hmac', () => {
+  const KLUCZ = Buffer.alloc(48, 7).toString('base64');
+  const NRB = '61109010140000071219812874';
+  const hmac = (body) => call({ method: 'POST', route: ['rachunki', 'hmac'], body });
+
+  beforeEach(() => { process.env.RACHUNEK_HMAC_KEY = KLUCZ; });
+  afterAll(() => { delete process.env.RACHUNEK_HMAC_KEY; });
+
+  it('401 bez tokenu', async () => {
+    const res = await call({ method: 'POST', route: ['rachunki', 'hmac'], body: { rachunki: [NRB] }, token: null });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('503 bez klucza albo z kluczem krótszym niż 32 bajty', async () => {
+    delete process.env.RACHUNEK_HMAC_KEY;
+    expect((await hmac({ rachunki: [NRB] })).statusCode).toBe(503);
+    process.env.RACHUNEK_HMAC_KEY = Buffer.alloc(16, 1).toString('base64');
+    const res = await hmac({ rachunki: [NRB] });
+    expect(res.statusCode).toBe(503);
+    expect(res.body.error).toMatch(/RACHUNEK_HMAC_KEY/);
+  });
+
+  it('400 przy > 2000 elementów, zbyt długim elemencie albo złym typie — bez wartości w odpowiedzi', async () => {
+    expect((await hmac({ rachunki: Array(2001).fill(NRB) })).statusCode).toBe(400);
+    const dlugi = await hmac({ rachunki: [NRB, 'PL' + '1'.repeat(40)] });
+    expect(dlugi.statusCode).toBe(400);
+    expect(JSON.stringify(dlugi.body)).not.toContain('1111111111');
+    expect((await hmac({ rachunki: [123] })).statusCode).toBe(400);
+    expect((await hmac({})).statusCode).toBe(400);
+  });
+
+  it('405 dla GET, 404 dla nieznanej podścieżki', async () => {
+    expect((await call({ route: ['rachunki', 'hmac'] })).statusCode).toBe(405);
+    expect((await call({ method: 'POST', route: ['rachunki'] })).statusCode).toBe(404);
+  });
+
+  it('ten sam rachunek → ten sam HMAC; PL i spacje bez znaczenia; krótki → null', async () => {
+    const res = await hmac({ rachunki: [NRB, `PL${NRB}`, '61 1090 1014 0000 0712 1981 2874', '12345', ''] });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Cache-Control']).toBe('no-store');
+    const [a, b, c, d, e] = res.body.hmac;
+    expect(a).toMatch(/^[0-9a-f]{64}$/);
+    expect(b).toBe(a);
+    expect(c).toBe(a);
+    expect([d, e]).toEqual([null, null]);
+  });
+
+  it('inne gospodarstwo → inny HMAC; inny klucz → inny HMAC', async () => {
+    const [a] = (await hmac({ rachunki: [NRB] })).body.hmac;
+    state.tables.profiles = { data: { ...state.profile, household_id: '00000000-1111-2222-3333-444444444444' }, error: null };
+    const [b] = (await hmac({ rachunki: [NRB] })).body.hmac;
+    expect(b).not.toBe(a);
+    state.tables.profiles = { data: state.profile, error: null };
+    process.env.RACHUNEK_HMAC_KEY = Buffer.alloc(48, 9).toString('base64');
+    const [c] = (await hmac({ rachunki: [NRB] })).body.hmac;
+    expect(c).not.toBe(a);
+  });
+
+  it('nie loguje rachunków ani wyników', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const info = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await hmac({ rachunki: [NRB] });
+    delete process.env.RACHUNEK_HMAC_KEY;
+    await hmac({ rachunki: [NRB] });
+    const wszystko = JSON.stringify([...log.mock.calls, ...info.mock.calls].map(a => a.map(String)));
+    expect(wszystko).not.toContain('1219812874');
+    log.mockRestore();
+    info.mockRestore();
   });
 });

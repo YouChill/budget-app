@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import Button from '../Button';
-import { SparkleIcon } from './icons';
+import { SparkleIcon } from '../csvImport/icons';
 
 const PUSTA_REGULA = { keyword: '', kategoria: '', podkategoria: '', typ: 'Wydatek' };
 
@@ -14,9 +14,10 @@ export default function RulesPanel({ rules, unmappedCount, aiEnabled, kategorie,
   const ruleCategories = Object.keys(kategorie?.[ruleForm.typ] || {});
   const ruleSubcategories = kategorie?.[ruleForm.typ]?.[ruleForm.kategoria] || [];
 
-  // onAddRule waliduje i zwraca true po dodaniu — dopiero wtedy czyścimy formularz.
-  const handleAddRule = () => {
-    if (onAddRule(ruleForm)) {
+  // onAddRule waliduje, zapisuje w bazie i zwraca true po dodaniu — dopiero
+  // wtedy czyścimy formularz.
+  const handleAddRule = async () => {
+    if (await onAddRule(ruleForm)) {
       setRuleForm(PUSTA_REGULA);
       setShowRuleForm(false);
     }
@@ -68,8 +69,8 @@ export default function RulesPanel({ rules, unmappedCount, aiEnabled, kategorie,
       {showRulesList && rules.length > 0 && (
         <div className="px-4 pb-3 border-t border-indigo-200 pt-3">
           <div className="space-y-1.5 max-h-32 overflow-auto">
-            {rules.map((rule, i) => (
-              <div key={i} className="flex items-center justify-between bg-white rounded-lg px-3 py-1.5 text-xs border border-indigo-100">
+            {rules.map((rule) => (
+              <div key={rule.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-1.5 text-xs border border-indigo-100">
                 <span>
                   Jeśli zawiera „<strong>{rule.keyword}</strong>" →{' '}
                   <span className="text-indigo-600 font-medium">{rule.kategoria}</span>
@@ -77,7 +78,7 @@ export default function RulesPanel({ rules, unmappedCount, aiEnabled, kategorie,
                   {rule.typ && <span className="text-gray-400 ml-1">({rule.typ})</span>}
                 </span>
                 <button
-                  onClick={() => onDeleteRule(i)}
+                  onClick={() => onDeleteRule(rule.id)}
                   aria-label={`Usuń regułę „${rule.keyword}"`}
                   className="text-rose-400 hover:text-rose-600 ml-2 font-bold"
                 >
@@ -144,8 +145,8 @@ export default function RulesPanel({ rules, unmappedCount, aiEnabled, kategorie,
             </div>
           </div>
           <p className="text-xs text-gray-400 mt-2">
-            Reguła zostanie zastosowana natychmiast i zapisana do przyszłych importów
-            {aiEnabled && ' oraz do bazy wektorowej AI'}.
+            Reguła zostanie zastosowana natychmiast i zapisana w bazie — działa na każdym urządzeniu
+            {aiEnabled && ' i trafia do bazy wektorowej AI'}. Tekst: min. 3 znaki.
           </p>
         </div>
       )}

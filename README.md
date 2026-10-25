@@ -18,7 +18,7 @@ Aplikacja do śledzenia domowych wydatków i przychodów. Stworzona z myślą o 
 - **Synchronizacja** — dane w Supabase (PostgreSQL), dostępne z każdego urządzenia
 - **Real-time sync** — automatyczna aktualizacja danych między urządzeniami w czasie rzeczywistym
 - **Wykresy** — wykresy kołowe i słupkowe wydatków wg kategorii (Recharts)
-- **Import CSV z AI** — import wyciągów bankowych z automatycznym dopasowaniem kategorii opartym na wektorowej bazie wiedzy (OpenAI + pgvector)
+- **Import CSV z AI** — wyciąg trafia do kolejki „Do rozliczenia”, a kategorie (reguły, słownik, AI na pgvector, parowanie z fakturami) przypisujesz później, z dowolnego urządzenia
 - **Budżety** — ustawianie miesięcznych limitów wydatków wg kategorii (z powtarzalnością roczną/miesięczną)
 - **Podsumowanie roczne** — KPI roczne, wykresy miesięczne przychody vs wydatki, oszczędności skumulowane, porównanie rok do roku, podział wydatków na osoby
 - **Offline mode** — kolejka operacji offline z automatyczną synchronizacją po powrocie do sieci
@@ -141,9 +141,11 @@ Aplikacja dostępna pod adresem: `http://localhost:5173`
 ### Jak działa import
 
 1. **Prześlij plik** — przeciągnij plik CSV na strefę drop lub kliknij „Wybierz plik z dysku"
-2. **Zmapuj kolumny** — wskaż kolumny daty, kwoty i opisu (PKO BP: automatycznie)
-3. **Przejrzyj transakcje** — edytuj kategorie, usuń zbędne wiersze
-4. **Importuj** — batch insert do Supabase
+2. **Zmapuj kolumny i wybierz osobę** — daty, kwoty i opisu (PKO BP, Millennium, Revolut: automatycznie)
+3. **Zapisz do kolejki** — operacje trafiają do kolejki „Do rozliczenia”, bez kategoryzacji
+4. **Rozlicz** — kategorie przypisujesz później, w widoku „Do rozliczenia” (partiami, z dowolnego urządzenia)
+
+Szczegóły: [docs/CSV_IMPORT.md](./docs/CSV_IMPORT.md).
 
 ### Kategoryzacja — trzy warstwy
 
@@ -177,10 +179,14 @@ Bez klucza OpenAI import działa normalnie — aktywne są warstwy 1 i 2.
 
 ### Reguły rozpoznawania
 
-W kroku podglądu panel „Reguły rozpoznawania" pozwala:
-- Dodać regułę słowem kluczowym → natychmiast przypisuje pasujące nieprzypisane transakcje
+Panel „Reguły rozpoznawania" pozwala:
+- Dodać regułę słowem kluczowym (min. 3 znaki) → natychmiast przypisuje pasujące nieprzypisane transakcje
 - Przeglądać i usuwać zapisane reguły
 - Przy włączonym AI — reguła jest jednocześnie zapisywana jako embedding w Supabase
+
+Reguły leżą w tabeli `reguly_rozpoznawania` (migracja `20261025100100`) — są
+wspólne dla domowników i urządzeń. Reguły zapisane wcześniej w `localStorage`
+aplikacja jednorazowo proponuje przenieść do bazy.
 
 ## Struktura projektu
 
@@ -195,7 +201,8 @@ budget-app/
 │   │   ├── TransactionItem.jsx  # Pojedyncza transakcja (swipe)
 │   │   ├── YearlySummary.jsx    # Podsumowanie roczne z wykresami
 │   │   ├── CSVImport.jsx        # Import CSV (drag-and-drop + AI)
-│   │   ├── csvImport/           # Kroki importu CSV i ich hooki
+│   │   ├── csvImport/           # Kroki importu CSV (plik → kolumny → kolejka)
+│   │   ├── kolejka/             # Widok „Do rozliczenia” (kolejka importu)
 │   │   ├── settings/            # Panel ustawień (kategorie, osoby)
 │   │   ├── AppHeader.jsx        # Nagłówek i nawigacja okresu
 │   │   ├── TransactionList.jsx  # Lista transakcji z wyszukiwaniem
@@ -300,6 +307,7 @@ budget-app/
 | `VITE_SUPABASE_ANON_KEY` | ✅ | Klucz anonimowy Supabase |
 | `OPENAI_API_KEY` | ➕ | Klucz OpenAI — **tylko po stronie serwera** (proxy `/api/embeddings`) |
 | `VITE_AI_ENABLED` | ➕ | Flaga `true/false` włączająca kategoryzację AI w UI |
+| `RACHUNEK_HMAC_KEY` | ➕ | Sekret HMAC rachunków kontrahentów (`openssl rand -base64 48`) — **tylko po stronie serwera**, ustaw w Vercel (Production + Preview) |
 | `SUPABASE_URL` | ➕ | URL Supabase dla funkcji `/api/*` (domyślnie `VITE_SUPABASE_URL`) |
 | `SUPABASE_ANON_KEY` | ➕ | Klucz anon dla funkcji `/api/*` (domyślnie `VITE_SUPABASE_ANON_KEY`) |
 

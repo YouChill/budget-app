@@ -4,8 +4,7 @@ export default function StepIndicator({ current }) {
   const steps = [
     { n: 1, label: 'Plik' },
     { n: 2, label: 'Kolumny' },
-    { n: 3, label: 'Podgląd' },
-    { n: 4, label: 'Gotowe' },
+    { n: 3, label: 'Gotowe' },
   ];
   return (
     <div className="flex items-center justify-center gap-1 mb-6 select-none">

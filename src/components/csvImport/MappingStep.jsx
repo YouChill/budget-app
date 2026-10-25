@@ -1,7 +1,7 @@
 import Button from '../Button';
 
 // Krok 2: mapowanie kolumn (formaty bankowe — automatycznie), wybór osoby
-// i podgląd pierwszych wierszy pliku.
+// i podgląd pierwszych wierszy pliku. „Zapisz do kolejki" kończy import.
 export default function MappingStep({
   detectedFormat,
   headers,
@@ -11,6 +11,7 @@ export default function MappingStep({
   setSelectedOsoba,
   osoby,
   csvData,
+  isLoading = false,
   onBack,
   onNext,
 }) {
@@ -119,11 +120,11 @@ export default function MappingStep({
         </div>
 
         <div className="flex gap-3 pt-1">
-          <Button variant="secondary" className="flex-1" onClick={onBack}>
+          <Button variant="secondary" className="flex-1" onClick={onBack} disabled={isLoading}>
             ← Wstecz
           </Button>
-          <Button className="flex-1" onClick={onNext}>
-            Dalej →
+          <Button className="flex-1" onClick={onNext} disabled={isLoading}>
+            {isLoading ? 'Zapisywanie…' : 'Zapisz do kolejki →'}
           </Button>
         </div>
       </div>

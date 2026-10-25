@@ -28,6 +28,17 @@ vi.mock('../services/api', () => ({
   addTransakcja: vi.fn(),
   updateTransakcja: vi.fn(),
   deleteTransakcja: vi.fn(),
+  getLicznikKolejki: vi.fn().mockResolvedValue(0),
+}));
+
+// Widok kolejki ma własne testy — tu tylko jego wpięcie w App.
+vi.mock('../components/kolejka/Kolejka', () => ({
+  default: ({ onDirtyChange }) => (
+    <div>
+      <h2>Widok kolejki</h2>
+      <button onClick={() => onDirtyChange(true)}>edytuj kolejkę</button>
+    </div>
+  ),
 }));
 
 // Wykresy (recharts) nie są przedmiotem tego testu.
@@ -109,5 +120,31 @@ describe('App — złożenie po podziale', () => {
     expect(api.deleteTransakcja).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Usuń' }));
     await waitFor(() => expect(api.deleteTransakcja).toHaveBeenCalledWith('t1'));
+  });
+
+  it('kolejka: licznik w nagłówku i baner niepełnych sum miesiąca', async () => {
+    api.getLicznikKolejki.mockImplementation(async (zakres) => (zakres ? 2 : 5));
+    renderApp();
+    await screen.findByText('Transakcje (3)');
+    expect(await screen.findByText(/2 operacji z tego miesiąca czeka na rozliczenie — sumy są niepełne/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Do rozliczenia (5)' })).toBeInTheDocument();
+  });
+
+  it('kolejka: wyjście z niezatwierdzonymi zmianami wymaga potwierdzenia', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await screen.findByText('Transakcje (3)');
+    await user.click(screen.getByRole('button', { name: /^Do rozliczenia/ }));
+    expect(await screen.findByText('Widok kolejki')).toBeInTheDocument();
+
+    await user.click(screen.getByText('edytuj kolejkę'));
+    await user.click(screen.getByRole('button', { name: 'Miesiąc' }));
+    expect(screen.getByText('Porzucić niezatwierdzone zmiany?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Zostań' }));
+    expect(screen.getByText('Widok kolejki')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Miesiąc' }));
+    await user.click(screen.getByRole('button', { name: 'Porzuć' }));
+    expect(await screen.findByText('Transakcje (3)')).toBeInTheDocument();
   });
 });

@@ -1,7 +1,8 @@
 import { supabase } from '../lib/supabase';
 import { DEFAULT_KATEGORIE } from '../data/defaultKategorie';
-import { pozycjaZRekordu, brakMigracji014 } from '../lib/importPozycje';
+import { pozycjaZRekordu, brakMigracji014, brakMigracji } from '../lib/importPozycje';
 import { fetchAll } from '../lib/fetchAll';
+import { kanonicznyRachunek } from '../lib/odciski';
 
 // ═══════════════════════════════════════════
 // PROFILE & HOUSEHOLD FUNCTIONS
@@ -313,8 +314,10 @@ export async function sprawdzOdciski(zrodlo, ids) {
  * zobowiązania, aliasy kontrahentów i transakcje bez dowodu w oknie dat
  * (wpisy ręczne oraz wszystko sprzed wprowadzenia odcisków).
  * Zwraca null, gdy baza nie ma migracji 014.
+ * hmacAliasow: aliasy rachunków dostają wzorzecHmac — dla wierszy kolejki,
+ * które mają tylko rachunek_hmac (#130).
  */
-export async function getKontekstParowania(od, doDaty) {
+export async function getKontekstParowania(od, doDaty, { hmacAliasow = false } = {}) {
   const householdId = await getHouseholdId();
   const [zob, aliasy, tx, dowody] = await Promise.all([
     supabase.from('zobowiazania')
@@ -346,9 +349,181 @@ export async function getKontekstParowania(od, doDaty) {
   const zDowodem = new Set(dowody.data.map(d => d.transakcja_id));
   return {
     zobowiazania: zob.data,
-    aliasy: aliasy.data,
+    aliasy: hmacAliasow ? await zHmacAliasow(aliasy.data) : aliasy.data,
     bezDowodu: tx.data.filter(t => !zDowodem.has(t.id)),
   };
+}
+
+// ═══════════════════════════════════════════
+// KOLEJKA IMPORTU (#131, #132)
+// ═══════════════════════════════════════════
+
+const KOLEJKA_CHUNK = 1000;
+
+function bladKolejki(error, nazwa) {
+  if (brakMigracji(error, nazwa)) {
+    const err = new Error('Baza nie ma migracji kolejki importu');
+    err.brakMigracji = true;
+    throw err;
+  }
+  handleAuthError(error);
+}
+
+/**
+ * Zapis operacji z wyciągu do kolejki (RPC kolejka_dodaj), partiami po 1000.
+ * Zwraca { dodane, pominiete } — pominięte = już w kolejce, zaksięgowane
+ * albo wykluczone. Bez migracji: błąd z `brakMigracji = true`, bez fallbacku.
+ */
+export async function dodajDoKolejki(pozycje) {
+  const suma = { dodane: 0, pominiete: 0 };
+  for (let i = 0; i < pozycje.length; i += KOLEJKA_CHUNK) {
+    const { data, error } = await supabase.rpc('kolejka_dodaj', { p: { pozycje: pozycje.slice(i, i + KOLEJKA_CHUNK) } });
+    if (error) bladKolejki(error, 'kolejka_dodaj');
+    suma.dodane += data.dodane || 0;
+    suma.pominiete += data.pominiete || 0;
+  }
+  return suma;
+}
+
+const KOLEJKA_KOLUMNY = 'id, zrodlo, data, kwota_pelna, opis, osoba, kontrahent, dokument, rachunek_hmac, status';
+
+/**
+ * Operacje z kolejki (domyślnie status 'nowy'), od najstarszej, ze
+ * stronicowaniem. Opcjonalny zakres dat { od, do } (YYYY-MM-DD).
+ */
+export async function getKolejka({ od, do: doDaty, status = 'nowy' } = {}) {
+  const householdId = await getHouseholdId();
+  const { data, error } = await fetchAll(() => {
+    let q = supabase.from('transakcje_dowody')
+      .select(KOLEJKA_KOLUMNY, { count: 'exact' })
+      .eq('household_id', householdId)
+      .eq('status', status);
+    if (od) q = q.gte('data', od);
+    if (doDaty) q = q.lte('data', doDaty);
+    return q.order('data').order('id');
+  });
+  if (error) bladKolejki(error, 'transakcje_dowody');
+  return data;
+}
+
+/**
+ * Liczba operacji czekających w kolejce (opcjonalnie w zakresie dat).
+ * null = baza bez migracji kolejki.
+ */
+export async function getLicznikKolejki({ od, do: doDaty } = {}) {
+  const householdId = await getHouseholdId();
+  let q = supabase.from('transakcje_dowody')
+    .select('id', { count: 'exact', head: true })
+    .eq('household_id', householdId)
+    .eq('status', 'nowy');
+  if (od) q = q.gte('data', od);
+  if (doDaty) q = q.lte('data', doDaty);
+  const { count, error } = await q;
+  if (error) {
+    // brak kolumny status (42703) = baza sprzed migracji kolejki
+    if (brakMigracji(error, 'transakcje_dowody') || error.code === '42703') return null;
+    handleAuthError(error);
+  }
+  return count ?? 0;
+}
+
+/**
+ * Zatwierdzenie pozycji kolejki (RPC kolejka_zatwierdz), partiami po 1000.
+ * Zwraca { zatwierdzone, dolaczone, pominiete, polaczone, wyniki }.
+ */
+export async function zatwierdzKolejke(pozycje) {
+  const suma = { zatwierdzone: 0, dolaczone: 0, pominiete: 0, polaczone: 0, wyniki: [] };
+  for (let i = 0; i < pozycje.length; i += KOLEJKA_CHUNK) {
+    const { data, error } = await supabase.rpc('kolejka_zatwierdz', { p: { pozycje: pozycje.slice(i, i + KOLEJKA_CHUNK) } });
+    if (error) bladKolejki(error, 'kolejka_zatwierdz');
+    for (const k of ['zatwierdzone', 'dolaczone', 'pominiete', 'polaczone']) suma[k] += data[k] || 0;
+    suma.wyniki.push(...(data.wyniki || []));
+  }
+  invalidateYearlyCache();
+  return suma;
+}
+
+/**
+ * Wykluczenie ('wykluczony') albo przywrócenie ('nowy') operacji kolejki.
+ * Zwykły UPDATE przez RLS — przejścia pilnuje strażnik w bazie, a filtr
+ * po statusie źródłowym pomija wiersze zmienione w międzyczasie na innym
+ * urządzeniu. Zwraca liczbę zmienionych wierszy.
+ */
+export async function ustawStatusKolejki(ids, status) {
+  if (!['nowy', 'wykluczony'].includes(status)) throw new Error(`Nieobsługiwany status: ${status}`);
+  const householdId = await getHouseholdId();
+  const zrodlowy = status === 'nowy' ? 'wykluczony' : 'nowy';
+  const { data, error } = await supabase.from('transakcje_dowody')
+    .update({ status })
+    .eq('household_id', householdId)
+    .eq('status', zrodlowy)
+    .in('id', ids)
+    .select('id');
+  if (error) bladKolejki(error, 'transakcje_dowody');
+  return data.length;
+}
+
+/** Aliasy kontrahentów gospodarstwa; [] gdy baza nie ma migracji 014. */
+export async function getAliasyKontrahentow() {
+  const householdId = await getHouseholdId();
+  const { data, error } = await supabase
+    .from('kontrahenci_aliasy')
+    .select('wzorzec, typ_wzorca, kontrahent')
+    .eq('household_id', householdId);
+  if (error) {
+    if (brakMigracji014(error)) return [];
+    handleAuthError(error);
+  }
+  return data;
+}
+
+// ═══════════════════════════════════════════
+// HMAC RACHUNKÓW KONTRAHENTÓW (#130)
+// ═══════════════════════════════════════════
+
+const HMAC_CHUNK = 2000;
+
+/**
+ * HMAC rachunków (POST /api/v1/rachunki/hmac) w kolejności wejścia; null dla
+ * rachunku krótszego niż 26 cyfr. Endpoint niedostępny (503 bez klucza,
+ * brak sieci, błąd) → same null: import nie może się przez to zablokować,
+ * dowód po prostu nie dostaje rachunek_hmac. Rachunków nie logujemy.
+ */
+export async function hmacRachunkow(lista) {
+  const wynik = new Array(lista.length).fill(null);
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    if (!token) return wynik;
+    for (let i = 0; i < lista.length; i += HMAC_CHUNK) {
+      const partia = lista.slice(i, i + HMAC_CHUNK).map(r => String(r ?? '').slice(0, 40));
+      const res = await fetch('/api/v1/rachunki/hmac', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ rachunki: partia }),
+      });
+      if (!res.ok) return new Array(lista.length).fill(null);
+      const { hmac } = await res.json();
+      if (!Array.isArray(hmac) || hmac.length !== partia.length) return new Array(lista.length).fill(null);
+      hmac.forEach((h, j) => { wynik[i + j] = typeof h === 'string' ? h : null; });
+    }
+  } catch {
+    return new Array(lista.length).fill(null);
+  }
+  return wynik;
+}
+
+/**
+ * Aliasy typu „rachunek” dostają wzorzecHmac (ten sam endpoint), żeby
+ * rozpoznawać kontrahenta po rachunek_hmac dowodu, gdy pełnego numeru nie
+ * ma już w pamięci. Aliasy krótsze niż 26 cyfr zostają bez HMAC.
+ */
+export async function zHmacAliasow(aliasy) {
+  const rachunkowe = aliasy.filter(a => a.typ_wzorca === 'rachunek' && kanonicznyRachunek(a.wzorzec));
+  if (rachunkowe.length === 0) return aliasy;
+  const hmac = await hmacRachunkow(rachunkowe.map(a => a.wzorzec));
+  const poAliasie = new Map(rachunkowe.map((a, i) => [a, hmac[i]]));
+  return aliasy.map(a => (poAliasie.get(a) ? { ...a, wzorzecHmac: poAliasie.get(a) } : a));
 }
 
 // Data dowodu może odbiegać od daty transakcji (np. faktura vs przelew),
@@ -357,6 +532,63 @@ function shiftDate(iso, days) {
   const d = new Date(`${iso}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+// ═══════════════════════════════════════════
+// REGUŁY ROZPOZNAWANIA (#133)
+// ═══════════════════════════════════════════
+
+const REGULY_KOLUMNY = 'id, keyword, typ, kategoria, podkategoria';
+
+/** Reguły „opis zawiera X → kategoria" gospodarstwa. null = baza bez migracji. */
+export async function getReguly() {
+  const householdId = await getHouseholdId();
+  const { data, error } = await supabase
+    .from('reguly_rozpoznawania')
+    .select(REGULY_KOLUMNY)
+    .eq('household_id', householdId)
+    .order('created_at')
+    .order('id');
+  if (error) {
+    if (brakMigracji(error, 'reguly_rozpoznawania')) return null;
+    handleAuthError(error);
+  }
+  return data;
+}
+
+/**
+ * Dodaje regułę. Ta sama fraza (bez względu na wielkość liter) dla tego
+ * samego typu już istnieje → { duplikat: true } zamiast błędu.
+ */
+export async function addRegula({ keyword, typ, kategoria, podkategoria }) {
+  const householdId = await getHouseholdId();
+  const { data, error } = await supabase
+    .from('reguly_rozpoznawania')
+    .insert({
+      household_id: householdId,
+      keyword: String(keyword).trim(),
+      typ: typ || null,
+      kategoria,
+      podkategoria: podkategoria || null,
+    })
+    .select(REGULY_KOLUMNY)
+    .single();
+  if (error) {
+    if (error.code === '23505') return { duplikat: true };
+    handleAuthError(error);
+  }
+  return { regula: data };
+}
+
+export async function deleteRegula(id) {
+  const householdId = await getHouseholdId();
+  const { error } = await supabase
+    .from('reguly_rozpoznawania')
+    .delete()
+    .eq('id', id)
+    .eq('household_id', householdId);
+  if (error) handleAuthError(error);
+  return { success: true };
 }
 
 // ═══════════════════════════════════════════

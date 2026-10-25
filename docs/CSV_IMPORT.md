@@ -21,62 +21,100 @@ Obsługiwane formaty są wykrywane automatycznie:
 | CSV z nagłówkami | Pierwszy wiersz to tekst (nie liczby/daty) |
 | CSV bez nagłówków | Wszystkie wiersze to dane — kolumny numerowane automatycznie |
 
-### 3. Zmapuj kolumny (Krok 2)
+### 3. Zmapuj kolumny i wybierz osobę (Krok 2)
 
 Wskaż które kolumny zawierają:
 - **Data operacji** *(wymagane)* — format `YYYY-MM-DD`
 - **Kwota / Obciążenia** *(wymagane)* — kwota transakcji; ujemna = wydatek
 - **Uznania** *(opcjonalne, iPKO)* — gdy bank rozbija wypływy i wpływy na dwie kolumny
-- **Opis / Notatka** *(opcjonalne)* — używany do automatycznej kategoryzacji
-- **Osoba** *(wymagane)* — kto wpisuje transakcje
+- **Opis / Notatka** *(opcjonalne)* — używany później do kategoryzacji
+- **Osoba** *(wymagane)* — domyślna osoba dla transakcji z tego wyciągu
 
-Format PKO BP: kolumny są zmapowane automatycznie, opisy transakcji wyodrębniane z pól bankowych (Lokalizacja, Tytuł, Nazwa odbiorcy).
+Formaty PKO BP, Millennium i Revolut: kolumny są zmapowane automatycznie, opisy wyodrębniane z pól bankowych (Lokalizacja, Tytuł, Nazwa odbiorcy).
 
-### 4. Przejrzyj i edytuj (Krok 3)
+### 4. Zapisz do kolejki (Krok 2 → 3)
 
-- Każde pole jest edytowalne inline (data, kwota, opis, kategoria, podkategoria)
-- Transakcje bez przypisanej kategorii są wyróżnione żółtym tłem
-- Kliknij ✕ aby usunąć transakcję z importu
-- Przycisk „Szczegóły CSV" pokazuje oryginalne pola z pliku
+Kliknij **„Zapisz do kolejki →”**. Kreator (od #131) **nie kategoryzuje** —
+zapisuje operacje do kolejki „Do rozliczenia” (`transakcje_dowody` w statusie
+`nowy`, RPC `kolejka_dodaj`) i pokazuje podsumowanie:
 
-#### Kategoryzacja AI
+- **Dodano do kolejki** — nowe operacje,
+- **Pominięto** — już w kolejce, zaksięgowane albo wykluczone (ten sam odcisk),
+- przycisk **„Przejdź do rozliczenia”**.
 
-Jeśli ustawiony jest `VITE_OPENAI_API_KEY`, po przejściu do tego kroku aplikacja automatycznie:
-1. Generuje embeddingi dla wszystkich nieprzypisanych transakcji (jedno batch API call)
-2. Wyszukuje podobne opisy w bazie wektorowej `category_rules`
-3. Przypisuje kategorie z wynikiem podobieństwa ≥ 0,78
+Co trafia do bazy dla każdej operacji:
 
-Wynik widoczny w banerem „AI automatycznie przypisało X transakcji".
+| Pole | Skąd |
+|---|---|
+| `zrodlo`, `zrodlo_id` | format pliku i odcisk sha256 (`docs/DEDUP_TRANSAKCJI.md` §4) |
+| `data`, `kwota_pelna` | z wyciągu, kwota ze znakiem przepływu |
+| `opis` | opis wyodrębniony z pól banku, maks. 1000 znaków (kasowany przy zatwierdzeniu) |
+| `osoba` | wybrana w kroku 2 |
+| `kontrahent` | z aliasów `kontrahenci_aliasy`, rozpoznany na pełnym rachunku **w pamięci przeglądarki** |
+| `surowe` | tylko 4 ostatnie cyfry kont, rodzaj operacji |
+| `rachunek_hmac` | HMAC rachunku kontrahenta z `POST /api/v1/rachunki/hmac` |
 
-### 5. Importuj (Krok 3 → 4)
+**Pełny numer rachunku nie opuszcza przeglądarki** inaczej niż do endpointu
+HMAC. Endpoint niedostępny (brak klucza, brak sieci) → operacja trafia do
+kolejki bez `rachunek_hmac`.
 
-Kliknij **„Importuj N transakcji"** — batch insert do Supabase.
+Baza bez migracji kolejki → błąd „Baza nie ma migracji kolejki importu”;
+kreator nie zapisuje transakcji inną ścieżką.
 
-Po udanym imporcie:
-- Kategorie wszystkich transakcji są zapisywane w bazie wektorowej jako wzorce do przyszłych importów
-- Dane natychmiast pojawiają się w głównym widoku aplikacji
+Kreator niczego nie trzyma w `localStorage`. Autozapis postępu sprzed #131
+(klucz `csv_import_progress`) jest usuwany przy starcie aplikacji.
 
 ---
 
-## Reguły rozpoznawania
+## Rozliczanie kolejki
 
-Panel w Kroku 3 pozwala zarządzać regułami słów kluczowych:
+Widok **„Do rozliczenia”** (przycisk z licznikiem w nagłówku, kod:
+`src/components/kolejka/`, logika: `src/lib/csvImport/rozliczenie.js`).
+Niedostępny offline. Gdy w kolejce są operacje z oglądanego miesiąca, widok
+miesięczny pokazuje baner „N operacji z tego miesiąca czeka na rozliczenie —
+sumy są niepełne”.
 
-### Dodawanie reguły
+### Propozycje
 
-1. Kliknij **„+ Dodaj regułę"**
-2. Wpisz fragment tekstu który pojawia się w opisach transakcji (np. `Allegro`, `PKO Leasing`)
-3. Wybierz typ, kategorię i podkategorię
-4. Kliknij **„Dodaj i zastosuj"**
+Liczone **w przeglądarce, przy otwarciu widoku** — nic z nich nie trafia do
+bazy przed zatwierdzeniem:
 
-Reguła jest:
-- Natychmiast stosowana do wszystkich nieprzypisanych transakcji w bieżącym imporcie
-- Zapisywana do `localStorage` — aktywna w kolejnych importach
-- Przy włączonym AI — zapisywana również jako embedding w Supabase `category_rules`
+1. reguły użytkownika i wbudowany słownik (`categorizeDescription`),
+   dopasowane do słownika gospodarstwa (`validateCategoryExists`);
+2. parowanie (`parujPartie`): zobowiązania (kategoria + udział, np. `1/2`),
+   podobne wpisy ręczne (podpowiedź „To ten sam wpis”), kontrahent po HMAC
+   rachunku (aliasy haszowane tym samym endpointem);
+3. AI (embeddingi) dla wierszy wciąż bez kategorii.
 
-### Przeglądanie reguł
+Domyślnie zaznaczone są wiersze z kategorią inną niż `Inne / Nieprzewidziane`.
 
-Kliknij **„Lista reguł"** aby zobaczyć i usunąć zapisane reguły.
+### Edycja
+
+- Kwota dowodu jest tylko do odczytu. **Udział** (`całość`, `1/2`, `4/6`)
+  liczy kwotę transakcji z brutto i dopisuje ślad `[udział 1/2 z … zł]`.
+- Data, opis (→ komentarz transakcji), kategoria, podkategoria i **osoba**
+  (domyślnie z importu) są edytowalne.
+- Filtry: status parowania, miesiąc, źródło. Panel „Reguły rozpoznawania”
+  (reguły w bazie, wspólne dla urządzeń) stosuje nową regułę od razu.
+- Edycje żyją tylko w pamięci widoku — **bez localStorage**. Wyjście z widoku
+  z niezatwierdzonymi zmianami wymaga potwierdzenia.
+
+### Akcje
+
+| Akcja | Zapis |
+|---|---|
+| **Zatwierdź N** — zaznaczone i widoczne po filtrach | RPC `kolejka_zatwierdz` (nowa transakcja albo dołączenie do wpisu ręcznego, zamknięcie zobowiązania) |
+| **Wyklucz** (transfer własny, zwrot, rozliczenie poza budżetem…) | `UPDATE status = 'wykluczony'` |
+| Zakładka **Wykluczone → Przywróć** | `UPDATE status = 'nowy'` |
+
+Operacja zatwierdzona albo wykluczona w międzyczasie na innym urządzeniu
+(`pominieta`) to nie błąd: toast i odświeżenie listy, bez utraty edycji
+pozostałych wierszy. Po zatwierdzeniu odświeżają się dane miesiąca, cache
+roczny i licznik kolejki.
+
+**Bezpieczeństwo:** opis z banku (tytuł przelewu wpisuje nadawca) jest
+renderowany wyłącznie jako tekst — w `src/` nie ma `dangerouslySetInnerHTML`
+(pilnuje tego test).
 
 ---
 
@@ -86,7 +124,7 @@ Kliknij **„Lista reguł"** aby zobaczyć i usunąć zapisane reguły.
 Opis transakcji
     │
     ▼
-1. Reguły użytkownika (localStorage) — najwyższy priorytet
+1. Reguły użytkownika (tabela reguly_rozpoznawania) — najwyższy priorytet
     │
     ▼
 2. Wbudowane słowa kluczowe (~70 reguł)
@@ -173,12 +211,6 @@ Każde gospodarstwo (`household_id`) ma własne, izolowane reguły — chronione
 | Udany import | Embeddingi dla wszystkich skategoryzowanych transakcji |
 
 Im więcej importów, tym trafniejsze dopasowania w kolejnych sesjach.
-
----
-
-## Auto-zapis postępu
-
-Podczas edycji (Krok 3) postęp jest automatycznie zapisywany do `localStorage`. Przy ponownym otwarciu importu pojawi się pytanie czy przywrócić poprzednią sesję (ważna przez 24 h).
 
 ---
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { wczytajWiersze } from '../banki';
 import { zastosujRegule } from '../kategoryzacja';
-import { przygotujTransakcje, edytujPole, usunZMeta, liczStatusy, bezKategorii } from '../przygotowanie';
+import { przygotujTransakcje, edytujPole, liczStatusy, bezKategorii } from '../przygotowanie';
 
 const kategorie = {
   Wydatek: { Jedzenie: ['Zakupy domowe'], Inne: ['Nieprzewidziane'] },
@@ -94,11 +94,6 @@ describe('edycja podglądu', () => {
     expect(edytujPole(tx, 'kwota', -3).typ).toBe('Wydatek');
     expect(edytujPole(tx, 'kwota', '0').typ).toBe('Wydatek');
     expect(edytujPole(tx, 'opis', 'x')).toEqual({ kwota: -5, typ: 'Wydatek', opis: 'x' });
-  });
-
-  it('usunZMeta przesuwa kolejne klucze w dół', () => {
-    expect(usunZMeta({ 0: 'a', 1: 'b', 2: 'c' }, 1)).toEqual({ 0: 'a', 1: 'c' });
-    expect(usunZMeta({ 0: 'a' }, 0)).toEqual({});
   });
 
   it('zastosujRegule zmienia tylko nieprzypisane wiersze zgodnego typu', () => {

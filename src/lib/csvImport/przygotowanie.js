@@ -52,39 +52,6 @@ export const zastosujParowanie = (lista, wyniki, kategorie) =>
   });
 
 /**
- * Rekordy dla api.importujTransakcje() z transakcji podglądu. Pomija wiersze
- * odznaczone; zaznaczony „już zaksięgowany" wiersz idzie z `wymus` — RPC
- * utworzy go ponownie tylko wtedy, gdy poprzednią transakcję usunięto.
- */
-export const rekordyImportu = (lista, osoba) =>
-  lista
-    .filter(tx => tx._dedup?.wybrana !== false)
-    .map(tx => {
-      const kwota = parseKwota(tx.kwota);
-      const d = tx._dedup || {};
-      return {
-        data: tx.data,
-        typ: tx.typ || (kwota < 0 ? 'Wydatek' : 'Przychód'),
-        kwota,
-        kategoria: tx.kategoria,
-        podkategoria: tx.podkategoria,
-        osoba,
-        komentarz: tx.opis,
-        zrodlo: d.zrodlo,
-        zrodlo_id: d.zrodlo_id,
-        surowe: d.surowe ?? null,
-        kontrahent: d.kontrahent ?? null,
-        dokument: d.dokument ?? null,
-        kwota_pelna: d.kwotaPelna ?? null,
-        udzial: d.udzial ?? null,
-        zobowiazanie_id: d.zobowiazanie?.id ?? null,
-        transakcja_id: d.akcja === 'dolacz' ? d.dolaczDo : null,
-        do_weryfikacji: d.status === 'do_weryfikacji',
-        wymus: d.status === 'zaksiegowana',
-      };
-    });
-
-/**
  * Krok 2 → 3: wiersze CSV + mapowanie kolumn → transakcje podglądu.
  * Kolumna obciążeń = wydatek (zawsze ujemny), uznań = przychód; kategoria
  * ze słów kluczowych i reguł użytkownika, dopasowana do słownika. Wiersze
@@ -191,22 +158,6 @@ export const edytujPole = (tx, field, value) => {
     if (!isNaN(num) && num !== 0) updated.typ = num < 0 ? 'Wydatek' : 'Przychód';
   }
   return updated;
-};
-
-/**
- * Meta po usunięciu wiersza `index`: kolejne klucze przesuwają się w dół,
- * żeby pozostały wyrównane do zwartych indeksów tablicy transakcji.
- */
-export const usunZMeta = (meta, index) => {
-  const keys = Object.keys(meta).map(Number).sort((a, b) => a - b);
-  const next = {};
-  let newIdx = 0;
-  for (const k of keys) {
-    if (k === index) continue;
-    next[newIdx] = meta[k];
-    newIdx++;
-  }
-  return next;
 };
 
 /** Liczba wierszy w każdym statusie rozpoznawania (+ `wszystkie`). */

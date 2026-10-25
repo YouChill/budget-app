@@ -124,6 +124,29 @@ curl -X PATCH https://twoja-domena/api/v1/zobowiazania/$ID -H "Authorization: Be
   -H "Content-Type: application/json" -d '{"status":"oplacone"}'
 ```
 
+### HMAC rachunków — `POST /api/v1/rachunki/hmac`
+
+Skrót numerów rachunków kontrahentów do zapisu w `transakcje_dowody.rachunek_hmac`
+(kolejka importu, #130). Pełny NRB nigdy nie trafia do bazy.
+
+```json
+// żądanie
+{ "rachunki": ["PL61109010140000071219812874", "1234"] }
+// odpowiedź 200
+{ "hmac": ["3f9c…(64 znaki hex)", null] }
+```
+
+- `hmac = HMAC-SHA256(RACHUNEK_HMAC_KEY, household_id + '|' + rachunek)` jako hex.
+  Rachunek kanoniczny: same cyfry, ostatnie 26 (prefiks `PL` / kraju odpada);
+  krótszy → `null`. Ten sam rachunek w dwóch gospodarstwach daje różne wartości.
+- Maks. **2000** rachunków na żądanie, każdy ≤ 40 znaków → inaczej `400`.
+- Brak `RACHUNEK_HMAC_KEY` albo klucz krótszy niż 32 bajty → `503`.
+  Klient (`api.hmacRachunkow`) traktuje to jak brak HMAC — import przechodzi
+  bez `rachunek_hmac`.
+- Rachunki ani wyniki nie są logowane; odpowiedź z `Cache-Control: no-store`.
+- **Rotacja klucza** zmienia wszystkie wartości — wymagałaby przeliczenia
+  `rachunek_hmac` w bazie (znane ograniczenie, poza zakresem).
+
 ## Kody odpowiedzi
 
 | Kod | Znaczenie |

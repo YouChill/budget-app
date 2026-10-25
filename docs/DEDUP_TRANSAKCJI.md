@@ -13,6 +13,7 @@ Analiza z 2026-10-11 i stan jej wdrożenia. Źródłem prawdy dla schematu jest
 | 3. Tabela `zobowiazania` + endpoint API | ✅ | `api/v1/[...route].js`, `docs/API.md` |
 | 4. Radar Gmail: zapis i odczyt zobowiązań | ⏳ poza repo | korzysta z `POST/PATCH /api/v1/zobowiazania` |
 | 5. Backfill `kwota_pelna`/`udzial` + data graniczna | ✅ | backfill w 014; data graniczna — patrz §7 |
+| 6. Kolejka importu (#128) | ✅ | §9, `supabase/migrations/20261025100000_kolejka_importu.sql` |
 
 Wdrożenie: uruchom `014_dowody_i_zobowiazania.sql` w SQL Editorze Supabase
 **przed** deployem frontu i API. `GET /api/v1/transakcje` czyta już nowe
@@ -188,7 +189,82 @@ z analizy) działa przez RPC: pozycja z `dowod` i `transakcja_id`, bez
   PGHOST=/run/postgresql PGUSER=postgres bash migration/tests/run_sql_tests.sh
   ```
 
-## 9. Radar Gmail — co zostało
+## 9. Kolejka importu (epik #128)
+
+Od migracji `supabase/migrations/20261025100000_kolejka_importu.sql` wyciąg
+trafia najpierw do **kolejki** — wierszy `transakcje_dowody` w statusie `nowy`
+— a kategoryzacja dzieje się później, w widoku „Do rozliczenia”.
+
+### Stany dowodu
+
+| Status | Znaczenie | `transakcja_id` |
+|---|---|---|
+| `nowy` | czeka na rozliczenie | zawsze `NULL` |
+| `zatwierdzony` | zaksięgowany jako transakcja (nowa albo dołączona) | transakcja, albo `NULL` po jej usunięciu |
+| `wykluczony` | poza budżetem (transfer własny, zwrot…) albo sam dowód bez transakcji | zawsze `NULL` |
+
+```
+            kolejka_zatwierdz
+   nowy ───────────────────────▶ zatwierdzony
+   ▲  │                              │ transakcję usunięto
+   │  │ wyklucz                      │ (transakcja_id → NULL)
+   │  ▼                              ▼
+ wykluczony ◀── przywróć ──   zatwierdzony bez transakcji ── UPDATE status='nowy' ──▶ nowy
+```
+
+Strażnik w triggerze `dowody_straznik` (niezależny od klienta) odrzuca
+z kodem `23514`:
+
+- zmianę pól operacji: `household_id`, `zrodlo`, `zrodlo_id`, `data`,
+  `kwota_pelna`, `rachunek_hmac`, `utworzono_przez`;
+- przejścia spoza diagramu (np. `wykluczony → zatwierdzony`,
+  `zatwierdzony → nowy` przy istniejącej transakcji);
+- przepięcie zatwierdzonego dowodu na inną transakcję.
+
+Wejście w `zatwierdzony` zeruje `opis` — surowy opis zostaje tylko
+w `transakcje.komentarz`. Każda zmiana statusu ustawia `status_zmieniony`.
+`utworzono_przez` pochodzi z sesji (`auth.uid()`), nie z payloadu.
+
+### RPC
+
+- `kolejka_dodaj({pozycje})` — do 2000 operacji ze źródeł bankowych
+  (`millennium`, `pko`, `revolut`, `csv`), `ON CONFLICT DO NOTHING`. Zwraca
+  `{dodane, pominiete}`; pominięte = już w kolejce, zaksięgowane albo wykluczone.
+- `kolejka_zatwierdz({pozycje: [{dowod_id, transakcja | transakcja_id, zobowiazanie_id?}]})`
+  — dowód blokowany `FOR UPDATE`, więc dwa urządzenia zatwierdzające to samo
+  dają jedną transakcję, a drugie dostaje `pominieta`. Cudzy dowód wygląda
+  jak nieistniejący (`pominieta`), cudza `transakcja_id` wycofuje całe wywołanie.
+- Wykluczenie i przywrócenie: zwykły `UPDATE status` przez RLS.
+- `importuj_transakcje` — kontrakt bez zmian; podpięty dowód dostaje
+  `zatwierdzony`, dowód bez transakcji — `wykluczony`. Wspólne kroki zapisu
+  (`import_wstaw_transakcje`, `import_zamknij_zobowiazanie`) używa też
+  `kolejka_zatwierdz`.
+
+Istniejące dowody przy migracji: z transakcją → `zatwierdzony`, bez →
+`wykluczony`. Żaden nie trafia do kolejki.
+
+### Rachunek kontrahenta: HMAC (#130)
+
+Wiersz kolejki nie ma pełnego numeru rachunku — kategoryzacja dzieje się po
+imporcie, a pełnego NRB nie zapisujemy (zasada z 014). Dowód dostaje
+`rachunek_hmac` z `POST /api/v1/rachunki/hmac` (docs/API.md): HMAC-SHA256
+z sekretem `RACHUNEK_HMAC_KEY` po stronie serwera, z domieszką `household_id`.
+Zwykły sha256 26 cyfr z sumą kontrolną dałoby się przeliczyć słownikowo;
+HMAC bez sekretu — nie.
+
+- Kanoniczny rachunek (`kanonicznyRachunek` w `src/lib/odciski.js`): same
+  cyfry, ostatnie 26. Krótszy → bez HMAC.
+- Parowanie (`rozpoznajKontrahenta`): przy pełnym rachunku w pamięci
+  (kreator importu) — dopasowanie końcówki jak dotąd; przy samym
+  `rachunekHmac` (kolejka) — równość z `wzorzecHmac` aliasu
+  (`getKontekstParowania(…, { hmacAliasow: true })`).
+- **Ograniczenie:** aliasy `rachunek` krótsze niż 26 cyfr nie mają HMAC,
+  więc działają tylko w kreatorze (pełny numer w pamięci), nie w kolejce.
+  Zapisuj aliasy rachunków jako pełny NRB.
+- **Rotacja klucza** unieważnia zapisane `rachunek_hmac` — wymaga
+  przeliczenia (poza zakresem). Brak klucza = dowody bez HMAC, import działa.
+
+## 10. Radar Gmail — co zostało
 
 - Zapis zobowiązań: `POST /api/v1/zobowiazania` (upsert po kontrahencie
   i dokumencie, z kwotą, terminem, sposobem i podpowiedzią kategorii oraz udziału).
