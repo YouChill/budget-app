@@ -18,6 +18,10 @@
  *   POST /zobowiazania to upsert po (kontrahent, dokument) — radar Gmail może
  *   wysyłać tę samą fakturę wielokrotnie.
  *
+ * HMAC rachunków (#130):
+ *   POST /api/v1/rachunki/hmac { rachunki: string[] } → { hmac: (string|null)[] }
+ *   — klucz RACHUNEK_HMAC_KEY wyłącznie po stronie serwera (api/_lib/hmac.js).
+ *
  * Bezpieczeństwo:
  *   - Każde żądanie wymaga JWT sesji Supabase (Authorization: Bearer …).
  *   - Zapytania wykonuje klient z tokenem UŻYTKOWNIKA (klucz anon, nigdy
@@ -33,6 +37,7 @@
 import { createAuthContext } from '../_lib/auth.js';
 import { pozycjaZRekordu } from '../../src/lib/importPozycje.js';
 import { ApiError, badRequest, notFound, fromDbError, sendError } from '../_lib/errors.js';
+import { kluczHmac, hmacRachunku } from '../_lib/hmac.js';
 import {
   isUuid,
   validateTransakcja,
@@ -41,6 +46,7 @@ import {
   validateKategoria,
   validateOsoba,
   validateBudzet,
+  validateRachunki,
   TYPY,
   ZAKRESY,
   STATUSY_ZOBOWIAZAN,
@@ -433,6 +439,20 @@ async function handleMe(ctx, segments, req, res) {
   });
 }
 
+/**
+ * POST /rachunki/hmac — HMAC rachunków kontrahentów w kolejności wejścia,
+ * null dla rachunku krótszego niż 26 cyfr. Ani rachunki, ani wyniki nie
+ * trafiają do logów (sendError loguje tylko błąd, nie body żądania).
+ */
+function handleRachunki(ctx, segments, req, res) {
+  if (segments.length !== 2 || segments[1] !== 'hmac') throw notFound('Nieznana ścieżka');
+  assertMethod(req, ['POST'], res);
+  const klucz = kluczHmac();
+  const { values, errors } = validateRachunki(req.body);
+  if (errors.length > 0) throw badRequest('Nieprawidłowe dane wejściowe', errors);
+  return res.status(200).json({ hmac: values.map(r => hmacRachunku(klucz, ctx.householdId, r)) });
+}
+
 // ── Handler ─────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -450,6 +470,9 @@ export default async function handler(req, res) {
     const [resourceName] = segments;
     if (resourceName === 'me') {
       return await handleMe(ctx, segments, req, res);
+    }
+    if (resourceName === 'rachunki') {
+      return handleRachunki(ctx, segments, req, res);
     }
 
     const resource = RESOURCES[resourceName];

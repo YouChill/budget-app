@@ -360,3 +360,23 @@ export function validateBudzet(body, opts = {}) {
 
   return result;
 }
+
+// ── Rachunki do HMAC (/rachunki/hmac) ──────────────────────────────────────
+
+export const MAX_RACHUNKI = 2000;
+const MAX_RACHUNEK = 40;
+
+/**
+ * Body { rachunki: string[] } — do 2000 elementów po maks. 40 znaków.
+ * Komunikaty błędów NIE zawierają wartości (to numery kont).
+ */
+export function validateRachunki(body) {
+  const lista = body && typeof body === 'object' && !Array.isArray(body) ? body.rachunki : undefined;
+  if (!Array.isArray(lista)) return { values: [], errors: ['Pole "rachunki" musi być tablicą tekstów'] };
+  if (lista.length > MAX_RACHUNKI) return { values: [], errors: [`Maksymalnie ${MAX_RACHUNKI} rachunków na żądanie`] };
+  const zle = lista.findIndex(r => typeof r !== 'string' || r.length > MAX_RACHUNEK);
+  if (zle !== -1) {
+    return { values: [], errors: [`Element ${zle} pola "rachunki" musi być tekstem (maks. ${MAX_RACHUNEK} znaków)`] };
+  }
+  return { values: lista, errors: [] };
+}

@@ -243,6 +243,27 @@ w `transakcje.komentarz`. Każda zmiana statusu ustawia `status_zmieniony`.
 Istniejące dowody przy migracji: z transakcją → `zatwierdzony`, bez →
 `wykluczony`. Żaden nie trafia do kolejki.
 
+### Rachunek kontrahenta: HMAC (#130)
+
+Wiersz kolejki nie ma pełnego numeru rachunku — kategoryzacja dzieje się po
+imporcie, a pełnego NRB nie zapisujemy (zasada z 014). Dowód dostaje
+`rachunek_hmac` z `POST /api/v1/rachunki/hmac` (docs/API.md): HMAC-SHA256
+z sekretem `RACHUNEK_HMAC_KEY` po stronie serwera, z domieszką `household_id`.
+Zwykły sha256 26 cyfr z sumą kontrolną dałoby się przeliczyć słownikowo;
+HMAC bez sekretu — nie.
+
+- Kanoniczny rachunek (`kanonicznyRachunek` w `src/lib/odciski.js`): same
+  cyfry, ostatnie 26. Krótszy → bez HMAC.
+- Parowanie (`rozpoznajKontrahenta`): przy pełnym rachunku w pamięci
+  (kreator importu) — dopasowanie końcówki jak dotąd; przy samym
+  `rachunekHmac` (kolejka) — równość z `wzorzecHmac` aliasu
+  (`getKontekstParowania(…, { hmacAliasow: true })`).
+- **Ograniczenie:** aliasy `rachunek` krótsze niż 26 cyfr nie mają HMAC,
+  więc działają tylko w kreatorze (pełny numer w pamięci), nie w kolejce.
+  Zapisuj aliasy rachunków jako pełny NRB.
+- **Rotacja klucza** unieważnia zapisane `rachunek_hmac` — wymaga
+  przeliczenia (poza zakresem). Brak klucza = dowody bez HMAC, import działa.
+
 ## 10. Radar Gmail — co zostało
 
 - Zapis zobowiązań: `POST /api/v1/zobowiazania` (upsert po kontrahencie

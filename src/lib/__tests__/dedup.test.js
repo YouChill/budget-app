@@ -8,6 +8,7 @@ import {
   udzialWGroszach,
   znacznikUdzialu,
   odczytajUdzial,
+  kanonicznyRachunek,
 } from '../odciski';
 import { parujPartie, rozpoznajKontrahenta, oknoZobowiazania } from '../parowanie';
 import { pozycjaZRekordu } from '../importPozycje';
@@ -249,6 +250,36 @@ describe('parowanie', () => {
 
   it('krótki wzorzec rachunku nie dopasowuje się do końcówki każdego konta', () => {
     expect(rozpoznajKontrahenta({ rachunek: KONTO }, [{ wzorzec: '7777', typ_wzorca: 'rachunek', kontrahent: 'x' }])).toBeNull();
+  });
+
+  it('wiersz z kolejki (tylko rachunekHmac) dopasowuje alias po HMAC', () => {
+    const aliasy = [
+      { wzorzec: KONTO_PLAY, wzorzecHmac: 'a'.repeat(64), typ_wzorca: 'rachunek', kontrahent: 'play' },
+      { wzorzec: 'APPLE.COM/BILL', typ_wzorca: 'opis', kontrahent: 'apple' },
+    ];
+    expect(rozpoznajKontrahenta({ rachunekHmac: 'a'.repeat(64), opis: 'PRZELEW' }, aliasy)).toBe('play');
+    expect(rozpoznajKontrahenta({ rachunekHmac: 'b'.repeat(64), opis: 'PRZELEW' }, aliasy)).toBeNull();
+    // alias bez HMAC (krótszy niż 26 cyfr) nie łapie wiersza bez pełnego rachunku
+    expect(rozpoznajKontrahenta({ rachunekHmac: 'a'.repeat(64) }, [{ wzorzec: '7777', typ_wzorca: 'rachunek', kontrahent: 'x' }])).toBeNull();
+    // opis działa dalej
+    expect(rozpoznajKontrahenta({ rachunekHmac: 'b'.repeat(64), opis: 'APPLE.COM/BILL 123' }, aliasy)).toBe('apple');
+  });
+});
+
+describe('kanonicznyRachunek', () => {
+  const NRB = '61109010140000071219812874';
+  it('z prefiksem PL i spacjami → 26 cyfr', () => {
+    expect(kanonicznyRachunek(`PL${NRB}`)).toBe(NRB);
+    expect(kanonicznyRachunek('PL 61 1090 1014 0000 0712 1981 2874')).toBe(NRB);
+    expect(kanonicznyRachunek(NRB)).toBe(NRB);
+  });
+  it('dłuższy ciąg cyfr → ostatnie 26', () => {
+    expect(kanonicznyRachunek(`0048${NRB}`)).toBe(NRB);
+  });
+  it('za krótki albo pusty → null', () => {
+    expect(kanonicznyRachunek('1234 5678')).toBeNull();
+    expect(kanonicznyRachunek('')).toBeNull();
+    expect(kanonicznyRachunek(null)).toBeNull();
   });
 });
 

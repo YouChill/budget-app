@@ -304,6 +304,7 @@ budget-app/
 | `VITE_SUPABASE_ANON_KEY` | ✅ | Klucz anonimowy Supabase |
 | `OPENAI_API_KEY` | ➕ | Klucz OpenAI — **tylko po stronie serwera** (proxy `/api/embeddings`) |
 | `VITE_AI_ENABLED` | ➕ | Flaga `true/false` włączająca kategoryzację AI w UI |
+| `RACHUNEK_HMAC_KEY` | ➕ | Sekret HMAC rachunków kontrahentów (`openssl rand -base64 48`) — **tylko po stronie serwera**, ustaw w Vercel (Production + Preview) |
 | `SUPABASE_URL` | ➕ | URL Supabase dla funkcji `/api/*` (domyślnie `VITE_SUPABASE_URL`) |
 | `SUPABASE_ANON_KEY` | ➕ | Klucz anon dla funkcji `/api/*` (domyślnie `VITE_SUPABASE_ANON_KEY`) |
 

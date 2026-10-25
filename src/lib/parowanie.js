@@ -28,10 +28,16 @@ const TYPOWE_UDZIALY = ['1/2', '4/6'];
 
 /**
  * Rozpoznaje kontrahenta: dla przelewów po numerze rachunku (same cyfry,
- * jak wykluczenia w skillu), dla kart po aliasie w opisie.
+ * jak wykluczenia w skillu), dla kart po aliasie w opisie. Wiersz z kolejki
+ * nie ma już pełnego rachunku, tylko rachunekHmac (#130) — wtedy porównujemy
+ * go z wzorzecHmac aliasu (api.zHmacAliasow).
  */
 export function rozpoznajKontrahenta(wiersz, aliasy = []) {
   const rachunek = tylkoCyfry(wiersz.rachunek);
+  if (!rachunek && wiersz.rachunekHmac) {
+    const trafienie = aliasy.find((a) => a.typ_wzorca === 'rachunek' && a.wzorzecHmac === wiersz.rachunekHmac);
+    if (trafienie) return trafienie.kontrahent;
+  }
   if (rachunek) {
     // Pełny NRB ma 26 cyfr; w wyciągu bywa z prefiksem kraju, więc porównujemy
     // końcówkę — ale nie krótszą niż MIN_RACHUNEK, bo „7777" pasuje do wszystkiego.

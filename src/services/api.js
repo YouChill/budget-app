@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import { DEFAULT_KATEGORIE } from '../data/defaultKategorie';
 import { pozycjaZRekordu, brakMigracji014, brakMigracji } from '../lib/importPozycje';
 import { fetchAll } from '../lib/fetchAll';
+import { kanonicznyRachunek } from '../lib/odciski';
 
 // ═══════════════════════════════════════════
 // PROFILE & HOUSEHOLD FUNCTIONS
@@ -313,8 +314,10 @@ export async function sprawdzOdciski(zrodlo, ids) {
  * zobowiązania, aliasy kontrahentów i transakcje bez dowodu w oknie dat
  * (wpisy ręczne oraz wszystko sprzed wprowadzenia odcisków).
  * Zwraca null, gdy baza nie ma migracji 014.
+ * hmacAliasow: aliasy rachunków dostają wzorzecHmac — dla wierszy kolejki,
+ * które mają tylko rachunek_hmac (#130).
  */
-export async function getKontekstParowania(od, doDaty) {
+export async function getKontekstParowania(od, doDaty, { hmacAliasow = false } = {}) {
   const householdId = await getHouseholdId();
   const [zob, aliasy, tx, dowody] = await Promise.all([
     supabase.from('zobowiazania')
@@ -346,9 +349,58 @@ export async function getKontekstParowania(od, doDaty) {
   const zDowodem = new Set(dowody.data.map(d => d.transakcja_id));
   return {
     zobowiazania: zob.data,
-    aliasy: aliasy.data,
+    aliasy: hmacAliasow ? await zHmacAliasow(aliasy.data) : aliasy.data,
     bezDowodu: tx.data.filter(t => !zDowodem.has(t.id)),
   };
+}
+
+// ═══════════════════════════════════════════
+// HMAC RACHUNKÓW KONTRAHENTÓW (#130)
+// ═══════════════════════════════════════════
+
+const HMAC_CHUNK = 2000;
+
+/**
+ * HMAC rachunków (POST /api/v1/rachunki/hmac) w kolejności wejścia; null dla
+ * rachunku krótszego niż 26 cyfr. Endpoint niedostępny (503 bez klucza,
+ * brak sieci, błąd) → same null: import nie może się przez to zablokować,
+ * dowód po prostu nie dostaje rachunek_hmac. Rachunków nie logujemy.
+ */
+export async function hmacRachunkow(lista) {
+  const wynik = new Array(lista.length).fill(null);
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    if (!token) return wynik;
+    for (let i = 0; i < lista.length; i += HMAC_CHUNK) {
+      const partia = lista.slice(i, i + HMAC_CHUNK).map(r => String(r ?? '').slice(0, 40));
+      const res = await fetch('/api/v1/rachunki/hmac', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ rachunki: partia }),
+      });
+      if (!res.ok) return new Array(lista.length).fill(null);
+      const { hmac } = await res.json();
+      if (!Array.isArray(hmac) || hmac.length !== partia.length) return new Array(lista.length).fill(null);
+      hmac.forEach((h, j) => { wynik[i + j] = typeof h === 'string' ? h : null; });
+    }
+  } catch {
+    return new Array(lista.length).fill(null);
+  }
+  return wynik;
+}
+
+/**
+ * Aliasy typu „rachunek” dostają wzorzecHmac (ten sam endpoint), żeby
+ * rozpoznawać kontrahenta po rachunek_hmac dowodu, gdy pełnego numeru nie
+ * ma już w pamięci. Aliasy krótsze niż 26 cyfr zostają bez HMAC.
+ */
+export async function zHmacAliasow(aliasy) {
+  const rachunkowe = aliasy.filter(a => a.typ_wzorca === 'rachunek' && kanonicznyRachunek(a.wzorzec));
+  if (rachunkowe.length === 0) return aliasy;
+  const hmac = await hmacRachunkow(rachunkowe.map(a => a.wzorzec));
+  const poAliasie = new Map(rachunkowe.map((a, i) => [a, hmac[i]]));
+  return aliasy.map(a => (poAliasie.get(a) ? { ...a, wzorzecHmac: poAliasie.get(a) } : a));
 }
 
 // Data dowodu może odbiegać od daty transakcji (np. faktura vs przelew),

@@ -18,6 +18,16 @@ export const ZRODLA = ['reczne', 'millennium', 'pko', 'revolut', 'csv', 'gmail',
 
 export const tylkoCyfry = (s) => String(s ?? '').replace(/\D/g, '');
 
+/**
+ * Rachunek do HMAC (#130): same cyfry, ostatnie 26 (NRB bez prefiksu kraju).
+ * Krótszy → null — nie haszujemy, bo „1234" w wielu rachunkach dałby kolizje
+ * z niczym niepowiązanymi kontami.
+ */
+export function kanonicznyRachunek(s) {
+  const cyfry = tylkoCyfry(s);
+  return cyfry.length >= 26 ? cyfry.slice(-26) : null;
+}
+
 export const normalizujOpis = (s) =>
   String(s ?? '').replace(/[\s\u00a0]+/g, ' ').trim().toUpperCase();
 
