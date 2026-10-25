@@ -1,13 +1,16 @@
 import { getMonthName } from '../utils/calculations';
 import { Icons } from './Icons';
 
-// Nagłówek: logo, akcje (import CSV, budżety, ustawienia — niedostępne offline),
-// użytkownik/wylogowanie, przełącznik Miesiąc/Rok i nawigacja okresu.
+// Nagłówek: logo, akcje (kolejka „Do rozliczenia", import CSV, budżety,
+// ustawienia — niedostępne offline), użytkownik/wylogowanie, przełącznik
+// Miesiąc/Rok i nawigacja okresu.
 export default function AppHeader({
   user,
   onLogout,
   isOffline,
   onOpenImport,
+  kolejkaLiczba = null,
+  onOpenKolejka,
   onOpenBudgets,
   onOpenSettings,
   activeView,
@@ -39,6 +42,31 @@ export default function AppHeader({
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+            {/* Kolejka importu — operacje czekające na rozliczenie */}
+            <button
+              onClick={() => !isOffline && onOpenKolejka?.()}
+              aria-pressed={activeView === 'kolejka'}
+              className={`relative rounded-xl p-2 sm:p-2.5 transition-all ${
+                isOffline
+                  ? 'text-gray-300 cursor-not-allowed'
+                  : activeView === 'kolejka'
+                  ? 'bg-indigo-100 text-indigo-600'
+                  : 'text-gray-500 hover:bg-gray-100 hover:text-indigo-600'
+              }`}
+              title={isOffline ? 'Niedostępne offline' : 'Do rozliczenia'}
+              aria-label={isOffline
+                ? 'Do rozliczenia — niedostępne offline'
+                : `Do rozliczenia${kolejkaLiczba ? ` (${kolejkaLiczba})` : ''}`}
+              disabled={isOffline}
+            >
+              <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              {kolejkaLiczba > 0 && !isOffline && (
+                <span aria-hidden="true" className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-[18px] text-center">
+                  {kolejkaLiczba > 999 ? '999+' : kolejkaLiczba}
+                </span>
+              )}
+            </button>
+
             {/* Przycisk importu CSV */}
             <button
               onClick={() => !isOffline && onOpenImport()}
@@ -128,7 +156,7 @@ export default function AppHeader({
               (‹ | etykieta | ›), żeby przełączanie Miesiąc/Rok nie
               przesuwało układu. Etykieta okresu jest przyciskiem
               „wróć do dziś" — bez osobnego przycisku zajmującego miejsce. */}
-          {activeView === 'monthly' ? (
+          {activeView === 'kolejka' ? null : activeView === 'monthly' ? (
             <div className="flex items-center gap-1 sm:gap-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-1">
               <button
                 onClick={() => onChangeMonth(-1)}

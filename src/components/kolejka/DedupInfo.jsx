@@ -1,22 +1,13 @@
-// używane przez widok Do rozliczenia (#132)
 const formatZl = (n) =>
   `${Math.abs(Number(n)).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`;
 
-/** Odznaka statusu pod opisem wiersza + wybór dla możliwego duplikatu wpisu ręcznego. */
+/**
+ * Odznaka parowania pod opisem wiersza kolejki + wybór dla możliwego
+ * duplikatu wpisu ręcznego („To ten sam wpis" = dołącz dowód do wpisu).
+ */
 export default function DedupInfo({ dedup, onChange }) {
   const { status } = dedup;
   const badge = 'inline-block text-[11px] leading-tight px-2 py-0.5 rounded-full border mt-1 mr-1';
-
-  if (status === 'zaksiegowana') {
-    return (
-      <div>
-        <span className={`${badge} bg-gray-100 border-gray-200 text-gray-600`}>Już zaksięgowane</span>
-        {dedup.istniejacaTransakcja === null && (
-          <span className="text-[11px] text-gray-500">transakcję usunięto — zaznacz, aby dodać ponownie</span>
-        )}
-      </div>
-    );
-  }
 
   const reczny = dedup.reczne?.[0];
   return (

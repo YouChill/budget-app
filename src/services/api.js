@@ -385,6 +385,84 @@ export async function dodajDoKolejki(pozycje) {
   return suma;
 }
 
+const KOLEJKA_KOLUMNY = 'id, zrodlo, data, kwota_pelna, opis, osoba, kontrahent, dokument, rachunek_hmac, status';
+
+/**
+ * Operacje z kolejki (domyślnie status 'nowy'), od najstarszej, ze
+ * stronicowaniem. Opcjonalny zakres dat { od, do } (YYYY-MM-DD).
+ */
+export async function getKolejka({ od, do: doDaty, status = 'nowy' } = {}) {
+  const householdId = await getHouseholdId();
+  const { data, error } = await fetchAll(() => {
+    let q = supabase.from('transakcje_dowody')
+      .select(KOLEJKA_KOLUMNY, { count: 'exact' })
+      .eq('household_id', householdId)
+      .eq('status', status);
+    if (od) q = q.gte('data', od);
+    if (doDaty) q = q.lte('data', doDaty);
+    return q.order('data').order('id');
+  });
+  if (error) bladKolejki(error, 'transakcje_dowody');
+  return data;
+}
+
+/**
+ * Liczba operacji czekających w kolejce (opcjonalnie w zakresie dat).
+ * null = baza bez migracji kolejki.
+ */
+export async function getLicznikKolejki({ od, do: doDaty } = {}) {
+  const householdId = await getHouseholdId();
+  let q = supabase.from('transakcje_dowody')
+    .select('id', { count: 'exact', head: true })
+    .eq('household_id', householdId)
+    .eq('status', 'nowy');
+  if (od) q = q.gte('data', od);
+  if (doDaty) q = q.lte('data', doDaty);
+  const { count, error } = await q;
+  if (error) {
+    // brak kolumny status (42703) = baza sprzed migracji kolejki
+    if (brakMigracji(error, 'transakcje_dowody') || error.code === '42703') return null;
+    handleAuthError(error);
+  }
+  return count ?? 0;
+}
+
+/**
+ * Zatwierdzenie pozycji kolejki (RPC kolejka_zatwierdz), partiami po 1000.
+ * Zwraca { zatwierdzone, dolaczone, pominiete, polaczone, wyniki }.
+ */
+export async function zatwierdzKolejke(pozycje) {
+  const suma = { zatwierdzone: 0, dolaczone: 0, pominiete: 0, polaczone: 0, wyniki: [] };
+  for (let i = 0; i < pozycje.length; i += KOLEJKA_CHUNK) {
+    const { data, error } = await supabase.rpc('kolejka_zatwierdz', { p: { pozycje: pozycje.slice(i, i + KOLEJKA_CHUNK) } });
+    if (error) bladKolejki(error, 'kolejka_zatwierdz');
+    for (const k of ['zatwierdzone', 'dolaczone', 'pominiete', 'polaczone']) suma[k] += data[k] || 0;
+    suma.wyniki.push(...(data.wyniki || []));
+  }
+  invalidateYearlyCache();
+  return suma;
+}
+
+/**
+ * Wykluczenie ('wykluczony') albo przywrócenie ('nowy') operacji kolejki.
+ * Zwykły UPDATE przez RLS — przejścia pilnuje strażnik w bazie, a filtr
+ * po statusie źródłowym pomija wiersze zmienione w międzyczasie na innym
+ * urządzeniu. Zwraca liczbę zmienionych wierszy.
+ */
+export async function ustawStatusKolejki(ids, status) {
+  if (!['nowy', 'wykluczony'].includes(status)) throw new Error(`Nieobsługiwany status: ${status}`);
+  const householdId = await getHouseholdId();
+  const zrodlowy = status === 'nowy' ? 'wykluczony' : 'nowy';
+  const { data, error } = await supabase.from('transakcje_dowody')
+    .update({ status })
+    .eq('household_id', householdId)
+    .eq('status', zrodlowy)
+    .in('id', ids)
+    .select('id');
+  if (error) bladKolejki(error, 'transakcje_dowody');
+  return data.length;
+}
+
 /** Aliasy kontrahentów gospodarstwa; [] gdy baza nie ma migracji 014. */
 export async function getAliasyKontrahentow() {
   const householdId = await getHouseholdId();

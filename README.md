@@ -18,7 +18,7 @@ Aplikacja do śledzenia domowych wydatków i przychodów. Stworzona z myślą o 
 - **Synchronizacja** — dane w Supabase (PostgreSQL), dostępne z każdego urządzenia
 - **Real-time sync** — automatyczna aktualizacja danych między urządzeniami w czasie rzeczywistym
 - **Wykresy** — wykresy kołowe i słupkowe wydatków wg kategorii (Recharts)
-- **Import CSV z AI** — import wyciągów bankowych z automatycznym dopasowaniem kategorii opartym na wektorowej bazie wiedzy (OpenAI + pgvector)
+- **Import CSV z AI** — wyciąg trafia do kolejki „Do rozliczenia”, a kategorie (reguły, słownik, AI na pgvector, parowanie z fakturami) przypisujesz później, z dowolnego urządzenia
 - **Budżety** — ustawianie miesięcznych limitów wydatków wg kategorii (z powtarzalnością roczną/miesięczną)
 - **Podsumowanie roczne** — KPI roczne, wykresy miesięczne przychody vs wydatki, oszczędności skumulowane, porównanie rok do roku, podział wydatków na osoby
 - **Offline mode** — kolejka operacji offline z automatyczną synchronizacją po powrocie do sieci
@@ -201,7 +201,8 @@ budget-app/
 │   │   ├── TransactionItem.jsx  # Pojedyncza transakcja (swipe)
 │   │   ├── YearlySummary.jsx    # Podsumowanie roczne z wykresami
 │   │   ├── CSVImport.jsx        # Import CSV (drag-and-drop + AI)
-│   │   ├── csvImport/           # Kroki importu CSV i ich hooki
+│   │   ├── csvImport/           # Kroki importu CSV (plik → kolumny → kolejka)
+│   │   ├── kolejka/             # Widok „Do rozliczenia” (kolejka importu)
 │   │   ├── settings/            # Panel ustawień (kategorie, osoby)
 │   │   ├── AppHeader.jsx        # Nagłówek i nawigacja okresu
 │   │   ├── TransactionList.jsx  # Lista transakcji z wyszukiwaniem

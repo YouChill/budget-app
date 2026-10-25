@@ -13,7 +13,7 @@ vi.mock('../../services/categoryAI', () => ({
 
 import { normalizeDateToISO, parseKwota } from '../../lib/csvImport/parsowanie';
 import { categorizeDescription, validateCategoryExists } from '../../lib/csvImport/kategoryzacja';
-import { zastosujParowanie, rekordyImportu } from '../../lib/csvImport/przygotowanie';
+import { zastosujParowanie } from '../../lib/csvImport/przygotowanie';
 import { zrodloMillennium } from '../../lib/csvImport/banki';
 
 // ─── normalizeDateToISO ────────────────────────────────────────────────────────
@@ -335,7 +335,7 @@ describe('strażnik znaku (validateCategoryExists dla przychodów)', () => {
 
 // ─── Rozpoznawanie zaksięgowanych w podglądzie ───────────────────────────────
 
-describe('zastosujParowanie / rekordyImportu', () => {
+describe('zastosujParowanie', () => {
   const kategorie = { Wydatek: { Rachunki: ['Telefon'], Jedzenie: ['Kawa'] }, Przychód: {} };
   const tx = (over = {}) => ({
     data: '2026-10-04', kwota: -119.98, opis: 'PLAY F/60345080/09/26', typ: 'Wydatek',
@@ -357,29 +357,13 @@ describe('zastosujParowanie / rekordyImportu', () => {
     expect(w._dedup).toMatchObject({ status: 'polaczona', kwotaPelna: 119.98, udzial: '1/2', wybrana: true });
   });
 
-  it('już zaksięgowane — domyślnie odznaczone i pomijane w imporcie', () => {
+  it('już zaksięgowane — domyślnie odznaczone', () => {
     const lista = zastosujParowanie(
       [tx(), tx({ _dedup: { zrodlo: 'millennium', zrodlo_id: 'h4' } })],
       [{ status: 'zaksiegowana', reczne: [] }, { status: 'nowa', reczne: [] }],
       kategorie
     );
-    expect(lista[0]._dedup.wybrana).toBe(false);
-    const rekordy = rekordyImportu(lista, 'Paweł');
-    expect(rekordy.map(r => r.zrodlo_id)).toEqual(['h4']);
-  });
-
-  it('rekord importu niesie dowód, zobowiązanie i udział', () => {
-    const lista = zastosujParowanie([tx()], [{ status: 'polaczona', zobowiazanie: play, reczne: [] }], kategorie);
-    const [r] = rekordyImportu(lista, 'Paweł');
-    expect(r).toMatchObject({
-      zrodlo: 'millennium', zrodlo_id: 'h3', zobowiazanie_id: 'z-play',
-      kwota: -59.99, kwota_pelna: 119.98, udzial: '1/2', osoba: 'Paweł', dokument: 'F/60345080/09/26',
-    });
-  });
-
-  it('„dołącz do wpisu ręcznego" wysyła transakcja_id zamiast nowej transakcji', () => {
-    const lista = [tx({ _dedup: { zrodlo: 'millennium', zrodlo_id: 'h5', status: 'nowa', akcja: 'dolacz', dolaczDo: 't-judo' } })];
-    expect(rekordyImportu(lista, 'Paweł')[0].transakcja_id).toBe('t-judo');
+    expect(lista.map(t => t._dedup.wybrana)).toEqual([false, true]);
   });
 });
 

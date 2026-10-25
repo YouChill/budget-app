@@ -1,4 +1,3 @@
-// używane przez widok Do rozliczenia (#132)
 import { useCallback, useEffect, useState } from 'react';
 import * as api from '../../services/api';
 import { logger } from '../../utils/logger';
@@ -36,6 +35,9 @@ export function useRecognitionRules() {
   // false = baza bez migracji reguł (dodawanie wyłączone)
   const [dostepne, setDostepne] = useState(true);
   const [lokalne, setLokalne] = useState(null);
+  // true po pierwszej próbie pobrania (także nieudanej) — widok kolejki
+  // liczy propozycje dopiero wtedy, żeby reguły nie przyszły po fakcie.
+  const [zaladowane, setZaladowane] = useState(false);
 
   const zastosuj = useCallback((lista) => {
     setDostepne(lista !== null);
@@ -55,8 +57,12 @@ export function useRecognitionRules() {
         zastosuj(lista);
         // Propozycja przeniesienia dopiero, gdy baza ma tabelę reguł.
         if (lista !== null) setLokalne(czytajLokalneReguly());
+        setZaladowane(true);
       },
-      err => logger.error('useRecognitionRules', 'getReguly failed:', err)
+      err => {
+        logger.error('useRecognitionRules', 'getReguly failed:', err);
+        if (!anulowane) setZaladowane(true);
+      }
     );
     return () => { anulowane = true; };
   }, [zastosuj]);
@@ -96,5 +102,5 @@ export function useRecognitionRules() {
   // Bez decyzji — propozycja wróci przy następnym otwarciu.
   const pozniejLokalne = () => setLokalne(null);
 
-  return { rules, dostepne, addRule, deleteRule, lokalne, przeniesLokalne, odrzucLokalne, pozniejLokalne };
+  return { rules, dostepne, zaladowane, addRule, deleteRule, lokalne, przeniesLokalne, odrzucLokalne, pozniejLokalne };
 }

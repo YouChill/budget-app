@@ -95,8 +95,9 @@ function parujWiersz(w, otwarte, aliasy) {
     return { status: 'do_weryfikacji', kandydaci: poDokumencie, powod: 'wiele_dokumentow' };
   }
 
-  // 3. Kontrahent + kwota brutto + okno dat
-  const kontrahent = rozpoznajKontrahenta(w, aliasy);
+  // 3. Kontrahent + kwota brutto + okno dat. Wiersz kolejki może mieć
+  //    kontrahenta rozpoznanego już przy imporcie (na pełnym rachunku).
+  const kontrahent = w.kontrahent || rozpoznajKontrahenta(w, aliasy);
   const zgodne = otwarte.filter((z) => kwotaZobowiazaniaGr(z) === w.kwotaGr && wOknie(z, w.data));
 
   if (kontrahent) {
@@ -132,7 +133,8 @@ export function znajdzPodobneReczne(w, bezDowodu, udzial = null) {
 /**
  * Paruje całą partię wierszy.
  *
- * wiersze:  [{ zrodloId, data, typ, kwotaGr (>0, brutto), opis, tytul, rachunek }]
+ * wiersze:  [{ zrodloId, data, typ, kwotaGr (>0, brutto), opis, tytul, rachunek,
+ *              rachunekHmac?, kontrahent? }]
  * kontekst: { istniejace: Set<zrodloId>, zobowiazania: [otwarte], aliasy, bezDowodu }
  *
  * Zwraca tablicę wyników w kolejności wierszy:

@@ -66,6 +66,58 @@ Kreator niczego nie trzyma w `localStorage`. Autozapis postępu sprzed #131
 
 ---
 
+## Rozliczanie kolejki
+
+Widok **„Do rozliczenia”** (przycisk z licznikiem w nagłówku, kod:
+`src/components/kolejka/`, logika: `src/lib/csvImport/rozliczenie.js`).
+Niedostępny offline. Gdy w kolejce są operacje z oglądanego miesiąca, widok
+miesięczny pokazuje baner „N operacji z tego miesiąca czeka na rozliczenie —
+sumy są niepełne”.
+
+### Propozycje
+
+Liczone **w przeglądarce, przy otwarciu widoku** — nic z nich nie trafia do
+bazy przed zatwierdzeniem:
+
+1. reguły użytkownika i wbudowany słownik (`categorizeDescription`),
+   dopasowane do słownika gospodarstwa (`validateCategoryExists`);
+2. parowanie (`parujPartie`): zobowiązania (kategoria + udział, np. `1/2`),
+   podobne wpisy ręczne (podpowiedź „To ten sam wpis”), kontrahent po HMAC
+   rachunku (aliasy haszowane tym samym endpointem);
+3. AI (embeddingi) dla wierszy wciąż bez kategorii.
+
+Domyślnie zaznaczone są wiersze z kategorią inną niż `Inne / Nieprzewidziane`.
+
+### Edycja
+
+- Kwota dowodu jest tylko do odczytu. **Udział** (`całość`, `1/2`, `4/6`)
+  liczy kwotę transakcji z brutto i dopisuje ślad `[udział 1/2 z … zł]`.
+- Data, opis (→ komentarz transakcji), kategoria, podkategoria i **osoba**
+  (domyślnie z importu) są edytowalne.
+- Filtry: status parowania, miesiąc, źródło. Panel „Reguły rozpoznawania”
+  (reguły w bazie, wspólne dla urządzeń) stosuje nową regułę od razu.
+- Edycje żyją tylko w pamięci widoku — **bez localStorage**. Wyjście z widoku
+  z niezatwierdzonymi zmianami wymaga potwierdzenia.
+
+### Akcje
+
+| Akcja | Zapis |
+|---|---|
+| **Zatwierdź N** — zaznaczone i widoczne po filtrach | RPC `kolejka_zatwierdz` (nowa transakcja albo dołączenie do wpisu ręcznego, zamknięcie zobowiązania) |
+| **Wyklucz** (transfer własny, zwrot, rozliczenie poza budżetem…) | `UPDATE status = 'wykluczony'` |
+| Zakładka **Wykluczone → Przywróć** | `UPDATE status = 'nowy'` |
+
+Operacja zatwierdzona albo wykluczona w międzyczasie na innym urządzeniu
+(`pominieta`) to nie błąd: toast i odświeżenie listy, bez utraty edycji
+pozostałych wierszy. Po zatwierdzeniu odświeżają się dane miesiąca, cache
+roczny i licznik kolejki.
+
+**Bezpieczeństwo:** opis z banku (tytuł przelewu wpisuje nadawca) jest
+renderowany wyłącznie jako tekst — w `src/` nie ma `dangerouslySetInnerHTML`
+(pilnuje tego test).
+
+---
+
 ## Warstwy kategoryzacji (kolejność)
 
 ```

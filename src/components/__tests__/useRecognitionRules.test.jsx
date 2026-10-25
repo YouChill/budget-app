@@ -11,8 +11,8 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('../../services/api', () => api);
 
-import { useRecognitionRules, czytajLokalneReguly, RULES_STORAGE_KEY } from '../csvImport/useRecognitionRules';
-import LocalRulesMigrationDialog from '../csvImport/LocalRulesMigrationDialog';
+import { useRecognitionRules, czytajLokalneReguly, RULES_STORAGE_KEY } from '../kolejka/useRecognitionRules';
+import LocalRulesMigrationDialog from '../kolejka/LocalRulesMigrationDialog';
 
 const R1 = { id: 'r1', keyword: 'Biedronka', typ: 'Wydatek', kategoria: 'Jedzenie', podkategoria: 'Zakupy domowe' };
 
