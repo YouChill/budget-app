@@ -64,6 +64,7 @@ describe('Yearly Summary Flow - View Toggle', () => {
 
     it('zmiana roku aktualizuje selectedYear', () => {
       let selectedYear = 2026;
+      expect(selectedYear).toBe(2026);
       selectedYear = 2025;
       expect(selectedYear).toBe(2025);
     });
@@ -85,6 +86,7 @@ describe('Yearly Summary Flow - View Toggle', () => {
 
     it('zmiana zakładki', () => {
       let activeTab = 'overview';
+      expect(activeTab).toBe('overview');
       activeTab = 'compare';
       expect(activeTab).toBe('compare');
 
