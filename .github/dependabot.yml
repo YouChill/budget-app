@@ -10,6 +10,10 @@ updates:
       dev-dependencies:
         dependency-type: development
         update-types: [minor, patch]
+      # react i react-dom muszą mieć tę samą wersję (peer dependency),
+      # więc podbijamy je razem — osobne PR-y wywalają npm install.
+      react:
+        patterns: [react, react-dom]
   - package-ecosystem: github-actions
     directory: /
     schedule:
