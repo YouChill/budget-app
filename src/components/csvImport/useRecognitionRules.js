@@ -1,3 +1,4 @@
+// używane przez widok Do rozliczenia (#132)
 import { useCallback, useEffect, useState } from 'react';
 import * as api from '../../services/api';
 import { logger } from '../../utils/logger';

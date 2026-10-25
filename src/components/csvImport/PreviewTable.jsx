@@ -1,3 +1,4 @@
+// używane przez widok Do rozliczenia (#132)
 import React from 'react';
 import { parseKwota } from '../../lib/csvImport/parsowanie';
 import DedupInfo from './DedupInfo';

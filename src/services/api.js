@@ -355,6 +355,51 @@ export async function getKontekstParowania(od, doDaty, { hmacAliasow = false } =
 }
 
 // ═══════════════════════════════════════════
+// KOLEJKA IMPORTU (#131, #132)
+// ═══════════════════════════════════════════
+
+const KOLEJKA_CHUNK = 1000;
+
+function bladKolejki(error, nazwa) {
+  if (brakMigracji(error, nazwa)) {
+    const err = new Error('Baza nie ma migracji kolejki importu');
+    err.brakMigracji = true;
+    throw err;
+  }
+  handleAuthError(error);
+}
+
+/**
+ * Zapis operacji z wyciągu do kolejki (RPC kolejka_dodaj), partiami po 1000.
+ * Zwraca { dodane, pominiete } — pominięte = już w kolejce, zaksięgowane
+ * albo wykluczone. Bez migracji: błąd z `brakMigracji = true`, bez fallbacku.
+ */
+export async function dodajDoKolejki(pozycje) {
+  const suma = { dodane: 0, pominiete: 0 };
+  for (let i = 0; i < pozycje.length; i += KOLEJKA_CHUNK) {
+    const { data, error } = await supabase.rpc('kolejka_dodaj', { p: { pozycje: pozycje.slice(i, i + KOLEJKA_CHUNK) } });
+    if (error) bladKolejki(error, 'kolejka_dodaj');
+    suma.dodane += data.dodane || 0;
+    suma.pominiete += data.pominiete || 0;
+  }
+  return suma;
+}
+
+/** Aliasy kontrahentów gospodarstwa; [] gdy baza nie ma migracji 014. */
+export async function getAliasyKontrahentow() {
+  const householdId = await getHouseholdId();
+  const { data, error } = await supabase
+    .from('kontrahenci_aliasy')
+    .select('wzorzec, typ_wzorca, kontrahent')
+    .eq('household_id', householdId);
+  if (error) {
+    if (brakMigracji014(error)) return [];
+    handleAuthError(error);
+  }
+  return data;
+}
+
+// ═══════════════════════════════════════════
 // HMAC RACHUNKÓW KONTRAHENTÓW (#130)
 // ═══════════════════════════════════════════
 

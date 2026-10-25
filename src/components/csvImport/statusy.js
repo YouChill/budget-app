@@ -1,3 +1,4 @@
+// używane przez widok Do rozliczenia (#132)
 // ─── Grupy w podglądzie importu ───────────────────────────────────────────────
 export const FILTRY_STATUSU = [
   { id: 'wszystkie', label: 'Wszystkie' },

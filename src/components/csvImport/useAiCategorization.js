@@ -1,3 +1,4 @@
+// używane przez widok Do rozliczenia (#132)
 import { useEffect, useState } from 'react';
 import * as categoryAI from '../../services/categoryAI';
 import { validateCategoryExists } from '../../lib/csvImport/kategoryzacja';

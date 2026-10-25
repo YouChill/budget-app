@@ -1,3 +1,4 @@
+// używane przez widok Do rozliczenia (#132)
 import { useState } from 'react';
 import Button from '../Button';
 import { SparkleIcon } from './icons';

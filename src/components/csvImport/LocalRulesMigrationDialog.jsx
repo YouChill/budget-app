@@ -1,3 +1,4 @@
+// używane przez widok Do rozliczenia (#132)
 import { useState } from 'react';
 import ConfirmDialog from '../ConfirmDialog';
 

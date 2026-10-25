@@ -1,3 +1,4 @@
+// używane przez widok Do rozliczenia (#132)
 const formatZl = (n) =>
   `${Math.abs(Number(n)).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`;
 

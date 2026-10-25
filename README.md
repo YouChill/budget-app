@@ -141,9 +141,11 @@ Aplikacja dostępna pod adresem: `http://localhost:5173`
 ### Jak działa import
 
 1. **Prześlij plik** — przeciągnij plik CSV na strefę drop lub kliknij „Wybierz plik z dysku"
-2. **Zmapuj kolumny** — wskaż kolumny daty, kwoty i opisu (PKO BP: automatycznie)
-3. **Przejrzyj transakcje** — edytuj kategorie, usuń zbędne wiersze
-4. **Importuj** — batch insert do Supabase
+2. **Zmapuj kolumny i wybierz osobę** — daty, kwoty i opisu (PKO BP, Millennium, Revolut: automatycznie)
+3. **Zapisz do kolejki** — operacje trafiają do kolejki „Do rozliczenia”, bez kategoryzacji
+4. **Rozlicz** — kategorie przypisujesz później, w widoku „Do rozliczenia” (partiami, z dowolnego urządzenia)
+
+Szczegóły: [docs/CSV_IMPORT.md](./docs/CSV_IMPORT.md).
 
 ### Kategoryzacja — trzy warstwy
 

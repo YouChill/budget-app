@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
-import { BankIcon, ListIcon, SparkleIcon, TableIcon } from './icons';
+import { BankIcon, ListIcon, TableIcon } from './icons';
 
 // Krok 1: wybór pliku (kliknięcie lub przeciągnięcie) i obsługiwane formaty.
-export default function UploadStep({ onFile, selectedFileName, aiEnabled }) {
+export default function UploadStep({ onFile, selectedFileName }) {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -106,18 +106,6 @@ export default function UploadStep({ onFile, selectedFileName, aiEnabled }) {
           ))}
         </div>
 
-        {/* AI badge */}
-        {aiEnabled && (
-          <div className="flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3">
-            <span className="text-violet-500"><SparkleIcon size={18} /></span>
-            <div>
-              <span className="text-sm font-semibold text-violet-700">Kategoryzacja AI włączona</span>
-              <span className="text-xs text-violet-500 ml-2">
-                Transakcje bez dopasowania zostaną automatycznie skategoryzowane przez AI
-              </span>
-            </div>
-          </div>
-        )}
       </div>
   );
 }
