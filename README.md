@@ -177,10 +177,14 @@ Bez klucza OpenAI import działa normalnie — aktywne są warstwy 1 i 2.
 
 ### Reguły rozpoznawania
 
-W kroku podglądu panel „Reguły rozpoznawania" pozwala:
-- Dodać regułę słowem kluczowym → natychmiast przypisuje pasujące nieprzypisane transakcje
+Panel „Reguły rozpoznawania" pozwala:
+- Dodać regułę słowem kluczowym (min. 3 znaki) → natychmiast przypisuje pasujące nieprzypisane transakcje
 - Przeglądać i usuwać zapisane reguły
 - Przy włączonym AI — reguła jest jednocześnie zapisywana jako embedding w Supabase
+
+Reguły leżą w tabeli `reguly_rozpoznawania` (migracja `20261025100100`) — są
+wspólne dla domowników i urządzeń. Reguły zapisane wcześniej w `localStorage`
+aplikacja jednorazowo proponuje przenieść do bazy.
 
 ## Struktura projektu
 

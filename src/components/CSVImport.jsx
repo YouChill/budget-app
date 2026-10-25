@@ -21,7 +21,8 @@ import UploadStep from './csvImport/UploadStep';
 import MappingStep from './csvImport/MappingStep';
 import PreviewStep from './csvImport/PreviewStep';
 import SuccessStep from './csvImport/SuccessStep';
-import { useRecognitionRules } from './csvImport/useRecognitionRules';
+import { useRecognitionRules, MIN_KEYWORD } from './csvImport/useRecognitionRules';
+import LocalRulesMigrationDialog from './csvImport/LocalRulesMigrationDialog';
 import { useImportProgress } from './csvImport/useImportProgress';
 import { useAiCategorization } from './csvImport/useAiCategorization';
 
@@ -52,7 +53,7 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
   const [ruleNotification, setRuleNotification] = useState(null);
 
   const aiEnabled = categoryAI.isAIEnabled();
-  const { rules, addRule, deleteRule } = useRecognitionRules();
+  const { rules, addRule, deleteRule, lokalne, przeniesLokalne, odrzucLokalne, pozniejLokalne } = useRecognitionRules();
   const { lastSaved, restorePrompt, takeRestore, discardRestore, clearProgress } =
     useImportProgress({ step, transactions, txMeta, dedupInfo, selectedOsoba });
   const { aiLoading, aiMatchCount } =
@@ -151,12 +152,20 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
   // ── Krok 3: reguły i edycja ───────────────────────────────────────────────────
 
   // Zwraca true, gdy reguła została dodana (formularz może się wyczyścić).
-  const handleAddRule = ({ keyword, kategoria, podkategoria, typ }) => {
+  const handleAddRule = async ({ keyword, kategoria, podkategoria, typ }) => {
     if (!keyword.trim()) { setError('Podaj warunek (tekst do wyszukania)'); return false; }
+    if (keyword.trim().length < MIN_KEYWORD) { setError(`Warunek musi mieć co najmniej ${MIN_KEYWORD} znaki`); return false; }
     if (!kategoria) { setError('Wybierz kategorię'); return false; }
 
-    const newRule = { keyword: keyword.trim(), kategoria, podkategoria: podkategoria || '', typ, createdAt: Date.now() };
-    addRule(newRule);
+    const newRule = { keyword: keyword.trim(), kategoria, podkategoria: podkategoria || '', typ };
+    try {
+      const wynik = await addRule(newRule);
+      if (wynik.duplikat) { setError(`Reguła „${newRule.keyword}” już istnieje`); return false; }
+    } catch (err) {
+      logger.error('CSVImport', 'addRule failed:', err);
+      setError('Nie udało się zapisać reguły');
+      return false;
+    }
 
     // Save to Supabase vector store (non-blocking)
     if (aiEnabled) {
@@ -308,7 +317,10 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
               isLoading={isLoading}
               rules={rules}
               onAddRule={handleAddRule}
-              onDeleteRule={deleteRule}
+              onDeleteRule={(id) => deleteRule(id).catch(err => {
+                logger.error('CSVImport', 'deleteRule failed:', err);
+                setError('Nie udało się usunąć reguły');
+              })}
               onEdit={handleEditTransaction}
               onDedupChange={handleDedupChange}
               onDelete={handleDeleteTransaction}
@@ -322,6 +334,16 @@ export default function CSVImport({ onClose, kategorie = {}, osoby = [], onSaved
           )}
         </div>
       </ModalShell>
+
+      <LocalRulesMigrationDialog
+        lokalne={lokalne}
+        onPrzenies={() => przeniesLokalne().catch(err => {
+          logger.error('CSVImport', 'przeniesLokalne failed:', err);
+          setError('Nie udało się przenieść reguł — spróbuj ponownie');
+        })}
+        onOdrzuc={odrzucLokalne}
+        onPozniej={pozniejLokalne}
+      />
 
       {/* Dialog przywracania zapisanego postępu */}
       {restorePrompt && (

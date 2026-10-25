@@ -17,6 +17,9 @@ const api = vi.hoisted(() => ({
   getKontekstParowania: vi.fn(),
   importujTransakcje: vi.fn(),
   addTransakcjeBatch: vi.fn(),
+  getReguly: vi.fn(),
+  addRegula: vi.fn(),
+  deleteRegula: vi.fn(),
 }));
 vi.mock('../../services/api', () => api);
 
@@ -39,6 +42,8 @@ beforeEach(() => {
   localStorage.clear();
   api.sprawdzOdciski.mockResolvedValue(null); // brak migracji 014
   api.addTransakcjeBatch.mockResolvedValue({ success: true, count: 2 });
+  api.getReguly.mockResolvedValue([]);
+  api.addRegula.mockImplementation(async (r) => ({ regula: { id: 'r1', ...r } }));
 });
 
 async function doPodgladu(onSaved = vi.fn()) {
@@ -77,9 +82,8 @@ describe('CSVImport — dowolny CSV', () => {
     expect(await screen.findByText(/Przypisano/)).toHaveTextContent('Przypisano 2 transakcji → Jedzenie');
     expect(screen.getByText('1 bez kategorii')).toBeInTheDocument();
     expect(screen.queryByPlaceholderText('np. Biedronka, Allegro…')).not.toBeInTheDocument();
-    expect(JSON.parse(localStorage.getItem('csv_recognition_rules'))).toEqual([
-      expect.objectContaining({ keyword: 'xyz', kategoria: 'Jedzenie', typ: 'Wydatek' }),
-    ]);
+    expect(api.addRegula).toHaveBeenCalledWith(expect.objectContaining({ keyword: 'xyz', kategoria: 'Jedzenie', typ: 'Wydatek' }));
+    expect(localStorage.getItem('csv_recognition_rules')).toBeNull();
   });
 
   it('reguła bez kategorii nie przechodzi walidacji', async () => {

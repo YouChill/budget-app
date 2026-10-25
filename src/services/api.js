@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { DEFAULT_KATEGORIE } from '../data/defaultKategorie';
-import { pozycjaZRekordu, brakMigracji014 } from '../lib/importPozycje';
+import { pozycjaZRekordu, brakMigracji014, brakMigracji } from '../lib/importPozycje';
 import { fetchAll } from '../lib/fetchAll';
 
 // ═══════════════════════════════════════════
@@ -357,6 +357,63 @@ function shiftDate(iso, days) {
   const d = new Date(`${iso}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+// ═══════════════════════════════════════════
+// REGUŁY ROZPOZNAWANIA (#133)
+// ═══════════════════════════════════════════
+
+const REGULY_KOLUMNY = 'id, keyword, typ, kategoria, podkategoria';
+
+/** Reguły „opis zawiera X → kategoria" gospodarstwa. null = baza bez migracji. */
+export async function getReguly() {
+  const householdId = await getHouseholdId();
+  const { data, error } = await supabase
+    .from('reguly_rozpoznawania')
+    .select(REGULY_KOLUMNY)
+    .eq('household_id', householdId)
+    .order('created_at')
+    .order('id');
+  if (error) {
+    if (brakMigracji(error, 'reguly_rozpoznawania')) return null;
+    handleAuthError(error);
+  }
+  return data;
+}
+
+/**
+ * Dodaje regułę. Ta sama fraza (bez względu na wielkość liter) dla tego
+ * samego typu już istnieje → { duplikat: true } zamiast błędu.
+ */
+export async function addRegula({ keyword, typ, kategoria, podkategoria }) {
+  const householdId = await getHouseholdId();
+  const { data, error } = await supabase
+    .from('reguly_rozpoznawania')
+    .insert({
+      household_id: householdId,
+      keyword: String(keyword).trim(),
+      typ: typ || null,
+      kategoria,
+      podkategoria: podkategoria || null,
+    })
+    .select(REGULY_KOLUMNY)
+    .single();
+  if (error) {
+    if (error.code === '23505') return { duplikat: true };
+    handleAuthError(error);
+  }
+  return { regula: data };
+}
+
+export async function deleteRegula(id) {
+  const householdId = await getHouseholdId();
+  const { error } = await supabase
+    .from('reguly_rozpoznawania')
+    .delete()
+    .eq('id', id)
+    .eq('household_id', householdId);
+  if (error) handleAuthError(error);
+  return { success: true };
 }
 
 // ═══════════════════════════════════════════

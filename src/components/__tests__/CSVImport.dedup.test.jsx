@@ -18,6 +18,9 @@ const api = vi.hoisted(() => ({
   getKontekstParowania: vi.fn(),
   importujTransakcje: vi.fn(),
   addTransakcjeBatch: vi.fn(),
+  getReguly: vi.fn(async () => []),
+  addRegula: vi.fn(),
+  deleteRegula: vi.fn(),
 }));
 vi.mock('../../services/api', () => api);
 
