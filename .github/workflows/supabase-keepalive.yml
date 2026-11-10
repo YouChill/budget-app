@@ -1,0 +1,56 @@
+# Keep-alive dla projektu Supabase (darmowy plan usypia projekt po ~7 dniach bez ruchu w API).
+# Co 3 dni wysyła lekkie zapytania do publicznego API projektu (Auth + REST),
+# które Supabase liczy jako aktywność — w przeciwieństwie do SQL z panelu/Management API.
+#
+# Wymagane sekrety repozytorium (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL       – np. https://rrkmtyitoghfntiprcgh.supabase.co
+#   SUPABASE_ANON_KEY  – klucz publiczny (anon / publishable), NIE service_role
+
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: "17 6 */3 * *"   # ok. 7:17/8:17 czasu PL, co 3 dni
+  workflow_dispatch: {}       # ręczne uruchomienie z zakładki Actions
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping Supabase API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -u
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::Brak sekretów SUPABASE_URL lub SUPABASE_ANON_KEY"
+            exit 1
+          fi
+          URL="${SUPABASE_URL%/}"
+          fail=0
+
+          ping() {
+            local name="$1" path="$2"
+            local code
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 \
+              --retry 3 --retry-delay 10 --retry-all-errors \
+              -H "apikey: $SUPABASE_ANON_KEY" \
+              -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+              "$URL$path") || code="000"
+            echo "$name → HTTP $code"
+            # 2xx–4xx = API odpowiedziało (projekt żyje); 5xx/000 = projekt uśpiony lub niedostępny
+            if [ "$code" = "000" ] || [ "$code" -ge 500 ]; then
+              echo "::error::$name: HTTP $code — projekt może być uśpiony (sprawdź panel Supabase)"
+              fail=1
+            fi
+          }
+
+          ping "Auth health" "/auth/v1/health"
+          ping "REST API"    "/rest/v1/"
+
+          exit $fail
