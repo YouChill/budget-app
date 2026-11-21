@@ -34,7 +34,8 @@ transaction-history*
 *.numbers
 
 # Payloady importu — zawierają kwoty wynagrodzeń, salda, nazwiska
-migration/IMPORT_*.json
+IMPORT_*.json
+ROZLICZENIE_*.json
 migration/ODTWORZENIE_*.json
 migration/ODTWORZENIE_*.sql
 

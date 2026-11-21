@@ -21,6 +21,7 @@ WZORCE=(
   'account-statement'
   'transaction-history'
   'IMPORT_.*\.json'
+  'ROZLICZENIE_.*\.json'
   'ODTWORZENIE_'
   'allegro_.*\.\(json\|csv\)'
   'FINAL_.*\.csv'
@@ -76,7 +77,7 @@ echo
 echo "── 3. Czy .gitignore działa ──"
 nieignorowane=$(git status --porcelain --untracked-files=all 2>/dev/null \
   | awk '/^\?\?/ {print $2}' \
-  | grep -E 'Zestawienie|Historia_transakcji|IMPORT_.*\.json|ODTWORZENIE_|allegro_.*\.(json|csv)|FINAL_.*\.csv|\.numbers|account-statement|transaction-history' || true)
+  | grep -E 'Zestawienie|Historia_transakcji|IMPORT_.*\.json|ROZLICZENIE_.*\.json|ODTWORZENIE_|allegro_.*\.(json|csv)|FINAL_.*\.csv|\.numbers|account-statement|transaction-history' || true)
 if [ -n "$nieignorowane" ]; then
   echo "${ZOLTY}⚠ te pliki leżą w katalogu i NIE są ignorowane:${RESET}"
   echo "$nieignorowane" | sed 's/^/    /'
