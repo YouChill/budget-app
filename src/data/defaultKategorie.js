@@ -61,6 +61,7 @@ export const DEFAULT_KATEGORIE = [
   { typ: 'Wydatek', kategoria: 'Inne', podkategoria: 'Wypłata gotówki' },  // NOWE
   { typ: 'Wydatek', kategoria: 'Inne', podkategoria: 'Transfer własny' },  // NOWE
   { typ: 'Wydatek', kategoria: 'Inne', podkategoria: 'Nieprzewidziane' },
+  { typ: 'Wydatek', kategoria: 'Działalność', podkategoria: 'Koszty prowadzenia działalności' },  // 018
   // Przychody
   { typ: 'Przychód', kategoria: 'Wynagrodzenie', podkategoria: 'Paweł' },
   { typ: 'Przychód', kategoria: 'Wynagrodzenie', podkategoria: 'Teresa' },
