@@ -59,6 +59,8 @@ Wydatek,Inne,Wypłata gotówki
 Wydatek,Inne,Transfer własny
 Wydatek,Inne,Nieprzewidziane
 Wydatek,Działalność,Koszty prowadzenia działalności
+Wydatek,Edukacja,Kursy i lekcje
+Wydatek,Delegacje,Koszty delegacji
 Przychód,Wynagrodzenie,Paweł
 Przychód,Wynagrodzenie,Teresa
 Przychód,Inne przychody,800+
@@ -67,5 +69,6 @@ Przychód,Inne przychody,Premia
 Przychód,Inne przychody,Sprzedaż rzeczy
 Przychód,Inne przychody,Sprzedaż Allegro
 Przychód,Inne przychody,Rozliczenia rodzinne
+Przychód,Inne przychody,Darowizny
 Przychód,Inne przychody,Transfer własny
 Przychód,Inne przychody,Delegacje

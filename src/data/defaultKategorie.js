@@ -62,6 +62,8 @@ export const DEFAULT_KATEGORIE = [
   { typ: 'Wydatek', kategoria: 'Inne', podkategoria: 'Transfer własny' },  // NOWE
   { typ: 'Wydatek', kategoria: 'Inne', podkategoria: 'Nieprzewidziane' },
   { typ: 'Wydatek', kategoria: 'Działalność', podkategoria: 'Koszty prowadzenia działalności' },  // 018
+  { typ: 'Wydatek', kategoria: 'Edukacja', podkategoria: 'Kursy i lekcje' },  // 019
+  { typ: 'Wydatek', kategoria: 'Delegacje', podkategoria: 'Koszty delegacji' },  // 019
   // Przychody
   { typ: 'Przychód', kategoria: 'Wynagrodzenie', podkategoria: 'Paweł' },
   { typ: 'Przychód', kategoria: 'Wynagrodzenie', podkategoria: 'Teresa' },
@@ -71,6 +73,7 @@ export const DEFAULT_KATEGORIE = [
   { typ: 'Przychód', kategoria: 'Inne przychody', podkategoria: 'Sprzedaż rzeczy' },
   { typ: 'Przychód', kategoria: 'Inne przychody', podkategoria: 'Sprzedaż Allegro' },  // NOWE
   { typ: 'Przychód', kategoria: 'Inne przychody', podkategoria: 'Rozliczenia rodzinne' },  // NOWE
+  { typ: 'Przychód', kategoria: 'Inne przychody', podkategoria: 'Darowizny' },  // 019
   { typ: 'Przychód', kategoria: 'Inne przychody', podkategoria: 'Transfer własny' },  // NOWE
   { typ: 'Przychód', kategoria: 'Inne przychody', podkategoria: 'Delegacje' },  // NOWE
 ];
