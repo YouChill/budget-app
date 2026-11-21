@@ -27,6 +27,11 @@ CREATE TABLE public.transakcje (
   kwota numeric NOT NULL, kategoria text NOT NULL, podkategoria text,
   osoba text NOT NULL, komentarz text,
   created_by uuid REFERENCES auth.users(id), created_at timestamptz DEFAULT now());
+CREATE TABLE public.kategorie (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  household_id uuid NOT NULL REFERENCES public.households(id),
+  typ text NOT NULL CHECK (typ = ANY (ARRAY['Wydatek','Przychód'])),
+  kategoria text NOT NULL, podkategoria text);
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY profiles_select_own ON public.profiles FOR SELECT USING (auth.uid() = id);
