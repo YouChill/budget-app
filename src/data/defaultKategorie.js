@@ -36,6 +36,7 @@ export const DEFAULT_KATEGORIE = [
   { typ: 'Wydatek', kategoria: 'Zdrowie', podkategoria: 'Suplementy' },
   { typ: 'Wydatek', kategoria: 'Zdrowie', podkategoria: 'Terapia i rehabilitacja' },  // NOWE
   { typ: 'Wydatek', kategoria: 'Zdrowie', podkategoria: 'Ubezpieczenie' },  // NOWE
+  { typ: 'Wydatek', kategoria: 'Zdrowie', podkategoria: 'Soczewki' },  // 017
   { typ: 'Wydatek', kategoria: 'Rozrywka', podkategoria: 'Kino/koncerty' },
   { typ: 'Wydatek', kategoria: 'Rozrywka', podkategoria: 'Subskrypcje' },
   { typ: 'Wydatek', kategoria: 'Rozrywka', podkategoria: 'Hobby' },
@@ -47,6 +48,8 @@ export const DEFAULT_KATEGORIE = [
   { typ: 'Wydatek', kategoria: 'Dom', podkategoria: 'Chemia/środki czystości' },
   { typ: 'Wydatek', kategoria: 'Dom', podkategoria: 'Naprawy' },
   { typ: 'Wydatek', kategoria: 'Dom', podkategoria: 'Ogród' },
+  { typ: 'Wydatek', kategoria: 'Dom', podkategoria: 'Materiały eksploatacyjne' },  // 017
+  { typ: 'Wydatek', kategoria: 'Dom', podkategoria: 'Sprzęt i akcesoria' },  // 017
   { typ: 'Wydatek', kategoria: 'Zwierzęta', podkategoria: 'Karma' },  // NOWE
   { typ: 'Wydatek', kategoria: 'Zwierzęta', podkategoria: 'Akcesoria' },  // NOWE
   { typ: 'Wydatek', kategoria: 'Zwierzęta', podkategoria: 'Weterynarz' },  // NOWE

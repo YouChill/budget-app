@@ -33,6 +33,7 @@ Wydatek,Zdrowie,Leki
 Wydatek,Zdrowie,Suplementy
 Wydatek,Zdrowie,Terapia i rehabilitacja
 Wydatek,Zdrowie,Ubezpieczenie
+Wydatek,Zdrowie,Soczewki
 Wydatek,Rozrywka,Kino/koncerty
 Wydatek,Rozrywka,Subskrypcje
 Wydatek,Rozrywka,Hobby
@@ -44,6 +45,8 @@ Wydatek,Dom,Wyposażenie
 Wydatek,Dom,Chemia/środki czystości
 Wydatek,Dom,Naprawy
 Wydatek,Dom,Ogród
+Wydatek,Dom,Materiały eksploatacyjne
+Wydatek,Dom,Sprzęt i akcesoria
 Wydatek,Zwierzęta,Karma
 Wydatek,Zwierzęta,Akcesoria
 Wydatek,Zwierzęta,Weterynarz
