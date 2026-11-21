@@ -14,6 +14,10 @@
  * Uruchomienie:
  *   node import_do_aplikacji.mjs --dry-run     # tylko walidacja, nic nie zapisuje
  *   node import_do_aplikacji.mjs               # właściwy import
+ *   node import_do_aplikacji.mjs IMPORT_x.json --dry-run   # inny payload
+ *
+ * Bez ścieżki czyta IMPORT_pawel_2026-03_07.json obok skryptu; ścieżka
+ * względna liczy się od bieżącego katalogu.
  *
  * Wymaga w .env:
  *   VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
@@ -35,7 +39,10 @@ import { createClient } from '@supabase/supabase-js';
 import { pozycjaZRekordu, brakMigracji014 } from '../src/lib/importPozycje.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PAYLOAD = path.resolve(__dirname, 'IMPORT_pawel_2026-03_07.json');
+const plikArg = process.argv.slice(2).find((a) => !a.startsWith('--'));
+const PAYLOAD = plikArg
+  ? path.resolve(process.cwd(), plikArg)
+  : path.resolve(__dirname, 'IMPORT_pawel_2026-03_07.json');
 const CHUNK = 100;
 const DRY = process.argv.includes('--dry-run');
 
